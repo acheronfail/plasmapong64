@@ -2,6 +2,7 @@
 #include "draw.h"
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #define OX 16
 #define OY 34
@@ -106,16 +107,131 @@ static void court(void) {
     for(int y=OY+5;y<OY+ARENA_H-3;y+=12) rect(OX+ARENA_W*.5f-1,y,1,4,0x23374e);
     rect(OX-3,OY,2,ARENA_H,0x24566c); rect(OX+ARENA_W+1,OY,2,ARENA_H,0x71334c);
 }
-void ui_draw(const Game *g) {
-    if(g->phase==MENU) {
-        draw_fluid(&g->fluid,0,0,320,240);
-        draw_static(DRAW_MENU_TITLE,menu_title);
-        const char *items[]={"MULTI-PLAYER","SINGLE PLAYER","HIGH SCORES"};
-        for(unsigned i=0;i<3;i++) {
-            char item[40]; snprintf(item,sizeof(item),g->menu_selection==i?"> %s <":"%s",items[i]);
-            menu_label(124+i*25,g->menu_selection==i?4:1,item);
+/* Thin screen-space contours avoid enlarging a one-texel outline to six pixels.
+   Trace brightness isolines with marching squares; shared edge interpolation
+   makes neighboring segments meet. A fixed rectangle budget bounds submission. */
+static void contour_segment(float ax,float ay,float bx,float by,uint32_t color,unsigned *budget) {
+    int x=(int)ax,y=(int)ay,ex=(int)bx,ey=(int)by;
+    int dx=abs(ex-x),dy=abs(ey-y),sx=x<ex?1:-1,sy=y<ey?1:-1,error=dx-dy;
+    while(*budget) {
+        int start=x,row=y;
+        /* Merge adjacent pixels on a row into one rectangle. */
+        for(;;) {
+            if(x==ex && y==ey) {
+                rect(minf(start,x),row,abs(x-start)+1,1,color); --*budget; return;
+            }
+            int twice=2*error,nx=x,ny=y;
+            if(twice>-dy) { error-=dy; nx+=sx; }
+            if(twice<dx) { error+=dx; ny+=sy; }
+            if(ny!=row) {
+                rect(minf(start,x),row,abs(x-start)+1,1,color); --*budget;
+                x=nx; y=ny; break;
+            }
+            x=nx; y=ny;
         }
-        centered_hint(216,"[UP] / [DOWN] SELECT   [A] PLAY");
+    }
+}
+void draw_flow_contours(const uint32_t *pixels,unsigned stride,float ox,float oy,float w,float h) {
+    uint8_t light[FN];
+    for(int y=0;y<FH;y++) for(int x=0;x<FW;x++) {
+        int k=y*FW+x; uint32_t c=pixels[y*stride+x]>>8;
+        light[k]=(((c>>16)&255)+2*((c>>8)&255)+(c&255))/4;
+    }
+    static const int levels[]={40,80};
+    unsigned budget=900;
+    float cell_w=w/FW,cell_h=h/FH;
+    for(int l=0;l<2;l++) {
+        int level=levels[l];
+        /* Every second grid node keeps CPU work low. The final short column
+           still reaches the last sample; lines remain one screen pixel wide. */
+        for(int y=0;y<FH-1;y+=2) for(int x=0;x<FW-1;x+=2) {
+            int sx=x+2<FW?2:1,sy=y+2<FH?2:1,k=y*FW+x;
+            int value[4]={light[k],light[k+sx],light[k+sy*FW+sx],light[k+sy*FW]};
+            int mask=(value[0]>=level)|((value[1]>=level)<<1)|((value[2]>=level)<<2)|((value[3]>=level)<<3);
+            if(mask==0 || mask==15) continue;
+            float left=ox+(x+.5f)*cell_w,top=oy+(y+.5f)*cell_h;
+            float right=left+sx*cell_w,bottom=top+sy*cell_h;
+            float vx[4],vy[4]; int n=0;
+            for(int edge=0;edge<4;edge++) {
+                int next=(edge+1)&3,a=value[edge],b=value[next];
+                if((a>=level)==(b>=level)) continue;
+                float t=(float)(level-a)/(b-a);
+                if(edge==0) { vx[n]=left+t*(right-left); vy[n]=top; }
+                else if(edge==1) { vx[n]=right; vy[n]=top+t*(bottom-top); }
+                else if(edge==2) { vx[n]=right-t*(right-left); vy[n]=bottom; }
+                else { vx[n]=left; vy[n]=bottom-t*(bottom-top); }
+                n++;
+            }
+            uint32_t color=l?0x2a4050:0x13202a;
+            if(n==4 && ((value[0]>=level)!=((value[0]+value[1]+value[2]+value[3])>=4*level))) {
+                contour_segment(vx[0],vy[0],vx[3],vy[3],color,&budget);
+                contour_segment(vx[1],vy[1],vx[2],vy[2],color,&budget);
+            } else for(int i=0;i<n;i+=2)
+                contour_segment(vx[i],vy[i],vx[i+1],vy[i+1],color,&budget);
+            if(!budget) return;
+        }
+    }
+}
+static void flow_background(const Game *g,float x,float y,float w,float h) {
+    draw_fluid(&g->fluid,x,y,w,h,g->flow_effect==FLOW_SPEED);
+    if(g->flow_effect!=FLOW_PARTICLES && g->flow_effect!=FLOW_TAILS) return;
+    /* A small, saturated palette preserves batching: at most four color
+       changes per layer, rather than one per particle. Read nearest-cell dye
+       once per head; tails share its tint. Mixed/clear fluid stays neutral. */
+    static const uint32_t colors[4][3]={
+        {0x526d82,0x344b60,0x253849}, /* neutral */
+        {0x29afd2,0x207f9c,0x18566f}, /* cyan */
+        {0xdb506b,0x96384f,0x64283c}, /* coral */
+        {0xc7a333,0x897026,0x594a1e}  /* gold */
+    };
+    uint8_t buckets[4][FLOW_TRACERS]; unsigned counts[4]={0};
+    const FluidInk *ink=fluid_dye(&g->fluid);
+    const FluidInkValue minimum=fluid_ink_encode(.04f);
+    for(unsigned i=0;i<FLOW_TRACERS;i++) {
+        const FlowTracer *t=&g->tracers[i]; if(!t->life) continue;
+        int k=(int)(t->y[0]/CELL)*FW+(int)(t->x[0]/CELL);
+        FluidInkValue r=ink->red[k],b=ink->blue[k],gold=ink->gold[k];
+        unsigned tint=0;
+        if(b>minimum && b>r+r/2 && b>gold+gold/2) tint=1;
+        else if(r>minimum && r>b+b/2 && r>gold+gold/2) tint=2;
+        else if(gold>minimum && gold>r+r/2 && gold>b+b/2) tint=3;
+        buckets[tint][counts[tint]++]=(uint8_t)i;
+    }
+    for(int j=g->flow_effect==FLOW_TAILS?2:0;j>=0;j--) {
+        for(unsigned tint=0;tint<4;tint++) for(unsigned n=0;n<counts[tint];n++) {
+            const FlowTracer *t=&g->tracers[buckets[tint][n]];
+            float dx=t->x[j]-t->x[0],dy=t->y[j]-t->y[0];
+            float length=maxf(fabsf(dx),fabsf(dy));
+            if(j && length<1) continue;
+            if(length>8) { dx*=8/length; dy*=8/length; }
+            float px=floorf(x+(t->x[0]+dx)*w/ARENA_W);
+            float py=floorf(y+(t->y[0]+dy)*h/ARENA_H);
+            if(px>=x && py>=y && px<x+w && py<y+h) rect(px,py,1,1,colors[tint][j]);
+        }
+    }
+}
+void ui_draw(const Game *g) {
+    if(g->phase==OPTIONS) {
+        flow_background(g,0,0,320,240);
+        rect(12,78,296,83,0x09111f);
+        menu_label(101,4,"OPTIONS");
+        const char *effects[]={"NONE","PARTICLES","PARTICLE TAILS","SPEED"};
+        char setting[64]; snprintf(setting,sizeof(setting),"< FLOW EFFECT: %s >",effects[g->flow_effect]);
+        menu_label(125,4,setting);
+        menu_label(149,1,!g->save_available?"NO SAVE STORAGE - SESSION ONLY":
+            g->save_failed?"SAVE FAILED - SESSION ONLY":"AUTOMATICALLY SAVED TO CARTRIDGE");
+        centered_hint(195,"[LEFT] / [RIGHT] CHANGE");
+        centered_hint(216,"[B] BACK"); return;
+    }
+    if(g->phase==MENU) {
+        flow_background(g,0,0,320,240);
+        draw_static(DRAW_MENU_TITLE,menu_title);
+        const char *items[]={"MULTI-PLAYER","SINGLE PLAYER","HIGH SCORES","OPTIONS"};
+        for(unsigned i=0;i<4;i++) {
+            char item[40]; snprintf(item,sizeof(item),g->menu_selection==i?"> %s <":"%s",items[i]);
+            menu_label(112+i*24,g->menu_selection==i?4:1,item);
+        }
+        centered_hint(216,"[UP] / [DOWN] SELECT   [A] SELECT");
         return;
     }
     rect(0,0,320,240,0x070c17);
@@ -145,7 +261,7 @@ void ui_draw(const Game *g) {
         snprintf(s,sizeof(s),"%u  :  %u",g->score[0],g->score[1]);
         label(145,20,0,s); label(233,20,1,"FIRST TO 9");
     }
-    draw_fluid(&g->fluid,OX,OY,ARENA_W,ARENA_H);
+    flow_background(g,OX,OY,ARENA_W,ARENA_H);
     draw_static(DRAW_COURT,court);
     for(int p=0;p<2;p++) {
         const Bat *b=&g->bat[p]; uint32_t c=p?CORAL:CYAN;

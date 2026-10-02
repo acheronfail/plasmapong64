@@ -15,6 +15,30 @@ void game_init(Game *g) {
     g->score_entry=-1; g->arcade.level=1;
     g->phase=MENU; g->menu_rng=0x76a51c93u; g->winner=-1; serve(g,1);
 }
+/* Visual-only state and RNG never affect the fluid or gameplay randomness. */
+static float tracer_random(Game *g) {
+    uint32_t x=g->tracer_rng?g->tracer_rng:0x513ad291u;
+    x^=x<<13; x^=x>>17; x^=x<<5; g->tracer_rng=x;
+    return (x&65535)/65536.0f;
+}
+void game_flow_step(Game *g) {
+    if(g->flow_effect!=FLOW_PARTICLES && g->flow_effect!=FLOW_TAILS) return;
+    for(unsigned i=0;i<FLOW_TRACERS;i++) {
+        FlowTracer *t=&g->tracers[i];
+        if(!t->life) {
+            /* Stratified respawns retain coverage while allowing free advection. */
+            t->x[0]=(i%12+tracer_random(g))*(ARENA_W/12);
+            t->y[0]=(i/12+tracer_random(g))*(ARENA_H/8);
+            t->life=45+(unsigned)(tracer_random(g)*90);
+            for(int j=1;j<3;j++) { t->x[j]=t->x[0]; t->y[j]=t->y[0]; }
+            continue;
+        }
+        float u,v; fluid_sample(&g->fluid,t->x[0],t->y[0],&u,&v);
+        for(int j=2;j>0;j--) { t->x[j]=t->x[j-1]; t->y[j]=t->y[j-1]; }
+        t->x[0]+=u*STEP; t->y[0]+=v*STEP; t->life--;
+        if(t->x[0]<0 || t->x[0]>=ARENA_W || t->y[0]<0 || t->y[0]>=ARENA_H) t->life=0;
+    }
+}
 static float menu_random(Game *g) {
     uint32_t x=g->menu_rng?g->menu_rng:1;
     x^=x<<13; x^=x>>17; x^=x<<5; g->menu_rng=x;
@@ -35,6 +59,7 @@ static void menu_step(Game *g) {
         if(p==2) fluid_ball_dye(&g->fluid,c->x,c->y,.20f);
     }
     fluid_velocity_step(&g->fluid,STEP); fluid_dye_step(&g->fluid,STEP);
+    game_flow_step(g);
     g->menu_ticks++; g->elapsed+=STEP;
 }
 static void limit_ball(Game *g) {
@@ -96,9 +121,11 @@ static void ball_step(Game *g) {
 static int direction(float value) { return value>.5f?1:value<-.5f?-1:0; }
 static void start_game(Game *g) {
     HighScore saved[HIGH_SCORE_COUNT]; memcpy(saved,g->highs,sizeof(saved));
+    FlowEffect effect=g->flow_effect;
     GameMode mode=g->mode; uint32_t seed=g->menu_rng;
     bool available=g->save_available,failed=g->save_failed;
     game_init(g); memcpy(g->highs,saved,sizeof(saved));
+    g->flow_effect=effect;
     g->save_available=available; g->save_failed=failed;
     g->mode=mode; g->menu_selection=mode==ARCADE?1:0;
     g->menu_rng=seed; g->phase=PLAY;
@@ -112,7 +139,7 @@ void game_step(Game *g,const Input physical[2]) {
     bool start=false,confirm=false,back=false;
     for(int p=0;p<2;p++) {
         g->connected[p]=physical[p].connected;
-        if(g->mode==ARCADE && g->phase!=MENU && p==1) continue;
+        if(g->mode==ARCADE && g->phase!=MENU && g->phase!=OPTIONS && p==1) continue;
         start|=in[p].connected && in[p].start && !g->previous[p].start;
         confirm|=in[p].connected && in[p].a && !g->previous[p].a;
         back|=in[p].connected && in[p].b && !g->previous[p].b;
@@ -123,14 +150,28 @@ void game_step(Game *g,const Input physical[2]) {
         for(int p=0;p<2;p++) if(in[p].connected) {
             int nav=direction(in[p].y);
             if(nav && nav!=direction(g->previous[p].y)) {
-                g->menu_selection=(g->menu_selection+(nav>0?2:1))%3;
+                g->menu_selection=(g->menu_selection+(nav>0?3:1))%4;
                 g->sound_events|=SOUND_SELECT; break;
             }
         }
         if(start || confirm) {
-            if(g->menu_selection==2) g->phase=SCORES;
+            if(g->menu_selection==3) g->phase=OPTIONS;
+            else if(g->menu_selection==2) g->phase=SCORES;
             else { g->mode=g->menu_selection==1?ARCADE:MULTIPLAYER; g->phase=LOBBY; }
             g->sound_events|=SOUND_SELECT;
+        }
+        memcpy(g->previous,in,sizeof(g->previous)); return;
+    }
+    if(g->phase==OPTIONS) {
+        menu_step(g);
+        if(back || start) { g->phase=MENU; g->sound_events|=SOUND_BACK; }
+        else for(int p=0;p<2;p++) if(in[p].connected) {
+            int nav=direction(in[p].x);
+            if(nav && nav!=direction(g->previous[p].x)) {
+                g->flow_effect=(g->flow_effect+(nav>0?1:FLOW_COUNT-1))%FLOW_COUNT;
+                memset(g->tracers,0,sizeof(g->tracers));
+                g->scores_dirty=true; g->sound_events|=SOUND_SELECT; break;
+            }
         }
         memcpy(g->previous,in,sizeof(g->previous)); return;
     }
@@ -228,6 +269,7 @@ void game_step(Game *g,const Input physical[2]) {
     }
     fluid_dye_step(&g->fluid,STEP);
     ball_step(g);
+    game_flow_step(g);
     memcpy(g->previous,physical,sizeof(g->previous));
     if(g->mode==ARCADE) g->previous[1]=effective[1];
 }

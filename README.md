@@ -9,7 +9,7 @@ menu runs randomly seeded fluid currents
 and mixing colours across the entire screen, with a raised cyan/coral/gold PLASMA PONG 64
 block title and shadowed menu text over the fluid. The game screen omits the title;
 Player labels sit at matching insets from the court edges. Use up/down to choose
-**MULTI-PLAYER**, **SINGLE PLAYER**, or **HIGH SCORES**, then A or START to confirm.
+**MULTI-PLAYER**, **SINGLE PLAYER**, **HIGH SCORES**, or **OPTIONS**, then A or START to confirm.
 Press START in the lobby to begin.
 
 ## Controls
@@ -71,8 +71,7 @@ left/right to choose a letter and up/down to change it, then A or START to view
 the table and save. Return to the menu to start another run. The ROM requests
 **4K EEPROM** cartridge save storage, supported by compatible flash cartridges
 and emulators. Two versioned, checksummed records alternate writes; the previous
-complete record survives an interrupted update. Saving happens only after
-confirming initials, outside gameplay. If storage is unavailable or verification
+complete record survives an interrupted update. Saving happens after confirming initials or changing a flow option, outside gameplay. If storage is unavailable or verification
 fails, the score screen explicitly reports session-only scores. Cartridge save
 behavior still needs a SummerCart64 hardware playtest.
 
@@ -882,3 +881,41 @@ The host-model comparison in `build/confinement_compare/preview.html` provides
 It is not an emulator capture; the integer kernels are checked separately on RSP
 emulation. Logs, ROMs, per-frame CSVs and numeric summaries are retained in
 `build/confinement_compare/`. Hardware playtesting succeeded; hardware timing has not been measured.
+
+### Flow display options
+
+Choose **OPTIONS** from the main menu, then press left/right on the D-pad or
+stick to cycle **FLOW EFFECT** through **NONE**, **PARTICLES**, **PARTICLE TAILS**,
+and **SPEED**. B returns to the main menu. The animated background
+previews the selected effect. Each change automatically saves to cartridge EEPROM;
+missing storage or a failed write is shown in the options screen.
+
+Particles use 96 visual-only tracers sampled from the current velocity field at
+30 Hz, with periodic distributed respawns. Heads and tails are single framebuffer
+pixels, strongly tinted cyan, coral or gold by the dominant local dye (mixed/clear
+fluid uses a dim blue-grey). Four colour batches per layer keep render-state changes
+bounded; tinting reads one grid cell per particle without extra interpolation.
+Particle tails add two dim history
+markers, with an eight-arena-pixel maximum extent. They freeze with gameplay and
+do not change the fluid or ball physics. Speed brightness lifts the existing dye
+colours using an inexpensive velocity magnitude approximation; no extra fluid grid
+or texture is allocated. SPEED adds thin, dark screen-space brightness contours
+over the filtered background. It reuses the uploaded colour data, samples every
+second grid node, and caps contour submission at 900 horizontal spans per frame.
+The contour validation run held roughly 30 FPS in Ares with about 27 ms combined
+simulation/drawing work; this is a heavier effect than the particle modes.
+NONE preserves the original dye rendering.
+
+The version-2 EEPROM record preserves the two 144-byte slots and existing high
+scores. Version-1 saves load with flow effect NONE. Settings are retained when
+starting a new match or arcade run. `just smoke-flow` builds a separate scripted
+ROM cycling the effects every 450 simulation ticks with RDP validation enabled.
+Host checks cover navigation, save migration/corruption, tracer movement and pause,
+and identical physics with effects enabled. Hardware timing and visual tuning
+still require a console playtest.
+
+The flow-effect validation ROM completed a 68-second Ares run with all four modes,
+no RDP validation errors, and approximately 33.3 ms average frame intervals.
+The separate EEPROM fixture recovered both its score and PARTICLE TAILS setting
+after restart and verified a write to the alternate slot. These are emulator
+checks, not hardware measurements. Logs are in `build/flow-effects/`.

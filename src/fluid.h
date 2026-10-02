@@ -71,6 +71,8 @@ void fluid_project(Fluid *f);
 void fluid_sample(const Fluid *f, float x, float y, float *u, float *v);
 void fluid_splat(Fluid *f, float x, float y, float radius, float u, float v, float dye, int player);
 void fluid_pump(Fluid *f, float x, float y, float radius, float strength, float dt, int player);
+void fluid_speed_pixels(const Fluid *f, uint32_t *pixels, unsigned stride);
+uint32_t fluid_speed_color(const Fluid *f, int i);
 uint32_t fluid_color(const Fluid *f, int i);
 /* Write an RGBA32 texture; stride is in pixels and must be at least FW. */
 void fluid_pixels(const Fluid *f, uint32_t *pixels, unsigned stride);

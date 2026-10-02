@@ -38,7 +38,48 @@ static float gold_sum(const Fluid *f) {
 static float red_sum(const Fluid *f) {
     float sum=0; for(int i=0;i<FN;i++) sum+=fluid_ink_decode(fluid_dye(f)->red[i]); return sum;
 }
+static void flow_tests(void) {
+    static Game a,b;
+    Input input[2]={{.connected=true},{.connected=true}};
+    game_init(&a);
+    input[0].y=1; game_step(&a,input); assert(a.menu_selection==3);
+    input[0].y=0; input[0].a=true; game_step(&a,input); assert(a.phase==OPTIONS);
+    input[0].a=false; input[0].x=-1; game_step(&a,input);
+    assert(a.flow_effect==FLOW_SPEED && a.scores_dirty);
+    a.scores_dirty=false; game_step(&a,input); assert(!a.scores_dirty);
+    input[0].x=0; game_step(&a,input); input[0].x=1; game_step(&a,input);
+    assert(a.flow_effect==FLOW_NONE);
+    input[0].x=0; game_step(&a,input); input[0].x=1; game_step(&a,input);
+    assert(a.flow_effect==FLOW_PARTICLES);
+    input[0].x=0; input[0].b=true; game_step(&a,input); assert(a.phase==MENU);
+    a.phase=LOBBY; input[0].b=false; input[0].start=true; game_step(&a,input);
+    assert(a.phase==PLAY && a.flow_effect==FLOW_PARTICLES);
+    input[0].start=false;
+    b=a; b.flow_effect=FLOW_NONE;
+    for(int i=0;i<120;i++) { game_step(&a,input); game_step(&b,input); }
+    assert(!memcmp(&a.fluid,&b.fluid,sizeof(Fluid)) && a.bx==b.bx && a.by==b.by);
+    assert(a.menu_rng==b.menu_rng && a.arcade.rng==b.arcade.rng);
+    a.phase=PAUSED; FlowTracer saved[FLOW_TRACERS]; memcpy(saved,a.tracers,sizeof(saved));
+    game_step(&a,input); assert(!memcmp(saved,a.tracers,sizeof(saved)));
+    game_init(&a); a.flow_effect=FLOW_TAILS; game_flow_step(&a);
+    for(int i=0;i<FN;i++) fluid_velocity(&a.fluid)->u[i]=fluid_flow_encode(30);
+    a.tracers[0].x[0]=100; a.tracers[0].y[0]=100;
+    game_flow_step(&a); assert(fabsf(a.tracers[0].x[0]-101)<.001f && a.tracers[0].x[1]==100);
+    for(int i=0;i<400;i++) game_flow_step(&a);
+    for(int i=0;i<FLOW_TRACERS;i++) if(a.tracers[i].life) {
+        assert(a.tracers[i].x[0]>=0 && a.tracers[i].x[0]<ARENA_W);
+        assert(a.tracers[i].y[0]>=0 && a.tracers[i].y[0]<ARENA_H);
+    }
+    fluid_init(&a.fluid); uint32_t dark=fluid_color(&a.fluid,0);
+    assert(fluid_speed_color(&a.fluid,0)==dark);
+    fluid_velocity(&a.fluid)->u[0]=fluid_flow_encode(120);
+    uint32_t light=fluid_speed_color(&a.fluid,0); assert(light>dark);
+    fluid_velocity(&a.fluid)->u[0]=fluid_flow_encode(-120);
+    assert(fluid_speed_color(&a.fluid,0)==light);
+    puts("PASS: options navigation, effect retention, tracer transport/pause, visual-only physics, speed brightness");
+}
 int main(void) {
+    flow_tests();
     game_init(&g); Input idle[2]={0};
     assert(g.phase==MENU);
     for(int t=0;t<90;t++) game_step(&g,idle);

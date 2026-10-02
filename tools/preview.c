@@ -23,13 +23,18 @@ float label_width(const char *s) { return strlen(s)*4.2f; }
 void label_edge(float x,float y,int style,const char *s,bool right) {
     label(right?x-label_width(s):x,y,style,s);
 }
-void draw_fluid(const Fluid *f,float ox,float oy,float width,float height) {
+void draw_fluid(const Fluid *f,float ox,float oy,float width,float height,bool speed) {
     puts("<g shape-rendering='crispEdges'>");
-    for(int y=0;y<FH;y++) for(int x=0;x<FW;x++) rect(ox+x*width/FW,oy+y*height/FH,width/FW,height/FH,fluid_color(f,y*FW+x));
+    for(int y=0;y<FH;y++) for(int x=0;x<FW;x++) rect(ox+x*width/FW,oy+y*height/FH,width/FW,height/FH,(speed?fluid_speed_color(f,y*FW+x):fluid_color(f,y*FW+x)));
     puts("</g>");
+    if(speed) {
+        uint32_t pixels[FN]; fluid_speed_pixels(f,pixels,FW);
+        draw_flow_contours(pixels,FW,ox,oy,width,height);
+    }
 }
 int main(int argc,char **argv) {
     static Game g; game_init(&g); g.phase=LOBBY;
+    if(argc>3) g.flow_effect=(FlowEffect)(atoi(argv[3])%FLOW_COUNT);
     Input in[2]={{.connected=true,.start=true},{.connected=true}};
     game_step(&g,in); in[0].start=false;
     for(int t=0,ticks=argc>2?atoi(argv[2]):540;t<ticks;t++) {
@@ -66,6 +71,7 @@ int main(int argc,char **argv) {
         if(!strcmp(argv[1],"scores")) g.phase=SCORES;
         if(!strcmp(argv[1],"level")) g.arcade.transition=1;
     }
+    if(argc>1 && !strcmp(argv[1],"options")) { g.phase=OPTIONS; g.save_available=true; }
     puts("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 320 240' width='960' height='720'>");
     ui_draw(&g); puts("</svg>");
 }

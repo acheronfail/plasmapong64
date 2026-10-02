@@ -81,6 +81,9 @@ int main(void) {
     fluid_pixels(&f,pixels,64);
     for(int y=0;y<FH;y++) for(int x=0;x<64;x++)
         assert(pixels[y*64+x]==(x<FW?(fluid_color(&f,y*FW+x)<<8)|255:0x12345678));
+    fluid_speed_pixels(&f,pixels,64);
+    for(int y=0;y<FH;y++) for(int x=0;x<64;x++)
+        assert(pixels[y*64+x]==(x<FW?(fluid_speed_color(&f,y*FW+x)<<8)|255:0x12345678));
     /* Integer texture generation must agree with float color conversion to
        within one display level when fed the same decoded dye values. */
     for(int k=0;k<FN;k++) {

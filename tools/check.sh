@@ -49,3 +49,6 @@ cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -DPLASMAPONG_DYE_FIXED -DPLASMAP
 ./build/game-confinement-test
 cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -DPLASMAPONG_DYE_FIXED -DPLASMAPONG_VELOCITY_FIXED -DPLASMAPONG_CONFINEMENT_FIXED -Isrc src/game.c src/arcade.c src/fluid.c src/fluid_advection.c src/fluid_dye_fixed.c src/fluid_velocity_fixed.c src/fluid_confinement.c tests/arcade_test.c -lm -o build/arcade-confinement-test
 ./build/arcade-confinement-test
+
+cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic -Isrc src/fluid.c src/fluid_advection.c src/ui.c tests/contour_test.c -lm -o build/contour-test
+./build/contour-test

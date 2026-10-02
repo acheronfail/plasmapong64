@@ -97,11 +97,15 @@ float label_width(const char *s) {
     }
     return w;
 }
-void draw_fluid(const Fluid *f,float x,float y,float width,float height) {
+void draw_fluid(const Fluid *f,float x,float y,float width,float height,bool speed) {
     fill_mode=false;
     /* Generate all pixels together so bank selection and call overhead stay
        outside the cell loop. Preserve the padded RGBA32 upload layout. */
-    fluid_pixels(f,ink.buffer,ink.stride/sizeof(uint32_t));
+    if(speed) {
+        fluid_speed_pixels(f,ink.buffer,ink.stride/sizeof(uint32_t));
+    } else {
+        fluid_pixels(f,ink.buffer,ink.stride/sizeof(uint32_t));
+    }
     /* Geometry and texture address are constant until switching menu/court.
        Record upload/tiling commands once; pixel contents remain dynamic. The
        frame-start wait also makes freeing the previous block safe. */
@@ -115,6 +119,7 @@ void draw_fluid(const Fluid *f,float x,float y,float width,float height) {
         ink_blit=rspq_block_end();
     }
     rspq_block_run(ink_blit);
+    if(speed) draw_flow_contours(ink.buffer,ink.stride/sizeof(uint32_t),x,y,width,height);
 }
 int main(void) {
     debug_init_isviewer(); debug_init_emulog(); timer_init(); joypad_init();
@@ -233,7 +238,9 @@ int main(void) {
            freeing a blit block. The simulation above can run alongside RDP. */
         rspq_wait();
         fill_mode=false;
-        rdpq_attach(frame,NULL); ui_draw(&game); rdpq_detach_show();
+        rdpq_attach(frame,NULL);
+        ui_draw(&game);
+        rdpq_detach_show();
         draw_ticks+=get_ticks()-draw_begin;
         if(++draw_frames==150) {
             debugf("Plasma Pong 64: draw average %llu us/frame\n",

@@ -1,6 +1,13 @@
 /* Explicit test-ROM-only controller replay. */
 static void smoke_input(Game *g,Input in[2]) {
     static unsigned tick;
+#ifdef PLASMAPONG_SMOKE_FLOW
+    if(tick%450==0) {
+        g->flow_effect=(FlowEffect)((tick/450)%FLOW_COUNT);
+        memset(g->tracers,0,sizeof(g->tracers));
+        debugf("FLOW SMOKE: effect %u\n",(unsigned)g->flow_effect);
+    }
+#endif
     for(int p=0;p<2;p++) {
         in[p]=(Input){.connected=true,.x=sinf(tick*.021f+p),
             .y=sinf(tick*.037f+p*2.4f),.z=tick%110<90,.a=(tick+40*p)%145>118};

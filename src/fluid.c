@@ -320,3 +320,30 @@ void fluid_pixels(const Fluid *f,uint32_t *pixels,unsigned stride) {
     for(int y=0;y<FH;y++) for(int x=0;x<FW;x++)
         pixels[y*stride+x]=(dye_color(ink_grid,y*FW+x)<<8)|255;
 }
+
+static inline uint32_t speed_color(const FluidInk *ink,const FluidFlow *flow,int k) {
+    uint32_t c=dye_color(ink,k);
+#ifdef PLASMAPONG_VELOCITY_FIXED
+    int u=flow->u[k],v=flow->v[k];
+    u=u<0?-u:u; v=v<0?-v:v;
+    int speed=(u>v?u+v/2:v+u/2)/VELOCITY_SCALE;
+#else
+    int u=(int)fabsf(fluid_flow_decode(flow->u[k]));
+    int v=(int)fabsf(fluid_flow_decode(flow->v[k]));
+    int speed=u>v?u+v/2:v+u/2;
+#endif
+    int boost=speed>240?112:speed*112/240;
+    /* Lift towards white: moving clear fluid is visible, hue is retained. */
+    int r=(c>>16)&255,g=(c>>8)&255,b=c&255;
+    r+=((255-r)*boost)>>8; g+=((255-g)*boost)>>8; b+=((255-b)*boost)>>8;
+    return (uint32_t)(r<<16|g<<8|b);
+}
+
+uint32_t fluid_speed_color(const Fluid *f,int k) {
+    return speed_color(fluid_dye(f),fluid_velocity(f),k);
+}
+void fluid_speed_pixels(const Fluid *f,uint32_t *pixels,unsigned stride) {
+    const FluidInk *ink=fluid_dye(f); const FluidFlow *flow=fluid_velocity(f);
+    for(int y=0;y<FH;y++) for(int x=0;x<FW;x++)
+        pixels[y*stride+x]=(speed_color(ink,flow,y*FW+x)<<8)|255;
+}

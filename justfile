@@ -96,3 +96,7 @@ deploy-confinement: confinement
 
 benchmark-confinement:
     ./tools/build-rom.sh -j4 CONFINEMENT_RSP=1 CONFINEMENT_TEST=1 VELOCITY_TEST=1 DYE_TEST=1 RSP_TEST=1 SMOKE=1 FLUID_PROFILE=1 ROM=plasmapong-confinement-benchmark BUILD_DIR=build/confinement_benchmark
+
+# Cycle all four flow effects during scripted play with RDP validation.
+smoke-flow:
+    ./tools/build-rom.sh -j4 SMOKE_FLOW=1 RDP_VALIDATE=1 ROM=plasmapong-flow-smoke BUILD_DIR=build/flow_smoke
