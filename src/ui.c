@@ -56,11 +56,10 @@ static void name_entry(const Game *g,float y) {
         char letter[]={initials[i],0};
         float w=label_width(letter);
         bool selected=i==g->initial_cursor;
-        if(selected) {
-            rect(x-1,y-9,w+2,11,CYAN);
-            rect(x-1,y+3,w+2,1,CYAN);
-        }
-        label(x,y,selected?5:2,letter);
+        /* Keep the glyph bright: dark text merges with the built-in outline.
+           Put the selection marker below it so every stroke stays visible. */
+        label(x,y,selected?4:2,letter);
+        if(selected) rect(x-1,y+3,w+2,2,CYAN);
         x+=w+4;
     }
 }
