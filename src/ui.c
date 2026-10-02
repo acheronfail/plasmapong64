@@ -182,8 +182,14 @@ void ui_draw(const Game *g) {
             rect(x-1,y-1,2,2,hot?0xff3030:0x556b84);
         }
     }
-    rect(bx-4,by-4,8,8,hot?0x8c1724:g->held<0?0x447486:0xffd875);
-    rect(bx-2,by-3,4,6,hot?0xff3030:WHITE); rect(bx-3,by-2,6,4,hot?0xff3030:WHITE);
+    /* An eight-pixel filled circle, snapped so its strips share pixel edges. */
+    float ball_x=roundf(bx),ball_y=roundf(by);
+    uint32_t ball_color=hot?0xff3030:WHITE;
+    rect(ball_x-2,ball_y-4,4,1,ball_color);
+    rect(ball_x-3,ball_y-3,6,1,ball_color);
+    rect(ball_x-4,ball_y-2,8,4,ball_color);
+    rect(ball_x-3,ball_y+2,6,1,ball_color);
+    rect(ball_x-2,ball_y+3,4,1,ball_color);
     if(g->phase==LOBBY) {
         if(g->mode==ARCADE) {
             if(!g->connected[0]) panel("ONE PLAYER REQUIRED","Connect a pad to port 1","[START] PLAY  [B] MENU");
