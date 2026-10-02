@@ -81,10 +81,16 @@ badges. The ROM still requires two connected emulated N64 pads.
   Bats stay in their own end of the court. Time accumulation supports PAL and
   NTSC; catch-up is capped after long stalls.
 - `src/main.c`: libdragon input and 320 × 240 RDP rendering. Dye is uploaded as a
-  small RGBA16 texture and enlarged with bilinear filtering. RDP completion is
+  small RGBA32 texture and enlarged with bilinear filtering. Keeping eight bits
+  per colour channel until filtering reduces gradient quantization compared with
+  the former RGBA16 upload; the framebuffer remains 16-bit. Padded texture rows
+  avoid RGBA32 block-upload artifacts in the pinned libdragon version, and
+  filtered tile overlaps keep chunk boundaries smooth. RDP completion is
   synchronized before reusing texture memory. Game state occupies about 64 KB;
   the ROM does not require an Expansion Pak. Emulator debug output reports the
-  average simulation cost every 150 active steps.
+  average simulation cost every 150 active steps and draw cost every 150 frames.
+  The fluid source uses `-O3` on N64, and shared timestep/radius factors are
+  calculated outside its cell loops to leave more CPU time for rendering.
 - `src/ui.c`: animated main menu, score, controls, bat effects, and lobby/pause/winner screens.
 - `src/sound.c`: 16 kHz stereo sample mixer with separate one-shot and sustained
   voices, player panning, quiet loops, and click-resistant gain fades. Game events
@@ -110,9 +116,13 @@ previews, not emulator captures.
 
 The normal ROM boots to the animated main menu in the existing Ares checkout with
 paraLLEl-RDP. The separate scripted-input ROM also runs gameplay and renders the
-fluid correctly; its measured simulation cost averages about 31.3–31.5 ms per
-30 Hz step in Ares (33.3 ms budget), excluding rendering. AddressSanitizer and
-UndefinedBehaviorSanitizer also pass the host test suite.
+fluid correctly. After the fluid optimizations, its measured simulation cost is
+about 30.1–30.3 ms per 30 Hz step in Ares, versus 31.4–31.6 ms before. Drawing
+costs another 6.2 ms per rendered frame with RGBA32, comparable to 6.4 ms with
+RGBA16 in the same test. These are separate costs, not a guarantee of sustained
+30 FPS within the 33.3 ms frame budget. The spatial grid stays at 48 × 30 to avoid
+adding simulation load. AddressSanitizer and UndefinedBehaviorSanitizer pass the
+host gameplay suite (leak detection disabled in the sandbox).
 Real-console frame rate, controller feel, and balance still need a two-player
 SummerCart64 playtest. Scores are not saved between sessions.
 

@@ -52,11 +52,12 @@ void fluid_project(Fluid *f) {
     walls(f);
 }
 void fluid_splat(Fluid *f,float x,float y,float radius,float u,float v,float dye,int player) {
+    const float inv_radius2=1/(radius*radius);
     int x0=(int)clampf((x-radius)/CELL,0,FW-1),x1=(int)clampf((x+radius)/CELL,0,FW-1);
     int y0=(int)clampf((y-radius)/CELL,0,FH-1),y1=(int)clampf((y+radius)/CELL,0,FH-1);
     for(int iy=y0;iy<=y1;iy++) for(int ix=x0;ix<=x1;ix++) {
         float dx=(ix+.5f)*CELL-x,dy=(iy+.5f)*CELL-y;
-        float w=maxf(0,1-(dx*dx+dy*dy)/(radius*radius)); w*=w;
+        float w=maxf(0,1-(dx*dx+dy*dy)*inv_radius2); w*=w;
         int k=iy*FW+ix;
         f->u[k]=clampf(f->u[k]+u*w,-420,420); f->v[k]=clampf(f->v[k]+v*w,-420,420);
         float *ink=player?f->red:f->blue;
@@ -64,6 +65,7 @@ void fluid_splat(Fluid *f,float x,float y,float radius,float u,float v,float dye
     }
 }
 void fluid_pump(Fluid *f,float x,float y,float radius,float strength,float dt,int player) {
+    const float inv_radius2=1/(radius*radius);
     /* A pump is an intentional local source/sink. Apply after projection, so
        pressure does not immediately cancel suction; next step redistributes it. */
     int x0=(int)clampf((x-radius)/CELL,0,FW-1),x1=(int)clampf((x+radius)/CELL,0,FW-1);
@@ -71,21 +73,23 @@ void fluid_pump(Fluid *f,float x,float y,float radius,float strength,float dt,in
     for(int iy=y0;iy<=y1;iy++) for(int ix=x0;ix<=x1;ix++) {
         float dx=(ix+.5f)*CELL-x,dy=(iy+.5f)*CELL-y,d2=dx*dx+dy*dy;
         if(d2>=radius*radius) continue;
-        float d=sqrtf(d2+9),w=1-d2/(radius*radius);
+        float w=1-d2*inv_radius2;
+        float force=strength*w*dt/sqrtf(d2+9);
         int k=iy*FW+ix;
-        f->u[k]=clampf(f->u[k]+dx/d*strength*w*dt,-420,420);
-        f->v[k]=clampf(f->v[k]+dy/d*strength*w*dt,-420,420);
+        f->u[k]=clampf(f->u[k]+dx*force,-420,420);
+        f->v[k]=clampf(f->v[k]+dy*force,-420,420);
         float *ink=player?f->red:f->blue;
         if(strength>0) ink[k]=minf(3,ink[k]+strength*dt*.0015f*w);
     }
 }
 void fluid_velocity_step(Fluid *f,float dt) {
+    const float grid_dt=dt/CELL,decay=1-.16f*dt;
     /* Semi-Lagrangian advection: bounded even during a strong jet. */
     for(int y=0;y<FH;y++) for(int x=0;x<FW;x++) {
         int k=y*FW+x;
-        float px=x-dt*f->u[k]/CELL,py=y-dt*f->v[k]/CELL;
+        float px=x-grid_dt*f->u[k],py=y-grid_dt*f->v[k];
         sample_pair(f->u,f->v,px,py,&f->tu[k],&f->tv[k]);
-        f->tu[k]*=1-.16f*dt; f->tv[k]*=1-.16f*dt;
+        f->tu[k]*=decay; f->tv[k]*=decay;
     }
     memcpy(f->u,f->tu,sizeof(f->u)); memcpy(f->v,f->tv,sizeof(f->v));
     /* Curl confinement returns small vortices lost to coarse-grid advection. */
@@ -104,17 +108,18 @@ void fluid_velocity_step(Fluid *f,float dt) {
     fluid_project(f);
 }
 void fluid_dye_step(Fluid *f,float dt) {
+    const float grid_dt=dt/CELL,decay=1-.22f*dt,gold_decay=1-1.1f*dt;
     for(int y=0;y<FH;y++) for(int x=0;x<FW;x++) {
         int k=y*FW+x;
-        float px=x-dt*f->u[k]/CELL,py=y-dt*f->v[k]/CELL;
+        float px=x-grid_dt*f->u[k],py=y-grid_dt*f->v[k];
         px=clampf(px,0,FW-1.001f); py=clampf(py,0,FH-1.001f);
         int ix=(int)px,iy=(int)py,j=iy*FW+ix;
         float tx=px-ix,ty=py-iy;
         float w0=(1-tx)*(1-ty),w1=tx*(1-ty),w2=(1-tx)*ty,w3=tx*ty;
-        f->tr[k]=(f->red[j]*w0+f->red[j+1]*w1+f->red[j+FW]*w2+f->red[j+FW+1]*w3)*(1-.22f*dt);
-        f->tb[k]=(f->blue[j]*w0+f->blue[j+1]*w1+f->blue[j+FW]*w2+f->blue[j+FW+1]*w3)*(1-.22f*dt);
+        f->tr[k]=(f->red[j]*w0+f->red[j+1]*w1+f->red[j+FW]*w2+f->red[j+FW+1]*w3)*decay;
+        f->tb[k]=(f->blue[j]*w0+f->blue[j+1]*w1+f->blue[j+FW]*w2+f->blue[j+FW+1]*w3)*decay;
         /* Velocity scratch is free now; reuse it for the third dye channel. */
-        f->tu[k]=(f->gold[j]*w0+f->gold[j+1]*w1+f->gold[j+FW]*w2+f->gold[j+FW+1]*w3)*(1-1.1f*dt);
+        f->tu[k]=(f->gold[j]*w0+f->gold[j+1]*w1+f->gold[j+FW]*w2+f->gold[j+FW+1]*w3)*gold_decay;
     }
     memcpy(f->red,f->tr,sizeof(f->red)); memcpy(f->blue,f->tb,sizeof(f->blue));
     memcpy(f->gold,f->tu,sizeof(f->gold));

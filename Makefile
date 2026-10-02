@@ -7,6 +7,8 @@ endif
 include $(N64_INST)/include/n64.mk
 src := src/main.c src/game.c src/fluid.c src/ui.c src/sound.c
 N64_CFLAGS += -Wall -Wextra -Werror
+# Inline the fluid sampling loops without expanding the rest of the ROM.
+$(BUILD_DIR)/src/fluid.o: CFLAGS += -O3
 ifeq ($(SMOKE),1)
 N64_CFLAGS += -DPLASMAPONG_SMOKE
 endif

@@ -28,26 +28,32 @@ float label_width(const char *s) {
     return w;
 }
 void draw_fluid(const Fluid *f,float x,float y,float width,float height) {
-    uint16_t *pixels=ink.buffer;
-    for(int i=0;i<FN;i++) {
-        uint32_t c=fluid_color(f,i);
-        pixels[i]=((c>>19)&31)<<11 | ((c>>11)&31)<<6 | ((c>>3)&31)<<1 | 1;
+    uint32_t *pixels=ink.buffer;
+    for(int row=0;row<FH;row++) for(int col=0;col<FW;col++) {
+        uint32_t c=fluid_color(f,row*FW+col);
+        /* Preserve faint dye gradients before the RDP filters and dithers
+           them into the 16-bit framebuffer. */
+        pixels[row*(ink.stride/sizeof(*pixels))+col]=(c<<8)|255;
     }
     rdpq_set_mode_standard(); rdpq_mode_filter(FILTER_BILINEAR);
-    rdpq_tex_blit(&ink,x,y,&(rdpq_blitparms_t){.scale_x=width/FW,.scale_y=height/FH});
+    rdpq_tex_blit(&ink,x,y,&(rdpq_blitparms_t){
+        .width=FW,.height=FH,.scale_x=width/FW,.scale_y=height/FH,.filtering=true});
 }
 int main(void) {
     debug_init_isviewer(); debug_init_emulog(); timer_init(); joypad_init();
     display_init(RESOLUTION_320x240,DEPTH_16_BPP,3,GAMMA_NONE,FILTERS_RESAMPLE);
     audio_init(SOUND_RATE,4); sound_init(&sound,audio_get_frequency());
     audio_set_buffer_callback(fill_audio); audio_write_silence();
-    rdpq_init(); ink=surface_alloc(FMT_RGBA16,FW,FH);
+    /* Pad rows so partial-width uploads use LoadTile. The pinned libdragon's
+       RGBA32 LoadBlock path corrupts this non-power-of-two texture width. */
+    rdpq_init(); ink=surface_alloc(FMT_RGBA32,64,FH);
     rdpq_font_t *font=rdpq_font_load_builtin(FONT_BUILTIN_DEBUG_VAR);
     const uint32_t colors[]={0xeaf6ff,0xa0b3c9,0x48dcff,0xff637e,0xffffff,0x02040a,0x737d8a};
     for(int i=0;i<7;i++) rdpq_font_style(font,i,&(rdpq_fontstyle_t){.color=color(colors[i])});
     rdpq_text_register_font(1,font); game_init(&game); game.menu_rng=(uint32_t)get_ticks();
     uint64_t previous=get_ticks(); float accumulator=0;
     uint64_t sim_ticks=0; unsigned sim_steps=0;
+    uint64_t draw_ticks=0; unsigned draw_frames=0;
     debugf("Plasma Pong: ready, %u-byte game state\n",(unsigned)sizeof(game));
     while(1) {
         surface_t *frame=display_get();
@@ -82,8 +88,15 @@ int main(void) {
                 }
             }
         }
+        uint64_t draw_begin=get_ticks();
         rdpq_attach(frame,NULL); ui_draw(&game); rdpq_detach_show();
         /* The CPU updates a shared dye texture next frame. Wait for its RDP read. */
         rspq_wait();
+        draw_ticks+=get_ticks()-draw_begin;
+        if(++draw_frames==150) {
+            debugf("Plasma Pong: draw average %llu us/frame\n",
+                (unsigned long long)(TIMER_MICROS_LL(draw_ticks)/draw_frames));
+            draw_ticks=0; draw_frames=0;
+        }
     }
 }
