@@ -6,8 +6,8 @@
 #define BAT_HALF 14.0f
 #define BALL_RADIUS 3.0f
 #define SUCTION_CHARGE_TICKS 30u
-/* Round 1000ms + 150ms up to the next 30Hz simulation tick. */
-#define SUCTION_BREAK_TICKS 35u
+/* Two ticks (about 67ms) to release at full charge before breaking. */
+#define SUCTION_BREAK_TICKS (SUCTION_CHARGE_TICKS+2u)
 #define SUCTION_COOLDOWN_TICKS 150u
 typedef struct { bool connected,a,z,start,b; float x,y; } Input;
 typedef struct {

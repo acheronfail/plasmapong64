@@ -19,7 +19,7 @@ Press START in the lobby to begin.
 | Analog stick / D-pad | Move your bat vertically and a short distance forwards/backwards |
 | Hold Z | Fire a continuous coloured fluid jet towards the opponent |
 | Hold A | Suck nearby fluid towards your bat; catch a nearby ball if it is slow enough |
-| Release A | Burst fluid outwards and launch a caught ball; fluid burst strength and forward ball launch speed are proportional to charge, reaching full strength after holding A for one second |
+| Release A | Burst fluid outwards and launch a caught ball; charge for one second and release during the brief green bar for a bonus-speed shot |
 | START | Confirm menu selection, start, pause/resume, or multiplayer rematch |
 | Up/down, then A on the main menu | Choose a mode or view high scores |
 | B in the lobby, pause, or winner screen | Return to the main menu |
@@ -31,9 +31,11 @@ bat's vertical motion. Z and A can be used together. Unplugging a required
 controller pauses the match; reconnect it and press START to resume. Arcade mode
 ignores controller 2 during a run.
 
-At one second of suction, the full charge bar turns red. Release within the
-next 150ms or the suction mechanism breaks with a crack and sputter (at 1.167s,
-the first 30Hz tick after the deadline). The bat turns grey with red cracks and
+Fluid burst strength scales with charge. Undercharged ball launches scale up to
+200 speed (198 at 99% charge). At one second of suction, the full charge bar turns
+green: release during this two-tick window (about 67ms) for a 290-speed shot.
+Holding until 1.067s breaks the suction mechanism with a crack and sputter.
+The bat turns grey with red cracks and
 a shrinking cooldown bar for five seconds of active play. Movement and Z jets
 still work. A caught ball drops into the current without a launch or fluid burst.
 Release A before suction can restart; pauses and level transitions freeze recovery.

@@ -219,7 +219,8 @@ void game_step(Game *g,const Input physical[2]) {
                         b->vy*.35f*b->charge,b->charge,p);
             if(g->held==p) {
                 g->held=-1; g->bx=b->x+dir*9; g->by=b->y;
-                g->bvx=dir*250*b->charge; g->bvy=b->vy*.55f;
+                /* Perfect timing earns a clear jump to the ball's speed cap. */
+                g->bvx=dir*(b->charge>=1?290:200*b->charge); g->bvy=b->vy*.55f;
             }
             b->charge=0; b->suction_ticks=0;
         }

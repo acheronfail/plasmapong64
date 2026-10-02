@@ -110,7 +110,8 @@ int main(void) {
             g.held=p;
             in[p].a=false; game_step(&g,in);
             assert(g.held==-1);
-            assert(fabsf(g.bvx-(p?-1:1)*250*hold_ticks[h]*STEP)<.001f);
+            float launch=hold_ticks[h]==30?290:200*hold_ticks[h]*STEP;
+            assert(fabsf(g.bvx-(p?-1:1)*launch)<.001f);
             release_energy[h]=energy(&g.fluid);
             fluid_sample(&g.fluid,g.bat[p].x+(p?-22:22),g.bat[p].y+24,&u,&v);
             release_speed[h]=fabsf(u);
@@ -129,7 +130,24 @@ int main(void) {
         for(int t=0;t<60;t++) game_step(&g,in);
         assert(tap_energy<energy(&g.fluid));
     }
-    /* Full charge has a five-tick grace window; breaking drops into the flow
+    /* Both green ticks give the perfect bonus, with a sharp jump from the
+       last undercharged tick. The following held tick breaks instead. */
+    for(int p=0;p<2;p++) {
+        for(unsigned ticks=SUCTION_CHARGE_TICKS-1;ticks<SUCTION_BREAK_TICKS;ticks++) {
+            ready(); g.serve=100; g.held=p; in[p].a=true;
+            for(unsigned t=0;t<ticks;t++) game_step(&g,in);
+            in[p].a=false; game_step(&g,in);
+            float speed=g.bvx*(p?-1:1);
+            assert(g.held==-1 && !g.bat[p].cooldown_ticks);
+            if(ticks<SUCTION_CHARGE_TICKS) assert(speed>190 && speed<200);
+            else assert(speed==290);
+        }
+        /* Exact 99% also stays below the bonus, even off the tick grid. */
+        ready(); g.serve=100; g.held=p;
+        g.bat[p].sucking=true; g.bat[p].charge=.99f;
+        game_step(&g,in); assert(fabsf(g.bvx*(p?-1:1)-198)<.001f);
+    }
+    /* Full charge has a two-tick grace window; breaking drops into the flow
        without injecting a burst, then locks suction for 150 active ticks. */
     for(int p=0;p<2;p++) for(int caught=0;caught<2;caught++) {
         ready(); g.serve=100; in[p].a=true;

@@ -154,7 +154,7 @@ void ui_draw(const Game *g) {
         float x=OX+b->x,y=OY+b->y;
         if(b->sucking) {
             ring(x,y,24+2*sinf(g->elapsed*7),c);
-            rect(x-9,y+BAT_HALF+5,18*b->charge,2,b->charge>=1?0xff3030:c);
+            rect(x-9,y+BAT_HALF+5,18*b->charge,2,b->charge>=1?0x40ff70:c);
         }
         if(b->burst>0) ring(x,y,12+(1-b->burst/.25f)*30,c);
         rect(x-5,y-BAT_HALF-2,10,BAT_HALF*2+4,broken?0x36323c:p?0x642739:0x164658);
