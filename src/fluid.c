@@ -321,8 +321,7 @@ void fluid_pixels(const Fluid *f,uint32_t *pixels,unsigned stride) {
         pixels[y*stride+x]=(dye_color(ink_grid,y*FW+x)<<8)|255;
 }
 
-static inline uint32_t speed_color(const FluidInk *ink,const FluidFlow *flow,int k) {
-    uint32_t c=dye_color(ink,k);
+static inline uint32_t speed_color(const FluidFlow *flow,int k) {
 #ifdef PLASMAPONG_VELOCITY_FIXED
     int u=flow->u[k],v=flow->v[k];
     u=u<0?-u:u; v=v<0?-v:v;
@@ -332,18 +331,30 @@ static inline uint32_t speed_color(const FluidInk *ink,const FluidFlow *flow,int
     int v=(int)fabsf(fluid_flow_decode(flow->v[k]));
     int speed=u>v?u+v/2:v+u/2;
 #endif
-    int boost=speed>240?112:speed*112/240;
-    /* Lift towards white: moving clear fluid is visible, hue is retained. */
-    int r=(c>>16)&255,g=(c>>8)&255,b=c&255;
-    r+=((255-r)*boost)>>8; g+=((255-g)*boost)>>8; b+=((255-b)*boost)>>8;
-    return (uint32_t)(r<<16|g<<8|b);
+    /* Fixed speed stops (pixels/second): 0, 16, 32, 64, 128, 256.
+       Wider high-speed bands retain detail in weak currents. No dye dependency,
+       auto-exposure, square root, or per-cell division is needed. */
+    static const uint32_t colors[]={0x050916,0x244bce,0x17bdd4,0x35cb63,0xf3cf3a,0xf04b36};
+    if(speed>=256) return colors[5];
+    unsigned band,base,shift;
+    if(speed<16) { band=0; base=0; shift=4; }
+    else if(speed<32) { band=1; base=16; shift=4; }
+    else if(speed<64) { band=2; base=32; shift=5; }
+    else if(speed<128) { band=3; base=64; shift=6; }
+    else { band=4; base=128; shift=7; }
+    unsigned t=((unsigned)speed-base)<<(8-shift);
+    uint32_t a=colors[band],b=colors[band+1];
+    unsigned r=(((a>>16)&255)*(256-t)+((b>>16)&255)*t)>>8;
+    unsigned g=(((a>>8)&255)*(256-t)+((b>>8)&255)*t)>>8;
+    unsigned blue=((a&255)*(256-t)+(b&255)*t)>>8;
+    return (r<<16)|(g<<8)|blue;
 }
 
 uint32_t fluid_speed_color(const Fluid *f,int k) {
-    return speed_color(fluid_dye(f),fluid_velocity(f),k);
+    return speed_color(fluid_velocity(f),k);
 }
 void fluid_speed_pixels(const Fluid *f,uint32_t *pixels,unsigned stride) {
-    const FluidInk *ink=fluid_dye(f); const FluidFlow *flow=fluid_velocity(f);
+    const FluidFlow *flow=fluid_velocity(f);
     for(int y=0;y<FH;y++) for(int x=0;x<FW;x++)
-        pixels[y*stride+x]=(speed_color(ink,flow,y*FW+x)<<8)|255;
+        pixels[y*stride+x]=(speed_color(flow,y*FW+x)<<8)|255;
 }

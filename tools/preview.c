@@ -27,10 +27,6 @@ void draw_fluid(const Fluid *f,float ox,float oy,float width,float height,bool s
     puts("<g shape-rendering='crispEdges'>");
     for(int y=0;y<FH;y++) for(int x=0;x<FW;x++) rect(ox+x*width/FW,oy+y*height/FH,width/FW,height/FH,(speed?fluid_speed_color(f,y*FW+x):fluid_color(f,y*FW+x)));
     puts("</g>");
-    if(speed) {
-        uint32_t pixels[FN]; fluid_speed_pixels(f,pixels,FW);
-        draw_flow_contours(pixels,FW,ox,oy,width,height);
-    }
 }
 int main(int argc,char **argv) {
     static Game g; game_init(&g); g.phase=LOBBY;

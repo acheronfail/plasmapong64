@@ -76,7 +76,23 @@ static void flow_tests(void) {
     uint32_t light=fluid_speed_color(&a.fluid,0); assert(light>dark);
     fluid_velocity(&a.fluid)->u[0]=fluid_flow_encode(-120);
     assert(fluid_speed_color(&a.fluid,0)==light);
-    puts("PASS: options navigation, effect retention, tracer transport/pause, visual-only physics, speed brightness");
+    const int speeds[]={0,16,32,64,128,256,512};
+    const uint32_t colors[]={0x050916,0x244bce,0x17bdd4,0x35cb63,0xf3cf3a,0xf04b36,0xf04b36};
+    for(unsigned i=0;i<sizeof(speeds)/sizeof(speeds[0]);i++) {
+        fluid_velocity(&a.fluid)->u[0]=fluid_flow_encode(speeds[i]);
+        assert(fluid_speed_color(&a.fluid,0)==colors[i]);
+        fluid_velocity(&a.fluid)->u[0]=fluid_flow_encode(-speeds[i]);
+        assert(fluid_speed_color(&a.fluid,0)==colors[i]);
+    }
+    fluid_velocity(&a.fluid)->u[0]=fluid_flow_encode(8);
+    assert(fluid_speed_color(&a.fluid,0)==0x142a72); /* Interpolated, not banded. */
+    fluid_velocity(&a.fluid)->u[0]=fluid_flow_encode(32);
+    fluid_velocity(&a.fluid)->v[0]=fluid_flow_encode(32);
+    assert(fluid_speed_color(&a.fluid,0)==0x26c49b);
+    fluid_velocity(&a.fluid)->u[0]=fluid_flow_encode(512);
+    fluid_dye(&a.fluid)->red[0]=fluid_ink_encode(2);
+    assert(fluid_speed_color(&a.fluid,0)==colors[6]);
+    puts("PASS: options navigation, effect retention, tracer transport/pause, visual-only physics, speed spectrum");
 }
 int main(void) {
     flow_tests();

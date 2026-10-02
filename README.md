@@ -897,13 +897,13 @@ fluid uses a dim blue-grey). Four colour batches per layer keep render-state cha
 bounded; tinting reads one grid cell per particle without extra interpolation.
 Particle tails add two dim history
 markers, with an eight-arena-pixel maximum extent. They freeze with gameplay and
-do not change the fluid or ball physics. Speed brightness lifts the existing dye
-colours using an inexpensive velocity magnitude approximation; no extra fluid grid
-or texture is allocated. SPEED adds thin, dark screen-space brightness contours
-over the filtered background. It reuses the uploaded colour data, samples every
-second grid node, and caps contour submission at 900 horizontal spans per frame.
-The contour validation run held roughly 30 FPS in Ares with about 27 ms combined
-simulation/drawing work; this is a heavier effect than the particle modes.
+do not change the fluid or ball physics. SPEED maps velocity magnitude to a fixed
+colour spectrum: dark navy at rest, blue at 16, cyan at 32, green at 64, yellow
+at 128, and red at 256 or more arena pixels/second. The magnitude is the existing
+inexpensive max-plus-half-min approximation. Integer interpolation provides
+smooth transitions, with wider high-speed bands to expose weaker currents.
+Colours depend only on velocity, so dye concentration cannot hide fast flow.
+SPEED uses the existing texture upload, with no contour overlay or extra texture.
 NONE preserves the original dye rendering.
 
 The version-2 EEPROM record preserves the two 144-byte slots and existing high
@@ -919,3 +919,9 @@ no RDP validation errors, and approximately 33.3 ms average frame intervals.
 The separate EEPROM fixture recovered both its score and PARTICLE TAILS setting
 after restart and verified a write to the alternate slot. These are emulator
 checks, not hardware measurements. Logs are in `build/flow-effects/`.
+
+After removing contours and switching SPEED to the velocity spectrum, its drawing
+cost measured about 3.6 ms/frame in Ares with RDP validation enabled, versus about
+13.4 ms with contours. The 68-second validation run maintained approximately
+33.3 ms frame intervals with no RDP validation errors; hardware timing is untested.
+The log is `build/flow-effects/spectrum-emulator.log`.

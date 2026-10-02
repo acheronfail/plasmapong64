@@ -119,7 +119,6 @@ void draw_fluid(const Fluid *f,float x,float y,float width,float height,bool spe
         ink_blit=rspq_block_end();
     }
     rspq_block_run(ink_blit);
-    if(speed) draw_flow_contours(ink.buffer,ink.stride/sizeof(uint32_t),x,y,width,height);
 }
 int main(void) {
     debug_init_isviewer(); debug_init_emulog(); timer_init(); joypad_init();

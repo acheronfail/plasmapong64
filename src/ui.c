@@ -2,7 +2,6 @@
 #include "draw.h"
 #include <math.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #define OX 16
 #define OY 34
@@ -106,71 +105,6 @@ static void court(void) {
     rect(OX,OY-2,ARENA_W,1,0x304c65); rect(OX,OY+ARENA_H,ARENA_W,1,0x304c65);
     for(int y=OY+5;y<OY+ARENA_H-3;y+=12) rect(OX+ARENA_W*.5f-1,y,1,4,0x23374e);
     rect(OX-3,OY,2,ARENA_H,0x24566c); rect(OX+ARENA_W+1,OY,2,ARENA_H,0x71334c);
-}
-/* Thin screen-space contours avoid enlarging a one-texel outline to six pixels.
-   Trace brightness isolines with marching squares; shared edge interpolation
-   makes neighboring segments meet. A fixed rectangle budget bounds submission. */
-static void contour_segment(float ax,float ay,float bx,float by,uint32_t color,unsigned *budget) {
-    int x=(int)ax,y=(int)ay,ex=(int)bx,ey=(int)by;
-    int dx=abs(ex-x),dy=abs(ey-y),sx=x<ex?1:-1,sy=y<ey?1:-1,error=dx-dy;
-    while(*budget) {
-        int start=x,row=y;
-        /* Merge adjacent pixels on a row into one rectangle. */
-        for(;;) {
-            if(x==ex && y==ey) {
-                rect(minf(start,x),row,abs(x-start)+1,1,color); --*budget; return;
-            }
-            int twice=2*error,nx=x,ny=y;
-            if(twice>-dy) { error-=dy; nx+=sx; }
-            if(twice<dx) { error+=dx; ny+=sy; }
-            if(ny!=row) {
-                rect(minf(start,x),row,abs(x-start)+1,1,color); --*budget;
-                x=nx; y=ny; break;
-            }
-            x=nx; y=ny;
-        }
-    }
-}
-void draw_flow_contours(const uint32_t *pixels,unsigned stride,float ox,float oy,float w,float h) {
-    uint8_t light[FN];
-    for(int y=0;y<FH;y++) for(int x=0;x<FW;x++) {
-        int k=y*FW+x; uint32_t c=pixels[y*stride+x]>>8;
-        light[k]=(((c>>16)&255)+2*((c>>8)&255)+(c&255))/4;
-    }
-    static const int levels[]={40,80};
-    unsigned budget=900;
-    float cell_w=w/FW,cell_h=h/FH;
-    for(int l=0;l<2;l++) {
-        int level=levels[l];
-        /* Every second grid node keeps CPU work low. The final short column
-           still reaches the last sample; lines remain one screen pixel wide. */
-        for(int y=0;y<FH-1;y+=2) for(int x=0;x<FW-1;x+=2) {
-            int sx=x+2<FW?2:1,sy=y+2<FH?2:1,k=y*FW+x;
-            int value[4]={light[k],light[k+sx],light[k+sy*FW+sx],light[k+sy*FW]};
-            int mask=(value[0]>=level)|((value[1]>=level)<<1)|((value[2]>=level)<<2)|((value[3]>=level)<<3);
-            if(mask==0 || mask==15) continue;
-            float left=ox+(x+.5f)*cell_w,top=oy+(y+.5f)*cell_h;
-            float right=left+sx*cell_w,bottom=top+sy*cell_h;
-            float vx[4],vy[4]; int n=0;
-            for(int edge=0;edge<4;edge++) {
-                int next=(edge+1)&3,a=value[edge],b=value[next];
-                if((a>=level)==(b>=level)) continue;
-                float t=(float)(level-a)/(b-a);
-                if(edge==0) { vx[n]=left+t*(right-left); vy[n]=top; }
-                else if(edge==1) { vx[n]=right; vy[n]=top+t*(bottom-top); }
-                else if(edge==2) { vx[n]=right-t*(right-left); vy[n]=bottom; }
-                else { vx[n]=left; vy[n]=bottom-t*(bottom-top); }
-                n++;
-            }
-            uint32_t color=l?0x2a4050:0x13202a;
-            if(n==4 && ((value[0]>=level)!=((value[0]+value[1]+value[2]+value[3])>=4*level))) {
-                contour_segment(vx[0],vy[0],vx[3],vy[3],color,&budget);
-                contour_segment(vx[1],vy[1],vx[2],vy[2],color,&budget);
-            } else for(int i=0;i<n;i+=2)
-                contour_segment(vx[i],vy[i],vx[i+1],vy[i+1],color,&budget);
-            if(!budget) return;
-        }
-    }
 }
 static void flow_background(const Game *g,float x,float y,float w,float h) {
     draw_fluid(&g->fluid,x,y,w,h,g->flow_effect==FLOW_SPEED);
