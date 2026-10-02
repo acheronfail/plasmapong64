@@ -2,6 +2,8 @@
 set -eu
 cd "$(dirname "$0")/.."
 mkdir -p build
+cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic -Isrc src/fluid.c tests/fluid_reference.c tests/fluid_test.c -lm -o build/fluid-test
+./build/fluid-test
 cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic -Isrc src/game.c src/arcade.c src/fluid.c tests/game_test.c -lm -o build/game-test
 ./build/game-test
 cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic -Isrc src/game.c src/arcade.c src/fluid.c tests/arcade_test.c -lm -o build/arcade-test

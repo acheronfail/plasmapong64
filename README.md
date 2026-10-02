@@ -113,9 +113,11 @@ badges. Arcade requires one emulated N64 pad in port 1; multiplayer requires two
 
 - `src/fluid.c`: 48 × 30 Eulerian grid covering a 288 × 180 arena. Velocity and
   three dye concentrations use bilinear semi-Lagrangian advection. An 8-iteration
-  Gauss–Seidel pressure solve reduces divergence; curl confinement preserves
+  Gauss–Seidel pressure solve uses bounded Q12 integer arithmetic to reduce
+  divergence; curl confinement preserves
   small swirls. Boundary cells enforce zero wall-normal velocity. Momentum and
-  dye decay gradually so old currents dissipate.
+  dye decay gradually so old currents dissipate. Velocity and dye use aligned
+  alternating buffers, with no full-grid copies between steps.
 - Bat movement and Z jets inject momentum and dye into the grid. A is an
   intentional local pump/source/sink applied after pressure projection so the
   incompressibility solve does not immediately cancel the suction or burst.
@@ -136,7 +138,7 @@ badges. Arcade requires one emulated N64 pad in port 1; multiplayer requires two
   the former RGBA16 upload; the framebuffer remains 16-bit. Padded texture rows
   avoid RGBA32 block-upload artifacts in the pinned libdragon version, and
   filtered tile overlaps keep chunk boundaries smooth. RDP completion is
-  synchronized before reusing texture memory. Game state occupies about 64 KB;
+  synchronized before reusing texture memory. Game state occupies about 70 KB;
   the ROM does not require an Expansion Pak. Emulator debug output reports the
   average simulation cost every 150 active steps and draw cost every 150 frames.
   The fluid source uses `-O3` on N64, and shared timestep/radius factors are
@@ -170,7 +172,7 @@ previews, not emulator captures.
 
 The normal ROM boots to the animated main menu in the existing Ares checkout with
 paraLLEl-RDP. The separate scripted-input ROM also runs gameplay and renders the
-fluid correctly. After the fluid optimizations, its measured simulation cost is
+fluid correctly. Before the current optimization pass, its measured simulation cost was
 about 30.1–30.3 ms per 30 Hz step in Ares, versus 31.4–31.6 ms before. Drawing
 costs another 6.2 ms per rendered frame with RGBA32, comparable to 6.4 ms with
 RGBA16 in the same test. These are separate costs, not a guarantee of sustained
@@ -195,6 +197,148 @@ real AI using one scripted human controller. Host previews also include
 `preview-{arcade,gameover,scores,level}.svg`. `just smoke-save` builds a separate
 EEPROM fixture ROM: the first boot saves an ACE score, and a second boot asserts
 that it survived. This fixture never runs in the playable ROM.
+
+### Fluid performance baseline (2026-10-02)
+
+`just benchmark` builds `plasmapong-benchmark.z64`, a separate scripted two-player
+ROM with opt-in `FLUID_PROFILE=1` timing probes. Run it in Ares with Homebrew Mode
+and capture stdout, for example:
+
+```sh
+just benchmark
+timeout 55s ../ares/build/rundir/bin/ares \
+  --setting Developer/HomebrewMode=true --system 'Nintendo 64' \
+  --no-file-prompt plasmapong-benchmark.z64 > build/fluid-profile.log 2>&1
+```
+
+Timeout exit status 124 is expected. Keep the emulator focused so it runs.
+Every 150 steps ending in PLAY, the log reports average microseconds per step
+for disjoint fluid stages and their call counts. A transition into PLAY can have
+no fluid update; those steps remain included to match the existing simulation
+counter. Non-PLAY steps are excluded. Rendering is measured separately.
+Normal builds compile out all probes. Use `just smoke` and the same emulator
+command with `plasmapong-smoke.z64` for the uninstrumented control.
+
+Measured against game revision `fae1ba5`, using the pinned Docker toolchain,
+fluid `-O3`, the unchanged 48 × 30 grid and eight pressure iterations, and Ares
+`5f2f7dc0d` with paraLLEl-RDP. Both runs lasted 55 wall-clock seconds with audio
+and rendering enabled and yielded ten complete 150-step simulation windows
+(1,500 steps per ROM). These are emulated N64 timer measurements, not host CPU
+benchmarks or hardware measurements.
+
+| Fluid stage | Mean ms/step | Share of profiled simulation |
+| --- | ---: | ---: |
+| Dye advection, three channels | 6.949 | 22.8% |
+| Pressure solve, eight passes | 6.925 | 22.7% |
+| Velocity advection | 5.254 | 17.2% |
+| Curl confinement forces | 2.936 | 9.6% |
+| Divergence, pressure clear, initial walls | 1.876 | 6.1% |
+| Pressure gradient and final walls | 1.727 | 5.7% |
+| Three dye array copies | 1.654 | 5.4% |
+| Curl calculation | 1.291 | 4.2% |
+| Two velocity array copies | 1.092 | 3.6% |
+| Splats | 0.432 | 1.4% |
+| Pumps | 0.086 | 0.3% |
+| Ball dye | 0.044 | 0.1% |
+| Ball velocity sampling | 0.013 | <0.1% |
+
+The uninstrumented simulation averaged **30.284 ms/step**, with window averages
+between 30.138 and 30.377 ms. Drawing averaged **5.994 ms/frame** across five
+150-frame windows. The profiled simulation averaged 30.537 ms, about 0.253 ms
+(0.8%) higher; probes also affect compiler layout and interrupt timing, so this
+difference is an estimate of measurement perturbation, not a calibrated overhead
+to subtract from each stage. Stage timings include interrupts/audio work that
+occurs during them. Window ranges do not measure individual-step tail latency.
+Local raw logs are `build/fluid-profile.log` and
+`build/fluid-profile-baseline.log`.
+
+The optimization targets identified by this baseline were:
+
+- **Advection (12.203 ms, 40.0%)**: inspect interpolation arithmetic, clamping,
+  float/integer conversions and memory access in both full-grid sweeps.
+- **Projection (10.528 ms, 34.5%)**: the solve alone visits 10,304 interior
+  cells per step, with a sequential pressure dependency. Optimize that loop
+  before considering fewer iterations, which would change fluid quality.
+- **Copies (2.746 ms, 9.0%)**: five copies move 28,800 payload bytes per step.
+  The current N64 assembly uses paired `ldl/ldr` and `sdl/sdr` unaligned
+  instructions. Investigate guaranteed alignment and aligned copies, or buffer
+  swapping with careful handling of the reused velocity/dye scratch arrays.
+- **Curl and confinement (4.226 ms, 13.8%)**: confinement performs a square root
+  and reciprocal for each of 1,144 interior cells. Any approximation needs
+  numerical and visual validation.
+
+Splats, pumps and ball sampling together take under 2% in this replay. At one
+render per simulation step, simulation plus drawing costs about **36.28 ms**,
+roughly **2.95 ms above** the 33.33 ms budget before other frame work. Copy removal
+alone would not provide enough margin. No solver optimizations or quality changes
+were made for that baseline run; the subsequent changes are described below.
+
+### Fluid optimization results (2026-10-02)
+
+The optimized solver keeps the 48 × 30 grid, eight lexicographic pressure passes,
+three dye channels, and curl confinement. The changes are:
+
+- Align all grid and row starts to 16 bytes. Explicit alignment assumptions on
+  pressure-edge copies prevent GCC from emitting paired unaligned instructions.
+  The final N64 fluid object contains no `ldl/ldr/sdl/sdr` instructions, and the
+  linked game state is aligned to 16 bytes.
+- Alternate between two velocity banks and two dye banks. This eliminates five
+  full-grid copies (28,800 copied payload bytes per step). Bank indices keep
+  ordinary `Game` assignment safe; there are no pointers into the copied object.
+- Store pressure and divergence in Q12 fixed point. The bounded eight-pass solve
+  uses integer additions and shifts; velocity, dye, advection, and confinement
+  remain floating point. Divergence is saturated at ±32760 before conversion,
+  well outside normal gameplay, to guarantee signed intermediates cannot
+  overflow. The first pass exploits zero initial pressure and avoids clearing
+  the whole pressure grid. Curl shares scratch storage with divergence.
+- Separate boundary work from interior loops, use separable bilinear
+  interpolation, and compute the shared confinement scale once per step.
+- Generate the whole RGBA32 dye texture in one call, keeping bank selection and
+  function-call overhead out of the pixel loop. Texture padding and filtering
+  are preserved.
+
+With the same toolchain, Ares revision, renderer, and 55-second scripted run as
+above, the final uninstrumented multiplayer ROM produced ten 150-step windows
+and fifteen 150-frame draw windows:
+
+| Measurement | Original | Optimized | Reduction |
+| --- | ---: | ---: | ---: |
+| Simulation | 30.284 ms/step | 23.688 ms/step | 21.8% |
+| Drawing | 5.994 ms/frame | 5.373 ms/frame | 10.4% |
+| One simulation step + one draw | 36.278 ms | 29.062 ms | 19.9% |
+
+The final simulation window averages span 23.551–23.763 ms. At one draw per
+step, this leaves about **4.27 ms** of the 33.33 ms budget for other frame work,
+where the original exceeded it by 2.95 ms. These are elapsed emulator timings;
+they do not establish real-console frame rate or worst-case individual latency.
+
+The final profiled run averages 23.809 ms/step over 1,500 steps. Pressure solving
+falls from 6.925 to **4.312 ms**; both bank swaps together cost about **0.002 ms**
+versus 2.746 ms for the former copies. Velocity advection falls from 5.254 to
+4.817 ms, and curl plus confinement from 4.226 to 3.700 ms. Dye advection remains
+about **6.901 ms** and is now the largest individual stage. Raw final logs are
+`build/fluid-optimized-{profile,baseline,arcade}.log`; final assembly is in
+`build/fluid-optimized-disassembly.txt`.
+
+A separate 55-second level-101 arcade replay averages **23.601 ms/step**
+(ten 150-step windows, range 23.366–23.725 ms), plus **5.674 ms/draw**
+(fifteen 150-frame windows). This includes the normal replay's serves and phase
+transitions, so it is not a worst-case continuously active fluid measurement.
+
+The state grows by 5,780 bytes, from 63,756 to **69,536 bytes**. This remains
+comfortably within the base N64's memory. The normal playable ROM is rebuilt
+with these changes; profiling stays opt-in.
+
+`just check` now includes a frozen scalar reference solver and differential
+checks over 32 seeded random fields at velocities up to ±420, four successive
+steps, zero timestep, boundary backtraces, and both buffer parities. Maximum
+observed velocity difference was **0.002381 pixels/second**, with dye difference
+**0.00001830**; the enforced limits are 0.005 and 0.00003 respectively. These are
+short-horizon numerical checks, not a promise of identical long-term chaotic
+trajectories. Additional checks cover copied-state independence, alignment,
+extreme finite pressure inputs, and exact RGBA texture output/padding. The
+existing 120-second gameplay stress and late-level arcade tests pass, as do
+AddressSanitizer and UndefinedBehaviorSanitizer checks (leak detection disabled).
 
 ## Sound assets
 

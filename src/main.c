@@ -1,9 +1,11 @@
 #include "mathutil.h"
 #include <libdragon.h>
 #include <math.h>
+#include <string.h>
 #include "draw.h"
 #include "sound.h"
 #include "save.h"
+#include "fluid_profile.h"
 #ifdef PLASMAPONG_SAVE_SMOKE
 #include "../tests/save_smoke.h"
 #endif
@@ -47,13 +49,9 @@ float label_width(const char *s) {
     return w;
 }
 void draw_fluid(const Fluid *f,float x,float y,float width,float height) {
-    uint32_t *pixels=ink.buffer;
-    for(int row=0;row<FH;row++) for(int col=0;col<FW;col++) {
-        uint32_t c=fluid_color(f,row*FW+col);
-        /* Preserve faint dye gradients before the RDP filters and dithers
-           them into the 16-bit framebuffer. */
-        pixels[row*(ink.stride/sizeof(*pixels))+col]=(c<<8)|255;
-    }
+    /* Generate all pixels together so bank selection and call overhead stay
+       outside the cell loop. Preserve the padded RGBA32 upload layout. */
+    fluid_pixels(f,ink.buffer,ink.stride/sizeof(uint32_t));
     rdpq_set_mode_standard(); rdpq_mode_filter(FILTER_BILINEAR);
     rdpq_tex_blit(&ink,x,y,&(rdpq_blitparms_t){
         .width=FW,.height=FH,.scale_x=width/FW,.scale_y=height/FH,.filtering=true});
@@ -99,17 +97,43 @@ int main(void) {
 #ifdef PLASMAPONG_SMOKE
             smoke_input(&game,input);
 #endif
+#ifdef PLASMAPONG_FLUID_PROFILE
+            fluid_profile.enabled=true;
+            uint64_t profile_before[PROFILE_COUNT];
+            unsigned calls_before[PROFILE_COUNT];
+            memcpy(profile_before,fluid_profile.ticks,sizeof(profile_before));
+            memcpy(calls_before,fluid_profile.calls,sizeof(calls_before));
+#endif
             game_step(&game,input); accumulator-=STEP;
             disable_interrupts(); sound_update(&sound,&game); enable_interrupts();
             if(game.scores_dirty) {
                 scores_store(&game);
                 previous=get_ticks(); accumulator=0;
             }
+#ifdef PLASMAPONG_FLUID_PROFILE
+            fluid_profile.enabled=false;
+            if(game.phase!=PLAY) {
+                memcpy(fluid_profile.ticks,profile_before,sizeof(profile_before));
+                memcpy(fluid_profile.calls,calls_before,sizeof(calls_before));
+            }
+#endif
             if(game.phase==PLAY) {
                 sim_ticks+=get_ticks()-begin;
                 if(++sim_steps==150) {
                     debugf("Plasma Pong 64: simulation average %llu us/step (budget 33333 us)\n",
                         (unsigned long long)(TIMER_MICROS_LL(sim_ticks)/sim_steps));
+#ifdef PLASMAPONG_FLUID_PROFILE
+                    static const char *names[PROFILE_COUNT]={
+                        "velocity_advection","velocity_swap","curl","confinement",
+                        "divergence","pressure_solve","pressure_gradient",
+                        "dye_advection","dye_swap","splat","pump","ball_dye","sample"};
+                    for(int i=0;i<PROFILE_COUNT;i++) {
+                        debugf("Fluid profile: %s %llu us/step (%u calls)\n",names[i],
+                            (unsigned long long)(TIMER_MICROS_LL(fluid_profile.ticks[i])/sim_steps),
+                            fluid_profile.calls[i]);
+                        fluid_profile.ticks[i]=0; fluid_profile.calls[i]=0;
+                    }
+#endif
                     sim_ticks=0; sim_steps=0;
                 }
             }

@@ -21,6 +21,10 @@ clean:
 smoke:
     ./tools/build-rom.sh -j4 SMOKE=1 ROM=plasmapong-smoke BUILD_DIR=build/smoke
 
+# Per-stage fluid timings in the emulator debug log; no production overhead.
+benchmark:
+    ./tools/build-rom.sh -j4 SMOKE=1 FLUID_PROFILE=1 ROM=plasmapong-benchmark BUILD_DIR=build/benchmark
+
 # Exercise one-controller arcade mode against the real AI in Ares.
 smoke-arcade:
     ./tools/build-rom.sh -j4 SMOKE=1 SMOKE_ARCADE=1 ROM=plasmapong-arcade-smoke BUILD_DIR=build/arcade-smoke
