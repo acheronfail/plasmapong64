@@ -14,6 +14,10 @@ RSPQ_BeginOverlayHeader
     RSPQ_DefineCommand DyeChannel,16
 RSPQ_EndOverlayHeader
 RSPQ_EmptySavedState
+    /* The pinned embed rule aligns blobs to 8 bytes. Pad the trailing saved
+       state so a subsequent overlay's CPU registration cannot cache its DMA
+       output line by reading the next blob's first instructions. */
+    .quad 0
     .bss
     .align 4
 grid: .ds.b GRID_BYTES

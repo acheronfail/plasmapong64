@@ -454,14 +454,14 @@ just cpu             # CPU reference backend, playable plasmapong-cpu.z64
 just benchmark-cpu   # CPU reference backend, profiled scripted play
 ```
 
-`just build`, `just emulate`, and `just deploy` use RSP pressure solving and vector dye/velocity advection.
+`just build`, `just emulate`, and `just deploy` use RSP pressure solving, vector dye/velocity advection, and integer curl/confinement.
 Deployment uploads `plasmapong.z64` to `/CUSTOM/plasmapong.z64`, without scripted
 inputs or boot-time test fixtures. `just rsp` remains available to build the same
 backend under the separate name `plasmapong-rsp.z64`.
-`FLUID_RSP=1 DYE_RSP=1 VELOCITY_RSP=1` are the Makefile defaults; use `just cpu` (all three flags
+`FLUID_RSP=1 DYE_RSP=1 VELOCITY_RSP=1 CONFINEMENT_RSP=1` are the Makefile defaults; use `just cpu` (all four flags
 set to zero) for the CPU reference, or `just float-dye` for float dye with RSP
 pressure. `just float-velocity` keeps RSP pressure/dye with float velocity.
-Default objects live in `build/rsp_velocity`; use a separate build directory
+Default objects live in `build/rsp_confinement`; use a separate build directory
 when changing backend or instrumentation flags. The pinned libdragon RSP build
 rule cannot generate symbols correctly for directories containing hyphens; the
 provided recipes use underscore-separated directories.
@@ -478,9 +478,8 @@ switches. This is a scalar integer RSP kernel, not a SIMD rewrite of Gauss–Sei
 eight queued passes, and a completion syncpoint before CPU gradient subtraction.
 The pressure output owns complete cache lines and is invalidated before DMA to
 prevent stale CPU writebacks. Divergence is read-only. The normal grid/state size
-was unchanged at this checkpoint; curl, confinement and pressure-gradient
-subtraction still run on the CPU. Dye and velocity advection now use the vector RSP backend
-described below.
+was unchanged at this checkpoint. Pressure-gradient subtraction runs on the CPU;
+dye/velocity advection and curl/confinement use the RSP backends described below.
 
 `tests/rsp_fluid_smoke.h` checks all 1,440 pressure cells for each of 64 fields:
 zero, maximum positive/negative divergence, alternating signs, impulses and seeded
@@ -586,11 +585,11 @@ just benchmark-dye    # integer/float comparison and DMA checks, then profiled p
 
 Following a successful user-reported hardware playtest, `just build`, `just emulate`
 and `just deploy` use this implementation by default. `DYE_RSP=1` automatically
-enables `DYE_FIXED=1`. Production objects live in `build/rsp_velocity`; float comparison
+enables `DYE_FIXED=1`. Production objects live in `build/rsp_confinement`; float comparison
 objects remain in `build/rsp`, preventing reuse across storage formats.
 `just dye` and `just deploy-dye` remain compatibility recipes for the same backend
 under the separate name `plasmapong-dye.z64`.
-`DYE_FIXED=1 DYE_RSP=0 VELOCITY_RSP=0` runs the same integer dye model on the CPU for comparison.
+`DYE_FIXED=1 DYE_RSP=0 VELOCITY_RSP=0 CONFINEMENT_RSP=0` runs the same integer dye model on the CPU for comparison.
 
 Dye now persists in Q13 halfwords in both ping-pong banks. Injection is quantized
 at its source, and texture colors use integer arithmetic directly. At this checkpoint,
@@ -603,8 +602,8 @@ the temporal-rounding phase, preserving deterministic independent simulations.
 3,168-byte source grid, gathers eight arbitrary bilinear samples at a time, then
 uses vector interpolation and decay. Q15 fractions share one CPU-generated
 trace grid across all three channels. DMA moves 24 traces/results per chunk.
-The linked overlay uses **1,136 bytes of IMEM** and **3,912 bytes of DMEM**
-(552 bytes of data plus 3,360 bytes of scratch). Each command reloads its scratch,
+The linked overlay uses **1,136 bytes of IMEM** and **3,920 bytes of DMEM**
+(560 bytes of data plus 3,360 bytes of scratch). Each command reloads its scratch,
 and all DMA completes before returning to RSPQ. The CPU wrapper writes back
 inputs, invalidates the destination, and waits before swapping banks.
 
@@ -684,10 +683,10 @@ just benchmark-velocity   # velocity/dye/pressure checks, then profiled gameplay
 
 Following a successful user-reported hardware playtest, `just build`, `just emulate`
 and `just deploy` use Q4 velocity and RSP advection by default. `VELOCITY_RSP=1`
-automatically enables `VELOCITY_FIXED=1`. Production objects use `build/rsp_velocity`;
+automatically enables `VELOCITY_FIXED=1`. Production objects use `build/rsp_confinement`;
 the previous float-velocity comparison uses `build/rsp_dye`. `just velocity` and
 `just deploy-velocity` remain compatibility recipes for the same default backend
-under the separate name `plasmapong-velocity.z64`. `VELOCITY_FIXED=1 VELOCITY_RSP=0` builds the scalar CPU reference with the
+under the separate name `plasmapong-velocity.z64`. `VELOCITY_FIXED=1 VELOCITY_RSP=0 CONFINEMENT_RSP=0` builds the scalar CPU reference with the
 same representation; it still uses RSP dye by default. Instrumentation flags
 need their own build directory. Fixed velocity requires fixed dye, and RSP
 velocity requires the RSP dye overlay.
@@ -702,8 +701,8 @@ physical units. Ball position/velocity and gameplay calculations remain floats.
 coordinates and a shared Q20 timestep coefficient. Coordinates keep the existing
 clamped-edge sampling policy, with a slightly quantized upper boundary. The same
 trace preparation also accelerates dye. Divergence and pressure-gradient
-subtraction use integer arithmetic; curl/confinement still use floats, with
-rounded and saturated velocity updates. The Q12 pressure solve and its eight
+subtraction use integer arithmetic. At this checkpoint curl/confinement still
+used floats; the integer RSP implementation below is now the default. The Q12 pressure solve and its eight
 iterations are unchanged.
 
 The existing eight-lane `rsp_dye.S` interpolation/decay kernel processes the two
@@ -773,3 +772,113 @@ integer kernel is separately verified against the RSP. `tools/velocity-replay.c`
 emits reproducible per-frame CSV statistics and optional field snapshots when
 compiled for either backend. `tools/preview.c` accepts an optional second argument
 for the number of gameplay steps, preserving its default 540-step snapshot.
+
+### Default integer curl and RSP confinement (2026-10-02)
+
+```sh
+just build                   # playable plasmapong.z64
+just deploy                  # upload as /CUSTOM/plasmapong.z64; power off N64 first
+just float-confinement       # previous float curl/confinement for comparison
+just benchmark-confinement   # all four RSP fixture suites, then profiled gameplay
+```
+
+Following a successful user-reported hardware playtest, integer curl and RSP
+confinement are the default for `just build`, `just emulate`, and `just deploy`.
+`CONFINEMENT_RSP=1` automatically enables `CONFINEMENT_FIXED=1` and uses
+`build/rsp_confinement` objects to produce `plasmapong.z64`.
+`just float-confinement` disables this backend and builds the previous version
+as `plasmapong-float-confinement.z64` in `build/rsp_velocity`.
+`just confinement` and `just deploy-confinement` remain compatibility recipes
+for the default backend under the name `plasmapong-confinement.z64`.
+`CONFINEMENT_FIXED=1 CONFINEMENT_RSP=0` selects the portable integer CPU reference
+in `build/confinement_cpu`. Both require fixed-point velocity; use a separate
+build directory for profiling, scripted input or boot tests.
+
+Curl is a signed halfword: half the raw Q4 velocity-difference stencil, rounded
+to nearest with ties toward positive infinity. Dividing by 96 gives physical
+curl. Its ±32766 bound keeps the differences of absolute curl within a signed
+vector lane, and the squared gradient length below 2^31. Storage shares the
+existing curl/divergence union, so the game state remains **44,784 bytes**.
+
+The confinement direction uses the RSP's 32-bit reciprocal-square-root lookup,
+followed by full 16×32-bit products to retain precision for large gradients.
+The force amplitude uses a Q15 timestep coefficient; both amplitude and force
+are rounded, and output velocity retains its ±1023.9375 pixels/second limit.
+Zero gradients produce zero force. Nonzero gradients omit the old float epsilon;
+together with curl quantization, this changes forces most noticeably for tiny
+perturbations in almost-uniform vortices. These are deliberate approximations,
+not a bit-exact replacement for the float calculation.
+
+`src/rsp_confinement.S` supplies separate curl and confinement commands. Each
+streams complete rows, reloads its scratch, and waits for DMA completion before
+using a row. The two-cell confinement border is preserved. CPU wrappers write
+back input cache lines, invalidate outputs and wait before the next stage.
+Linked overlay sizes are **1,552 bytes IMEM** and **1,088 bytes DMEM** (560 bytes
+of data plus 528 bytes of scratch). Timings include cache maintenance, queueing,
+DMA and completion waits.
+
+Adding a third overlay exposed a cache-line sharing issue in the pinned embed
+rule: an overlay's eight-byte empty saved state could share a CPU cache line
+with the next overlay's code. Registering that next overlay cached the line
+before RSP state DMA wrote it. Eight trailing padding bytes in each custom
+overlay separate the state from the following blob; numerical buffers were not
+involved. The combined validation run checks the resulting overlay transitions.
+
+The instruction/pipeline reference is the
+[SGI RSP Programmer's Guide](https://ultra64.ca/files/documentation/silicon-graphics/SGI_Nintendo_64_RSP_Programmers_Guide.pdf).
+`tools/generate-rsqrt.py` generates the portable lookup constants from the integer
+ROM definition also modeled by [ares](https://github.com/ares-emulator/ares/blob/5f2f7dc0d/ares/n64/rsp/rsp.cpp).
+The host implementation performs no per-cell float square root or division.
+
+Against the frozen `fae1bf7` baseline, with the pinned toolchain, 48 × 33 grid,
+Ares `5f2f7dc0d`, paraLLEl-RDP, audio and identical scripted controller inputs:
+
+| Measurement | Float curl/confinement | Integer + RSP | Reduction |
+| --- | ---: | ---: | ---: |
+| Profiled curl | 0.881 ms | 0.303 ms | 65.6% |
+| Profiled confinement | 3.356 ms | 0.534 ms | 84.1% |
+| Profiled curl + confinement | 4.237 ms | 0.837 ms | 80.3% |
+| Uninstrumented simulation | 16.969 ms | 13.611 ms | 19.8% |
+| Uninstrumented drawing | 2.310 ms | 2.435 ms | −5.4% |
+| Uninstrumented simulation + drawing | 19.279 ms | 16.046 ms | 16.8% |
+
+Each of the four main runs lasted 55 seconds and produced ten complete
+150-step/frame windows. The submission interval remains about 33.35 ms: the
+saving is **3.23 ms of work per update**, with the 30 Hz schedule unchanged.
+These are emulator timings, not measured hardware gains. The differing fluid
+and ball trajectories can also change some gameplay-dependent work.
+
+A 35-second/six-window control runs the same integer algorithm on the CPU:
+curl + confinement averages **3.877 ms CPU versus 0.840 ms RSP** in matching
+first-six-window measurements. This portable scalar reference saves little
+compared with the original float loop; the vector implementation and RSP lookup
+provide most of the benefit. All final timing and validation logs are free of
+DMA cache warnings after the saved-state padding fix.
+
+Validation and accuracy:
+
+- The 64-field suite covers zero and constant flow, extreme stencils, random
+  fields, impulses, near-zero gradients and nearly uniform vortices with a
+  one-LSB perturbation. Zero dt, 1/60, 1/30 and 0.2-second steps are covered.
+  RSP curl and velocity output must match the integer reference exactly; source
+  integrity, DMA guards, overlay switching and untouched borders are checked.
+- Maximum tested one-step force error versus the frozen float calculation is
+  **0.8125 pixels/second at normal timesteps**, or **4.6875 pixels/second** including
+  the 0.2-second stress step. The near-uniform-vortex fixture produces the largest
+  difference. These are measured fixture maxima, not universal error bounds.
+- Gameplay and arcade suites, the 120-second stability replay, and address/undefined
+  sanitizers pass. The default float-confinement backend's 120-second host replay
+  remains identical to the frozen `fae1bf7` baseline.
+- Under identical fluid-only forcing (60 seconds of jets, 60 seconds of fade),
+  average RMS velocity changes by **−0.57%**; maximum sampled velocity is 428.0
+  pixels/second and no sampled cells saturate. Final RMS is 0.0065 versus 0.0035
+  pixels/second. The separate gameplay replay's average RMS differs by +0.91%.
+  Local fields, ball paths and scores can diverge despite similar aggregate flow.
+- All four RSP fixture suites and a 35-second level-101 arcade run pass with the
+  RDP validator enabled, including transitions between all custom overlays.
+
+The host-model comparison in `build/confinement_compare/preview.html` provides
+6-, 18-, 60- and 120-second snapshots of identical fluid forcing and gameplay.
+It is not an emulator capture; the integer kernels are checked separately on RSP
+emulation. Logs, ROMs, per-frame CSVs and numeric summaries are retained in
+`build/confinement_compare/`. Hardware playtesting succeeded; hardware timing has not been measured.

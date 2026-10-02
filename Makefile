@@ -3,9 +3,18 @@ DYE_RSP ?= 1
 DYE_FIXED ?= $(DYE_RSP)
 VELOCITY_RSP ?= 1
 VELOCITY_FIXED ?= $(VELOCITY_RSP)
+CONFINEMENT_RSP ?= 1
+CONFINEMENT_FIXED ?= $(CONFINEMENT_RSP)
 # Keep default objects separate from the old CPU build and comparison builds.
+ifeq ($(CONFINEMENT_RSP),1)
+BUILD_DIR ?= build/rsp_confinement
+ROM ?= plasmapong
+else ifeq ($(CONFINEMENT_FIXED),1)
+BUILD_DIR ?= build/confinement_cpu
+ROM ?= plasmapong-confinement-cpu
+endif
 BUILD_DIR ?= build/$(if $(filter 1,$(VELOCITY_RSP)),rsp_velocity,$(if $(filter 1,$(VELOCITY_FIXED)),velocity_cpu,$(if $(filter 1,$(DYE_RSP)),rsp_dye,$(if $(filter 1,$(DYE_FIXED)),dye_cpu,$(if $(filter 1,$(FLUID_RSP)),rsp,cpu)))))
-ROM ?= $(if $(filter 1,$(VELOCITY_RSP)),plasmapong,$(if $(filter 1,$(VELOCITY_FIXED)),plasmapong-velocity-cpu,$(if $(filter 1,$(DYE_RSP)),plasmapong-float-velocity,$(if $(filter 1,$(DYE_FIXED)),plasmapong-dye-cpu,plasmapong-float))))
+ROM ?= $(if $(filter 1,$(VELOCITY_RSP)),plasmapong-float-confinement,$(if $(filter 1,$(VELOCITY_FIXED)),plasmapong-velocity-cpu,$(if $(filter 1,$(DYE_RSP)),plasmapong-float-velocity,$(if $(filter 1,$(DYE_FIXED)),plasmapong-dye-cpu,plasmapong-float))))
 .DEFAULT_GOAL := all
 ifeq ($(N64_INST),)
 $(error N64_INST is unset. Use ./tools/build-rom.sh or install libdragon)
@@ -52,6 +61,30 @@ $(error VELOCITY_RSP=1 requires VELOCITY_FIXED=1)
 endif
 N64_CFLAGS += -DPLASMAPONG_VELOCITY_RSP
 endif
+ifeq ($(CONFINEMENT_FIXED),1)
+ifneq ($(VELOCITY_FIXED),1)
+$(error CONFINEMENT_FIXED=1 requires VELOCITY_FIXED=1)
+endif
+src += src/fluid_confinement.c
+N64_CFLAGS += -DPLASMAPONG_CONFINEMENT_FIXED
+endif
+ifeq ($(CONFINEMENT_RSP),1)
+ifneq ($(findstring -,$(BUILD_DIR)),)
+$(error CONFINEMENT_RSP requires BUILD_DIR without hyphens)
+endif
+ifneq ($(CONFINEMENT_FIXED),1)
+$(error CONFINEMENT_RSP=1 requires CONFINEMENT_FIXED=1)
+endif
+src += src/fluid_confinement_rsp.c
+rsp_obj += $(BUILD_DIR)/src/rsp_confinement.o
+N64_CFLAGS += -DPLASMAPONG_CONFINEMENT_RSP
+endif
+ifeq ($(CONFINEMENT_TEST),1)
+ifneq ($(CONFINEMENT_FIXED),1)
+$(error CONFINEMENT_TEST=1 requires CONFINEMENT_FIXED=1)
+endif
+N64_CFLAGS += -DPLASMAPONG_CONFINEMENT_TEST
+endif
 ifeq ($(VELOCITY_TEST),1)
 ifneq ($(VELOCITY_FIXED),1)
 $(error VELOCITY_TEST=1 requires VELOCITY_FIXED=1)
@@ -81,7 +114,7 @@ ifeq ($(FLUID_PROFILE),1)
 N64_CFLAGS += -DPLASMAPONG_FLUID_PROFILE
 endif
 # Inline the fluid sampling loops without expanding the rest of the ROM.
-$(BUILD_DIR)/src/fluid.o $(BUILD_DIR)/src/fluid_advection.o $(BUILD_DIR)/src/fluid_dye_fixed.o $(BUILD_DIR)/src/fluid_velocity_fixed.o: CFLAGS += -O3
+$(BUILD_DIR)/src/fluid.o $(BUILD_DIR)/src/fluid_advection.o $(BUILD_DIR)/src/fluid_dye_fixed.o $(BUILD_DIR)/src/fluid_velocity_fixed.o $(BUILD_DIR)/src/fluid_confinement.o: CFLAGS += -O3
 ifeq ($(SMOKE),1)
 N64_CFLAGS += -DPLASMAPONG_SMOKE
 endif

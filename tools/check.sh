@@ -41,3 +41,11 @@ cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -DPLASMAPONG_DYE_FIXED -DPLASMAP
 ./build/game-velocity-test
 cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -DPLASMAPONG_DYE_FIXED -DPLASMAPONG_VELOCITY_FIXED -Isrc src/game.c src/arcade.c src/fluid.c src/fluid_advection.c src/fluid_dye_fixed.c src/fluid_velocity_fixed.c tests/arcade_test.c -lm -o build/arcade-velocity-test
 ./build/arcade-velocity-test
+
+# Curl/confinement approximation and its complete gameplay integration.
+cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -Isrc src/fluid_confinement.c tests/confinement_test.c -lm -o build/confinement-test
+./build/confinement-test
+cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -DPLASMAPONG_DYE_FIXED -DPLASMAPONG_VELOCITY_FIXED -DPLASMAPONG_CONFINEMENT_FIXED -Isrc src/game.c src/arcade.c src/fluid.c src/fluid_advection.c src/fluid_dye_fixed.c src/fluid_velocity_fixed.c src/fluid_confinement.c tests/game_test.c -lm -o build/game-confinement-test
+./build/game-confinement-test
+cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -DPLASMAPONG_DYE_FIXED -DPLASMAPONG_VELOCITY_FIXED -DPLASMAPONG_CONFINEMENT_FIXED -Isrc src/game.c src/arcade.c src/fluid.c src/fluid_advection.c src/fluid_dye_fixed.c src/fluid_velocity_fixed.c src/fluid_confinement.c tests/arcade_test.c -lm -o build/arcade-confinement-test
+./build/arcade-confinement-test

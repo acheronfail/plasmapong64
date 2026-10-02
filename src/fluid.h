@@ -49,7 +49,7 @@ typedef struct {
     FluidFlow velocity[2];
     FluidInk dye[2];
     _Alignas(16) int32_t pressure[FN];
-    _Alignas(16) union { float curl[FN]; int32_t divergence[FN]; };
+    _Alignas(16) union { float curl[FN]; int16_t curl_fixed[FN]; int32_t divergence[FN]; };
     unsigned velocity_bank,dye_bank;
 #ifdef PLASMAPONG_VELOCITY_FIXED
     unsigned velocity_phase;

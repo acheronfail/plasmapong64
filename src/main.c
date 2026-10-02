@@ -7,6 +7,9 @@
 #include "sound.h"
 #include "save.h"
 #include "fluid_profile.h"
+#ifdef PLASMAPONG_CONFINEMENT_TEST
+#include "../tests/confinement_cases.h"
+#endif
 #ifdef PLASMAPONG_VELOCITY_TEST
 #include "../tests/velocity_cases.h"
 #endif
@@ -136,6 +139,9 @@ int main(void) {
 #endif
 #ifdef PLASMAPONG_VELOCITY_TEST
     velocity_cases();
+#endif
+#ifdef PLASMAPONG_CONFINEMENT_TEST
+    confinement_cases();
 #endif
     rdpq_font_t *font=rdpq_font_load_builtin(FONT_BUILTIN_DEBUG_VAR);
     const uint32_t colors[]={0xeaf6ff,0xa0b3c9,0x48dcff,0xff637e,0xffffff,0x02040a,0x737d8a};
