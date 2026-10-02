@@ -3,6 +3,9 @@
 #include "fluid_profile.h"
 #include "fluid_pressure.h"
 #include "fluid_advection.h"
+#ifdef PLASMAPONG_DYE_FIXED
+#include "fluid_dye_fixed.h"
+#endif
 #ifdef PLASMAPONG_FLUID_PROFILE
 FluidProfile fluid_profile;
 #endif
@@ -16,6 +19,15 @@ _Static_assert((-1>>1)==-1,"fixed-point pressure requires arithmetic right shift
    The clamp is far outside ordinary play (even +/-1000 velocity gives
    at most 12000 divergence). Velocity and advection remain floating point. */
 #define PRESSURE_SCALE 4096
+static inline void ink_add(FluidInkValue *ink,float amount,float limit) {
+#ifdef PLASMAPONG_DYE_FIXED
+    int value=*ink+(int)(amount*DYE_SCALE+.5f);
+    int ceiling=(int)(limit*DYE_SCALE+.5f);
+    *ink=(int16_t)(value>ceiling?ceiling:value<0?0:value);
+#else
+    *ink=minf(limit,*ink+amount);
+#endif
+}
 /* Separable interpolation shares coordinates across channels and needs only
    three multiplies per channel. */
 static inline float bilerp(const float *a,int k,float tx,float ty) {
@@ -122,7 +134,7 @@ void fluid_project(Fluid *f) {
 }
 void fluid_splat(Fluid *f,float x,float y,float radius,float u,float v,float dye,int player) {
     FluidVelocity *velocity=fluid_velocity(f);
-    FluidDye *ink_grid=fluid_dye(f);
+    FluidInk *ink_grid=fluid_dye(f);
     PROFILE_BEGIN();
     const float inv_radius2=1/(radius*radius);
     int x0=(int)clampf((x-radius)/CELL,0,FW-1),x1=(int)clampf((x+radius)/CELL,0,FW-1);
@@ -132,14 +144,14 @@ void fluid_splat(Fluid *f,float x,float y,float radius,float u,float v,float dye
         float w=maxf(0,1-(dx*dx+dy*dy)*inv_radius2); w*=w;
         int k=iy*FW+ix;
         velocity->u[k]=clampf(velocity->u[k]+u*w,-420,420); velocity->v[k]=clampf(velocity->v[k]+v*w,-420,420);
-        float *ink=player?ink_grid->red:ink_grid->blue;
-        ink[k]=minf(3,ink[k]+dye*w);
+        FluidInkValue *ink=player?ink_grid->red:ink_grid->blue;
+        ink_add(&ink[k],dye*w,3);
     }
     PROFILE_END(PROFILE_SPLAT);
 }
 void fluid_pump(Fluid *f,float x,float y,float radius,float strength,float dt,int player) {
     FluidVelocity *velocity=fluid_velocity(f);
-    FluidDye *ink_grid=fluid_dye(f);
+    FluidInk *ink_grid=fluid_dye(f);
     PROFILE_BEGIN();
     const float inv_radius2=1/(radius*radius);
     /* A pump is an intentional local source/sink. Apply after projection, so
@@ -154,8 +166,8 @@ void fluid_pump(Fluid *f,float x,float y,float radius,float strength,float dt,in
         int k=iy*FW+ix;
         velocity->u[k]=clampf(velocity->u[k]+dx*force,-420,420);
         velocity->v[k]=clampf(velocity->v[k]+dy*force,-420,420);
-        float *ink=player?ink_grid->red:ink_grid->blue;
-        if(strength>0) ink[k]=minf(3,ink[k]+strength*dt*.0015f*w);
+        FluidInkValue *ink=player?ink_grid->red:ink_grid->blue;
+        if(strength>0) ink_add(&ink[k],strength*dt*.0015f*w,3);
     }
     PROFILE_END(PROFILE_PUMP);
 }
@@ -188,17 +200,27 @@ void fluid_velocity_step(Fluid *f,float dt) {
 }
 void fluid_dye_step(Fluid *f,float dt) {
     FluidVelocity *velocity=fluid_velocity(f);
-    FluidDye *ink_grid=fluid_dye(f);
+    FluidInk *ink_grid=fluid_dye(f);
     PROFILE_BEGIN();
-    FluidDye *next=&f->dye[f->dye_bank^1];
+    FluidInk *next=&f->dye[f->dye_bank^1];
     const float grid_dt=dt/CELL,decay=1-.22f*dt,gold_decay=1-1.1f*dt;
+#ifdef PLASMAPONG_DYE_FIXED
+    /* Deterministic temporal rounding; state remains safe to copy by value. */
+    unsigned rounding=(f->dye_phase+=40503u)&65535u;
+#endif
+#ifdef PLASMAPONG_DYE_RSP
+    fluid_advect_ink_rsp(next,ink_grid,velocity,grid_dt,decay,gold_decay,rounding);
+#elif defined(PLASMAPONG_DYE_FIXED)
+    fluid_advect_ink_reference(next,ink_grid,velocity,grid_dt,decay,gold_decay,rounding);
+#else
     fluid_advect_dye(next,ink_grid,velocity,grid_dt,decay,gold_decay);
+#endif
     PROFILE_END(PROFILE_DYE_ADVECTION);
     f->dye_bank^=1;
     PROFILE_END(PROFILE_DYE_SWAP);
 }
 void fluid_ball_dye(Fluid *f,float x,float y,float amount) {
-    FluidDye *ink_grid=fluid_dye(f);
+    FluidInk *ink_grid=fluid_dye(f);
     PROFILE_BEGIN();
     const float radius=8;
     int x0=(int)clampf((x-radius)/CELL,0,FW-1),x1=(int)clampf((x+radius)/CELL,0,FW-1);
@@ -207,21 +229,29 @@ void fluid_ball_dye(Fluid *f,float x,float y,float amount) {
         float dx=(ix+.5f)*CELL-x,dy=(iy+.5f)*CELL-y;
         float w=maxf(0,1-(dx*dx+dy*dy)/(radius*radius));
         int k=iy*FW+ix;
-        ink_grid->gold[k]=minf(.65f,ink_grid->gold[k]+amount*w*w);
+        ink_add(&ink_grid->gold[k],amount*w*w,.65f);
     }
     PROFILE_END(PROFILE_BALL_DYE);
 }
-static inline uint32_t dye_color(const FluidDye *ink_grid,int k) {
+static inline uint32_t dye_color(const FluidInk *ink_grid,int k) {
+#ifdef PLASMAPONG_DYE_FIXED
+    int r=ink_grid->red[k],b=ink_grid->blue[k],g=ink_grid->gold[k];
+    int red=(5*DYE_SCALE+210*r+20*b+255*g)>>13;
+    int green=(9*DYE_SCALE+64*r+155*b+205*g)>>13;
+    int blue=(22*DYE_SCALE+92*r+225*b+25*g)>>13;
+    red=red>255?255:red; green=green>255?255:green; blue=blue>255?255:blue;
+#else
     float r=ink_grid->red[k],b=ink_grid->blue[k],g=ink_grid->gold[k];
     /* Cyan and coral currents mix with a small, faster-fading gold ball trail. */
     int red=(int)clampf(5+210*r+20*b+255*g,0,255);
     int green=(int)clampf(9+64*r+155*b+205*g,0,255);
     int blue=(int)clampf(22+92*r+225*b+25*g,0,255);
+#endif
     return (uint32_t)((red<<16)|(green<<8)|blue);
 }
 uint32_t fluid_color(const Fluid *f,int k) { return dye_color(fluid_dye(f),k); }
 void fluid_pixels(const Fluid *f,uint32_t *pixels,unsigned stride) {
-    const FluidDye *ink_grid=fluid_dye(f);
+    const FluidInk *ink_grid=fluid_dye(f);
     for(int y=0;y<FH;y++) for(int x=0;x<FW;x++)
         pixels[y*stride+x]=(dye_color(ink_grid,y*FW+x)<<8)|255;
 }

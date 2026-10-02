@@ -11,12 +11,28 @@
    ping-pong buffers keep Fluid/Game safe to copy by value (no self-pointers). */
 typedef struct { _Alignas(16) float u[FN],v[FN]; } FluidVelocity;
 typedef struct { _Alignas(16) float red[FN],blue[FN],gold[FN]; } FluidDye;
+enum { DYE_SCALE=8192, DYE_WEIGHT_SCALE=32768 };
+typedef struct { _Alignas(16) int16_t red[FN],blue[FN],gold[FN]; } FluidDyeFixed;
+#ifdef PLASMAPONG_DYE_FIXED
+typedef FluidDyeFixed FluidInk;
+typedef int16_t FluidInkValue;
+static inline float fluid_ink_decode(FluidInkValue v) { return v*(1.0f/DYE_SCALE); }
+static inline FluidInkValue fluid_ink_encode(float v) { return (int16_t)(v*DYE_SCALE+.5f); }
+#else
+typedef FluidDye FluidInk;
+typedef float FluidInkValue;
+static inline float fluid_ink_decode(FluidInkValue v) { return v; }
+static inline FluidInkValue fluid_ink_encode(float v) { return v; }
+#endif
 typedef struct {
     FluidVelocity velocity[2];
-    FluidDye dye[2];
+    FluidInk dye[2];
     _Alignas(16) int32_t pressure[FN];
     _Alignas(16) union { float curl[FN]; int32_t divergence[FN]; };
     unsigned velocity_bank,dye_bank;
+#ifdef PLASMAPONG_DYE_FIXED
+    unsigned dye_phase;
+#endif
 } Fluid;
 /* Reacquire these views after the corresponding velocity/dye step. */
 #define fluid_velocity(f) (&(f)->velocity[(f)->velocity_bank])

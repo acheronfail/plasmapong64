@@ -2,6 +2,11 @@
 #include <assert.h>
 #include <math.h>
 #include <stdio.h>
+#include <string.h>
+static uint32_t hash_float(uint32_t hash,float value) {
+    uint32_t bits; memcpy(&bits,&value,sizeof(bits));
+    return (hash^bits)*16777619u;
+}
 static Game g;
 static Input in[2];
 static void ready(void) {
@@ -23,12 +28,12 @@ static float divergence(const Fluid *f) {
 static float dye_x(const Fluid *f) {
     float mass=0,moment=0;
     for(int y=0;y<FH;y++) for(int x=0;x<FW;x++) {
-        float d=fluid_dye(f)->red[y*FW+x]; mass+=d; moment+=d*(x+.5f)*CELL;
+        float d=fluid_ink_decode(fluid_dye(f)->red[y*FW+x]); mass+=d; moment+=d*(x+.5f)*CELL;
     }
     assert(mass>0); return moment/mass;
 }
 static float gold_sum(const Fluid *f) {
-    float sum=0; for(int i=0;i<FN;i++) sum+=fluid_dye(f)->gold[i]; return sum;
+    float sum=0; for(int i=0;i<FN;i++) sum+=fluid_ink_decode(fluid_dye(f)->gold[i]); return sum;
 }
 int main(void) {
     game_init(&g); Input idle[2]={0};
@@ -53,7 +58,7 @@ int main(void) {
     assert(g.bat[0].y>=BAT_HALF);
     ready(); in[0].z=true; for(int i=0;i<20;i++) game_step(&g,in);
     float u,v; fluid_sample(&g.fluid,44,90,&u,&v); assert(u>5);
-    float dye=0; for(int i=0;i<FN;i++) dye+=fluid_dye(&g.fluid)->blue[i]; assert(dye>1);
+    float dye=0; for(int i=0;i<FN;i++) dye+=fluid_ink_decode(fluid_dye(&g.fluid)->blue[i]); assert(dye>1);
     ready(); in[1].z=true; for(int i=0;i<20;i++) game_step(&g,in);
     fluid_sample(&g.fluid,ARENA_W-44,90,&u,&v); assert(u<-5);
     ready(); in[0].a=true; g.bx=g.bat[0].x+12; g.by=g.bat[0].y; g.bvx=-50; g.bvy=0;
@@ -205,7 +210,7 @@ int main(void) {
     for(int p=0;p<2;p++) {
         ready(); g.serve=100;
         int x=p?FW-9:8;
-        fluid_dye(&g.fluid)->red[15*FW+x]=1;
+        fluid_dye(&g.fluid)->red[15*FW+x]=fluid_ink_encode(1);
         static Game without_suction; without_suction=g;
         in[p].a=true;
         Input idle[2]={{.connected=true},{.connected=true}};
@@ -219,12 +224,13 @@ int main(void) {
     ready(); g.serve=1; game_step(&g,in); assert(gold_sum(&g.fluid)==0);
     ready(); g.held=0; game_step(&g,in); assert(gold_sum(&g.fluid)==0);
     ready();
-    int trail=15*FW+20; fluid_dye(&g.fluid)->gold[trail]=.5f;
+    int trail=15*FW+20; fluid_dye(&g.fluid)->gold[trail]=fluid_ink_encode(.5f);
     for(int i=0;i<FN;i++) fluid_velocity(&g.fluid)->u[i]=CELL/STEP;
     fluid_dye_step(&g.fluid,STEP);
-    assert(fluid_dye(&g.fluid)->gold[trail+1]>.45f && fluid_dye(&g.fluid)->gold[trail]<.001f);
+    assert(fluid_ink_decode(fluid_dye(&g.fluid)->gold[trail+1])>.45f && fluid_ink_decode(fluid_dye(&g.fluid)->gold[trail])<.001f);
     assert(gold_sum(&g.fluid)<.5f); /* It advects and fades as a third dye. */
     ready();
+    uint32_t physics_hash=2166136261u;
     for(int t=0;t<3600;t++) {
         for(int p=0;p<2;p++) {
             in[p].x=sinf(t*.043f+p); in[p].y=cosf(t*.081f+p);
@@ -232,15 +238,25 @@ int main(void) {
         }
         if(g.phase==FINISHED) { in[0].start=true; } else in[0].start=false;
         game_step(&g,in);
+        physics_hash=hash_float(physics_hash,g.bx);
+        physics_hash=hash_float(physics_hash,g.by);
+        physics_hash=hash_float(physics_hash,g.bvx);
+        physics_hash=hash_float(physics_hash,g.bvy);
+        physics_hash=(physics_hash^(unsigned)g.phase)*16777619u;
+        physics_hash=(physics_hash^(unsigned)g.score[0])*16777619u;
+        physics_hash=(physics_hash^(unsigned)g.score[1])*16777619u;
         assert(isfinite(g.bx) && isfinite(g.by));
         for(int i=0;i<FN;i++) {
+            physics_hash=hash_float(physics_hash,fluid_velocity(&g.fluid)->u[i]);
+            physics_hash=hash_float(physics_hash,fluid_velocity(&g.fluid)->v[i]);
             assert(isfinite(fluid_velocity(&g.fluid)->u[i]) && isfinite(fluid_velocity(&g.fluid)->v[i]));
             assert(fabsf(fluid_velocity(&g.fluid)->u[i])<1000 && fabsf(fluid_velocity(&g.fluid)->v[i])<1000);
-            assert(fluid_dye(&g.fluid)->red[i]>=0 && fluid_dye(&g.fluid)->red[i]<=3.001f);
-            assert(fluid_dye(&g.fluid)->blue[i]>=0 && fluid_dye(&g.fluid)->blue[i]<=3.001f);
-            assert(fluid_dye(&g.fluid)->gold[i]>=0 && fluid_dye(&g.fluid)->gold[i]<=.651f);
+            assert(fluid_ink_decode(fluid_dye(&g.fluid)->red[i])>=0 && fluid_ink_decode(fluid_dye(&g.fluid)->red[i])<=3.001f);
+            assert(fluid_ink_decode(fluid_dye(&g.fluid)->blue[i])>=0 && fluid_ink_decode(fluid_dye(&g.fluid)->blue[i])<=3.001f);
+            assert(fluid_ink_decode(fluid_dye(&g.fluid)->gold[i])>=0 && fluid_ink_decode(fluid_dye(&g.fluid)->gold[i])<=.651f);
         }
     }
     puts("PASS: two-player gating, movement, jets, suction, grab/release, collisions, scoring, pause, fluid projection/coupling, suction dye transport, gold trail, 120s stability");
+    printf("Physics trace hash: %08x\n",physics_hash);
     return 0;
 }

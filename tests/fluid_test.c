@@ -15,14 +15,19 @@ static float random_unit(void) {
 static float max_velocity_error,max_dye_error;
 static void compare(void) {
     const FluidVelocity *v=fluid_velocity(&f);
-    const FluidDye *d=fluid_dye(&f);
+    const FluidInk *d=fluid_dye(&f);
     for(int k=0;k<FN;k++) {
         float error=fmaxf(fabsf(v->u[k]-ref.u[k]),fabsf(v->v[k]-ref.v[k]));
         max_velocity_error=fmaxf(max_velocity_error,error);
         assert(error<.005f);
-        error=fmaxf(fabsf(d->red[k]-ref.red[k]),fmaxf(fabsf(d->blue[k]-ref.blue[k]),fabsf(d->gold[k]-ref.gold[k])));
+        error=fmaxf(fabsf(fluid_ink_decode(d->red[k])-ref.red[k]),fmaxf(fabsf(fluid_ink_decode(d->blue[k])-ref.blue[k]),fabsf(fluid_ink_decode(d->gold[k])-ref.gold[k])));
         max_dye_error=fmaxf(max_dye_error,error);
+#ifdef PLASMAPONG_DYE_FIXED
+        /* Four rounded fixed-point steps plus the initial Q13 conversion. */
+        assert(error<.002f);
+#else
         assert(error<.00003f);
+#endif
     }
 }
 int main(void) {
@@ -40,9 +45,9 @@ int main(void) {
         for(int k=0;k<FN;k++) {
             fluid_velocity(&f)->u[k]=ref.u[k]=(random_unit()*2-1)*420;
             fluid_velocity(&f)->v[k]=ref.v[k]=(random_unit()*2-1)*420;
-            fluid_dye(&f)->red[k]=ref.red[k]=random_unit()*3;
-            fluid_dye(&f)->blue[k]=ref.blue[k]=random_unit()*3;
-            fluid_dye(&f)->gold[k]=ref.gold[k]=random_unit()*.65f;
+            fluid_dye(&f)->red[k]=fluid_ink_encode(ref.red[k]=random_unit()*3);
+            fluid_dye(&f)->blue[k]=fluid_ink_encode(ref.blue[k]=random_unit()*3);
+            fluid_dye(&f)->gold[k]=fluid_ink_encode(ref.gold[k]=random_unit()*.65f);
         }
         /* Include zero dt, boundary-crossing backtraces, and both bank parities. */
         float dt=trial%4==0?0:1.0f/30;
@@ -76,5 +81,15 @@ int main(void) {
     fluid_pixels(&f,pixels,64);
     for(int y=0;y<FH;y++) for(int x=0;x<64;x++)
         assert(pixels[y*64+x]==(x<FW?(fluid_color(&f,y*FW+x)<<8)|255:0x12345678));
+    /* Integer texture generation must agree with float color conversion to
+       within one display level when fed the same decoded dye values. */
+    for(int k=0;k<FN;k++) {
+        ref.red[k]=fluid_ink_decode(fluid_dye(&f)->red[k]);
+        ref.blue[k]=fluid_ink_decode(fluid_dye(&f)->blue[k]);
+        ref.gold[k]=fluid_ink_decode(fluid_dye(&f)->gold[k]);
+        uint32_t a=fluid_color(&f,k),b=reference_fluid_color(&ref,k);
+        for(int shift=0;shift<=16;shift+=8)
+            assert(abs((int)((a>>shift)&255)-(int)((b>>shift)&255))<=1);
+    }
     printf("PASS: aligned banks, value copies, reference solver (max velocity error %.8g, dye %.8g)\n",max_velocity_error,max_dye_error);
 }

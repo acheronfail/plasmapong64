@@ -79,7 +79,7 @@ Dependencies: Docker, `just`, and `sc64deployer` for deployment. The pinned
 libdragon Docker image and library commit match `../n64-util-rom`.
 
 ```sh
-just build     # produces plasmapong.z64 with RSP pressure solving
+just build     # produces plasmapong.z64 with RSP pressure and dye advection
 just check     # portable physics tests and SVG previews in build/
 just deploy    # build the RSP ROM, then upload to /CUSTOM/plasmapong.z64
 just clean
@@ -444,22 +444,23 @@ with the existing Q12 pressure solve, because it can move to the RSP without
 changing numerical precision or the eight-pass lexicographic algorithm.
 
 ```sh
-just build           # playable plasmapong.z64 with RSP pressure solving
+just build           # playable plasmapong.z64 with RSP pressure and dye advection
 just benchmark-rsp   # boot-time differential checks, then profiled scripted play
 just benchmark       # default RSP backend, profiled scripted play
 just cpu             # CPU reference backend, playable plasmapong-cpu.z64
 just benchmark-cpu   # CPU reference backend, profiled scripted play
 ```
 
-`just build`, `just emulate`, and `just deploy` use the RSP pressure solver.
+`just build`, `just emulate`, and `just deploy` use RSP pressure solving and vector dye advection.
 Deployment uploads `plasmapong.z64` to `/CUSTOM/plasmapong.z64`, without scripted
 inputs or boot-time test fixtures. `just rsp` remains available to build the same
 backend under the separate name `plasmapong-rsp.z64`.
-`FLUID_RSP=1` is the Makefile default; set `FLUID_RSP=0` for the CPU reference.
-Default objects live in `build/rsp` or `build/cpu`; use a separate build directory
+`FLUID_RSP=1 DYE_RSP=1` are the Makefile defaults; use `just cpu` (both flags
+set to zero) for the CPU reference, or `just float-dye` for float dye with RSP
+pressure. Default objects live in `build/rsp_dye`; use a separate build directory
 when changing backend or instrumentation flags. The pinned libdragon RSP build
 rule cannot generate symbols correctly for directories containing hyphens; the
-provided recipes use `build/rsp` and `build/rsp_benchmark`.
+provided recipes use underscore-separated directories.
 
 `src/rsp_fluid.S` implements one pressure pass per RSPQ command, allowing
 high-priority RSPQ work between passes. Three rotating pressure rows plus one divergence row
@@ -473,8 +474,9 @@ switches. This is a scalar integer RSP kernel, not a SIMD rewrite of Gauss–Sei
 eight queued passes, and a completion syncpoint before CPU gradient subtraction.
 The pressure output owns complete cache lines and is invalidated before DMA to
 prevent stale CPU writebacks. Divergence is read-only. The normal grid/state size
-is unchanged; velocity, curl, confinement, pressure-gradient subtraction and dye
-advection still run on the CPU.
+was unchanged at this checkpoint; velocity, curl, confinement and pressure-gradient
+subtraction still run on the CPU. Dye advection now uses the vector RSP backend
+described below.
 
 `tests/rsp_fluid_smoke.h` checks all 1,440 pressure cells for each of 64 fields:
 zero, maximum positive/negative divergence, alternating signs, impulses and seeded
@@ -519,9 +521,8 @@ default. No grid reduction or pressure iteration reduction is involved; hardware
 performance has not yet been quantified.
 
 This establishes the queue, DMA and numerical-test infrastructure for later RSP
-components. Dye/velocity advection still uses floating point; a future RSP port
-needs an explicitly validated fixed-point/vector design. The next pass below
-improves the existing CPU advection kernels first.
+components. At this checkpoint, dye/velocity advection still used floating point.
+The next pass below improves the CPU kernels before the vector dye implementation.
 
 ### CPU advection optimization (2026-10-02)
 
@@ -565,9 +566,93 @@ sanitizers pass with leak detection disabled (the local runner uses ptrace).
 `just benchmark-advection` builds a separate scripted ROM that runs these same
 64 cases on the N64 before reporting stage timings. The target checks pass in
 Ares, as do the existing RSP pressure checks in a combined verification ROM.
-Normal `just build` / `just deploy` use the optimized kernels without test probes.
+The float comparison backend retains both optimized kernels. Normal `just build` /
+`just deploy` use optimized CPU velocity advection and vector RSP dye without test probes.
 For benchmarks, add `--setting Input/Defocus=Allow` to the Ares command so losing
 window focus does not pause the run.
+
+### Default vector RSP dye advection (2026-10-02)
+
+```sh
+just build            # playable plasmapong.z64 with RSP pressure and dye
+just deploy           # upload as /CUSTOM/plasmapong.z64; power off N64 first
+just float-dye        # comparison ROM with float dye and RSP pressure
+just benchmark-dye    # integer/float comparison and DMA checks, then profiled play
+```
+
+Following a successful user-reported hardware playtest, `just build`, `just emulate`
+and `just deploy` use this implementation by default. `DYE_RSP=1` automatically
+enables `DYE_FIXED=1`. Production objects live in `build/rsp_dye`; float comparison
+objects remain in `build/rsp`, preventing reuse across storage formats.
+`just dye` and `just deploy-dye` remain compatibility recipes for the same backend
+under the separate name `plasmapong-dye.z64`.
+`DYE_FIXED=1 DYE_RSP=0` runs the same integer model on the CPU for comparison.
+
+Dye now persists in Q13 halfwords in both ping-pong banks. Injection is quantized
+at its source, and texture colors use integer arithmetic directly. Velocity,
+pressure and ball physics retain their existing representations and algorithms.
+`FluidInk` selects storage at build time; callers reading or writing dye in
+physical units use `fluid_ink_decode` / `fluid_ink_encode`. Game copies also copy
+the temporal-rounding phase, preserving deterministic independent simulations.
+
+`src/rsp_dye.S` handles one channel per RSPQ command. It loads that channel's
+3,168-byte source grid, gathers eight arbitrary bilinear samples at a time, then
+uses vector interpolation and decay. Q15 fractions share one CPU-generated
+trace grid across all three channels. DMA moves 24 traces/results per chunk.
+The linked overlay uses **1,136 bytes of IMEM** and **3,912 bytes of DMEM**
+(552 bytes of data plus 3,360 bytes of scratch). Each command reloads its scratch,
+and all DMA completes before returning to RSPQ. The CPU wrapper writes back
+inputs, invalidates the destination, and waits before swapping banks.
+
+Interpolation rounds to nearest. Decay uses a deterministic changing Q16
+rounding threshold, avoiding both a permanent faint residue and the bias of
+always rounding down. This changes dye numerically: it is checked against a
+specified error budget, while RSP output must match the integer oracle exactly.
+
+The initial float-to-fixed-to-float adapter took about 9.5 ms per dye step and
+was slower than the CPU. Persistent storage removes those full-grid conversions.
+With gameplay pinned to `fae144d`, 48 × 33 cells, eight RSP pressure passes, the
+pinned libdragon toolchain and Ares `5f2f7dc0d` / paraLLEl-RDP with audio:
+
+| Measurement | Float dye | RSP fixed dye | Reduction |
+| --- | ---: | ---: | ---: |
+| Profiled dye stage, including traces/DMA/wait | 7.052 ms | 4.879 ms | 30.8% |
+| Uninstrumented simulation | 23.405 ms | 21.291 ms | 9.0% |
+| Uninstrumented drawing | 4.534 ms | 2.332 ms | 48.6% |
+| Uninstrumented simulation + drawing | 27.938 ms | 23.623 ms | 15.4% |
+
+Each of the four runs lasted 55 seconds and produced ten 150-step/frame windows.
+Profiled call counts match. Submission intervals stay near 33.35 ms: this saves
+about **4.32 ms of measured work** within the existing 30 Hz schedule. These are
+emulator results, not measured hardware gains. Logs and ROMs are retained under
+`build/dye_compare/`; `results.json` records means, ranges and window counts.
+
+A separate 35-second control runs the portable scalar integer reference with the
+same fixed-point storage and integer colors. Across its six complete windows,
+dye takes **8.202 ms on CPU versus 4.869 ms on RSP** for the matching first six
+windows (40.6% reduction). Thus the RSP improves the advection work itself; the
+drawing improvement comes from integer color conversion. This is a comparison
+with the reference kernel, not a claim about every possible CPU implementation.
+
+Validation includes:
+
+- 64 seeded/boundary/zero/maximum/faint fields: RSP output matches the integer
+  reference exactly, with source/trace integrity, DMA guards and overlay switches
+  checked. Largest one-step float error is **0.00027514**, at most **1 RGB level**.
+- 3,600 host steps of injection then fading: maximum dye error **0.00489778** and
+  **2 RGB levels**; all dye eventually reaches zero. Limits are 0.006 and 3 levels.
+- Both storage formats pass fluid/reference, gameplay and arcade tests, including
+  suction transport, gold trails, bank copies and 120-second stability. Their
+  recorded ball/score/velocity physics traces match exactly (`b9c7dafe`).
+- Address/undefined sanitizers pass for the dye model and fixed-storage gameplay
+  with leak detection disabled for the local ptrace-based runner.
+- A deterministic host gameplay preview differs by at most **1 RGB level** from
+  float dye (mean absolute difference 0.040 levels across RGB pixels).
+- Combined dye/pressure fixtures and a 30-second level-101 arcade run pass with
+  the RDP command validator enabled (`build/dye-validate.log`).
+
+`RDP_VALIDATE=1` enables libdragon's RDP command validator in a separate build;
+use a distinct `BUILD_DIR` when changing test or profiling flags.
 
 ## Sound assets
 

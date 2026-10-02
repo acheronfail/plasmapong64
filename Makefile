@@ -1,7 +1,9 @@
 FLUID_RSP ?= 1
+DYE_RSP ?= 1
+DYE_FIXED ?= $(DYE_RSP)
 # Keep default objects separate from the old CPU build and comparison builds.
-BUILD_DIR ?= build/$(if $(filter 1,$(FLUID_RSP)),rsp,cpu)
-ROM ?= plasmapong
+BUILD_DIR ?= build/$(if $(filter 1,$(DYE_RSP)),rsp_dye,$(if $(filter 1,$(DYE_FIXED)),dye_cpu,$(if $(filter 1,$(FLUID_RSP)),rsp,cpu)))
+ROM ?= $(if $(filter 1,$(DYE_RSP)),plasmapong,$(if $(filter 1,$(DYE_FIXED)),plasmapong-dye-cpu,plasmapong-float))
 .DEFAULT_GOAL := all
 ifeq ($(N64_INST),)
 $(error N64_INST is unset. Use ./tools/build-rom.sh or install libdragon)
@@ -17,6 +19,21 @@ src += src/fluid_rsp.c
 rsp_obj := $(BUILD_DIR)/src/rsp_fluid.o
 N64_CFLAGS += -DPLASMAPONG_FLUID_RSP
 endif
+ifeq ($(DYE_FIXED),1)
+src += src/fluid_dye_fixed.c
+N64_CFLAGS += -DPLASMAPONG_DYE_FIXED
+endif
+ifeq ($(DYE_RSP),1)
+ifneq ($(DYE_FIXED),1)
+$(error DYE_RSP=1 requires DYE_FIXED=1)
+endif
+ifneq ($(FLUID_RSP),1)
+$(error DYE_RSP=1 requires FLUID_RSP=1)
+endif
+src += src/fluid_dye_rsp.c
+rsp_obj += $(BUILD_DIR)/src/rsp_dye.o
+N64_CFLAGS += -DPLASMAPONG_DYE_RSP
+endif
 ifeq ($(RSP_TEST),1)
 ifneq ($(FLUID_RSP),1)
 $(error RSP_TEST=1 requires FLUID_RSP=1)
@@ -24,14 +41,23 @@ endif
 N64_CFLAGS += -DPLASMAPONG_RSP_TEST
 endif
 N64_CFLAGS += -Wall -Wextra -Werror
+ifeq ($(RDP_VALIDATE),1)
+N64_CFLAGS += -DPLASMAPONG_RDP_VALIDATE
+endif
 ifeq ($(ADVECTION_TEST),1)
 N64_CFLAGS += -DPLASMAPONG_ADVECTION_TEST
+endif
+ifeq ($(DYE_TEST),1)
+ifneq ($(DYE_RSP),1)
+$(error DYE_TEST=1 requires DYE_RSP=1)
+endif
+N64_CFLAGS += -DPLASMAPONG_DYE_TEST
 endif
 ifeq ($(FLUID_PROFILE),1)
 N64_CFLAGS += -DPLASMAPONG_FLUID_PROFILE
 endif
 # Inline the fluid sampling loops without expanding the rest of the ROM.
-$(BUILD_DIR)/src/fluid.o $(BUILD_DIR)/src/fluid_advection.o: CFLAGS += -O3
+$(BUILD_DIR)/src/fluid.o $(BUILD_DIR)/src/fluid_advection.o $(BUILD_DIR)/src/fluid_dye_fixed.o: CFLAGS += -O3
 ifeq ($(SMOKE),1)
 N64_CFLAGS += -DPLASMAPONG_SMOKE
 endif
@@ -47,6 +73,6 @@ $(BUILD_DIR)/$(ROM).elf: $(src:%.c=$(BUILD_DIR)/%.o) $(rsp_obj)
 $(ROM).z64: N64_ROM_SAVETYPE=eeprom4k
 $(ROM).z64: N64_ROM_TITLE="Plasma Pong 64"
 clean:
-	rm -rf $(BUILD_DIR) $(ROM).z64 plasmapong-smoke.z64 plasmapong-arcade-smoke.z64 plasmapong-save-smoke.z64 plasmapong-rsp.z64 plasmapong-rsp-benchmark.z64
+	rm -rf $(BUILD_DIR) $(ROM).z64 plasmapong-smoke.z64 plasmapong-arcade-smoke.z64 plasmapong-save-smoke.z64 plasmapong-rsp.z64 plasmapong-rsp-benchmark.z64 plasmapong-dye.z64 plasmapong-dye-benchmark.z64
 -include $(wildcard $(BUILD_DIR)/src/*.d)
 .PHONY: all clean
