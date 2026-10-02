@@ -49,7 +49,8 @@ static void centered_hint(float y,const char *s) {
 static void name_entry(const Game *g,float y) {
     const char *initials=g->highs[g->score_entry].initials;
     const char *title="HIGH SCORE!  ";
-    float x=roundf(160-(label_width(title)+label_width(initials)+12)*.5f);
+    /* Two four-pixel gaps keep the active character's highlight separate. */
+    float x=roundf(160-(label_width(title)+label_width(initials)+8)*.5f);
     label(x,y,2,title); x+=label_width(title);
     for(unsigned i=0;i<3;i++) {
         char letter[]={initials[i],0};
