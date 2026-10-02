@@ -8,6 +8,8 @@
 #define WHITE 0xeaf6ff
 #define CYAN 0x48dcff
 #define CORAL 0xff637e
+/* Match the ball dye's RGB contribution in fluid_color(). */
+#define GOLD 0xffcd19
 static void ring(float x,float y,float radius,uint32_t color) {
     for(int i=0;i<20;i++) {
         float a=i*6.2831853f/20;
@@ -43,7 +45,7 @@ static void menu_label(float y,int style,const char *text) {
     label(x+2,y+2,5,text);
     label(x,y,style,text);
 }
-/* Compact 5x7 block alphabet for the two-colour title. */
+/* Compact 5x7 block alphabet for the three-colour title. */
 static void block_word(float x,float y,const char *s,uint32_t color) {
     const char *alphabet="PLASMONG64";
     static const unsigned char glyphs[][7]={
@@ -69,7 +71,7 @@ static void menu_title(void) {
     block_word(50,61,"PLASMA",0x02040a); block_word(164,61,"PONG",0x02040a);
     block_word(242,61,"64",0x02040a);
     block_word(48,59,"PLASMA",CYAN); block_word(162,59,"PONG",CORAL);
-    block_word(240,59,"64",CORAL);
+    block_word(240,59,"64",GOLD);
 }
 void ui_draw(const Game *g) {
     if(g->phase==MENU) {

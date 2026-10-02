@@ -5,7 +5,7 @@ currents stirred by the bats. Those same currents accelerate and deflect the bal
 The ball leaves a subtle gold dye trail that mixes into the currents and fades.
 First to **9 points** wins. Requires two N64 controllers in **ports 1 and 2**;
 there is no AI opponent. On boot, a main menu runs randomly seeded fluid currents
-and mixing colours across the entire screen, with a raised cyan/coral PLASMA PONG 64
+and mixing colours across the entire screen, with a raised cyan/coral/gold PLASMA PONG 64
 block title and shadowed menu text over the fluid. The game screen omits the title;
 P1 and P2 sit at matching insets from the court edges.
 SINGLE PLAYER (COMING SOON) is greyed out and cannot be selected. Select **MULTI-PLAYER** with A or START on either controller,
