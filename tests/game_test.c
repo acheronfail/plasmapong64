@@ -95,6 +95,36 @@ int main(void) {
     fluid_sample(&g.fluid,g.bat[0].x+22,g.bat[0].y,&u,&v); assert(u<0);
     in[0].a=false; game_step(&g,in);
     fluid_sample(&g.fluid,g.bat[0].x+22,g.bat[0].y,&u,&v); assert(u>0);
+    /* Isolate the release impulse after real holds: half charge gives half
+       the velocity away from the fluid speed cap, and zero charge gives none. */
+    for(int p=0;p<2;p++) {
+        float release_energy[4];
+        float release_speed[4];
+        int hold_ticks[4]={0,1,15,30};
+        for(int h=0;h<4;h++) {
+            ready(); g.serve=100; in[p].a=true;
+            for(int t=0;t<hold_ticks[h];t++) game_step(&g,in);
+            assert(fabsf(g.bat[p].charge-hold_ticks[h]*STEP)<.00001f);
+            fluid_init(&g.fluid); g.bat[p].sucking=true;
+            in[p].a=false; game_step(&g,in);
+            release_energy[h]=energy(&g.fluid);
+            fluid_sample(&g.fluid,g.bat[p].x+(p?-22:22),g.bat[p].y+24,&u,&v);
+            release_speed[h]=fabsf(u);
+            assert(g.bat[p].charge==0 && !g.bat[p].sucking);
+            game_step(&g,in); assert(g.bat[p].charge==0);
+        }
+        assert(release_energy[0]==0 && release_energy[3]>0);
+        assert(release_energy[1]<release_energy[2] && release_energy[2]<release_energy[3]);
+        assert(fabsf(release_speed[1]/release_speed[3]-STEP)<.00001f);
+        assert(fabsf(release_speed[2]/release_speed[3]-.5f)<.00001f);
+        /* Repeated one-frame taps must stay weaker than a continuous Z jet. */
+        ready(); g.serve=100;
+        for(int t=0;t<60;t++) { in[p].a=t%2==0; game_step(&g,in); }
+        float tap_energy=energy(&g.fluid);
+        ready(); g.serve=100; in[p].z=true;
+        for(int t=0;t<60;t++) game_step(&g,in);
+        assert(tap_energy<energy(&g.fluid));
+    }
     /* Suction must transport EXISTING dye, not just influence the ball or
        paint a new coloured patch. Check both mirrored ends against no suction. */
     for(int p=0;p<2;p++) {

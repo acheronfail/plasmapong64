@@ -203,8 +203,10 @@ void game_step(Game *g,const Input physical[2]) {
             fluid_pump(&g->fluid,b->x+dir*7,b->y,35,-1150,STEP,p);
         } else if(b->sucking) {
             b->sucking=false; b->burst=.25f;
-            fluid_pump(&g->fluid,b->x,b->y,40,2800,.07f+b->charge*.06f,p);
-            fluid_splat(&g->fluid,b->x+dir*12,b->y,27,dir*(130+b->charge*110),b->vy*.35f,1,p);
+            /* Spend only stored charge: tapping must not create a free impulse. */
+            fluid_pump(&g->fluid,b->x,b->y,40,2800,.13f*b->charge,p);
+            fluid_splat(&g->fluid,b->x+dir*12,b->y,27,dir*240*b->charge,
+                        b->vy*.35f*b->charge,b->charge,p);
             if(g->held==p) {
                 g->held=-1; g->bx=b->x+dir*9; g->by=b->y;
                 g->bvx=dir*(180+b->charge*70); g->bvy=b->vy*.55f;
