@@ -35,6 +35,9 @@ static float dye_x(const Fluid *f) {
 static float gold_sum(const Fluid *f) {
     float sum=0; for(int i=0;i<FN;i++) sum+=fluid_ink_decode(fluid_dye(f)->gold[i]); return sum;
 }
+static float red_sum(const Fluid *f) {
+    float sum=0; for(int i=0;i<FN;i++) sum+=fluid_ink_decode(fluid_dye(f)->red[i]); return sum;
+}
 int main(void) {
     game_init(&g); Input idle[2]={0};
     assert(g.phase==MENU);
@@ -227,6 +230,32 @@ int main(void) {
         assert(moved>1.0f);
     }
     ready(); game_step(&g,in); assert(gold_sum(&g.fluid)>0);
+    /* Speed, not ownership or a launch flag, drives both ball and dye colour. */
+    ready(); g.bvx=BALL_HOT_SPEED; g.bvy=0; assert(!game_ball_hot(&g));
+    g.bvy=1; assert(game_ball_hot(&g));
+    g.held=0; assert(!game_ball_hot(&g));
+    g.held=-1; g.serve=1; assert(!game_ball_hot(&g));
+    for(int p=0;p<2;p++) {
+        ready(); g.bx=ARENA_W*.5f; g.bvx=(p?-1:1)*290; g.bvy=0;
+        game_step(&g,in);
+        assert(game_ball_hot(&g) && red_sum(&g.fluid)>0 && gold_sum(&g.fluid)==0);
+        /* Cooling down restores gold emission without recolouring old dye. */
+        g.bvx=(p?-1:1)*198; game_step(&g,in);
+        assert(!game_ball_hot(&g) && gold_sum(&g.fluid)>0 && red_sum(&g.fluid)>0);
+        ready(); g.bvx=(p?-1:1)*198; g.bvy=0; game_step(&g,in);
+        assert(!game_ball_hot(&g) && gold_sum(&g.fluid)>0 && red_sum(&g.fluid)==0);
+        /* A real perfect release remains hot after fluid drag and speed limits. */
+        ready(); g.held=p; g.bat[p].sucking=true; g.bat[p].charge=1;
+        game_step(&g,in); assert(g.held==-1 && game_ball_hot(&g));
+    }
+    ready();
+    fluid_hot_ball_dye(&g.fluid,123,93,.4f);
+    int hot_trail=15*FW+20;
+    for(int i=0;i<FN;i++) fluid_velocity(&g.fluid)->u[i]=fluid_flow_encode(CELL/STEP);
+    fluid_dye_step(&g.fluid,STEP);
+    assert(fluid_ink_decode(fluid_dye(&g.fluid)->red[hot_trail+1])>.35f);
+    assert(fluid_ink_decode(fluid_dye(&g.fluid)->red[hot_trail])<.15f);
+    assert(gold_sum(&g.fluid)==0);
     ready(); g.serve=1; game_step(&g,in); assert(gold_sum(&g.fluid)==0);
     ready(); g.held=0; game_step(&g,in); assert(gold_sum(&g.fluid)==0);
     ready();

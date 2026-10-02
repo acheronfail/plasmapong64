@@ -59,7 +59,8 @@ static void ball_step(Game *g) {
         limit_ball(g);
         /* Deposit a little dye along the travelled path, never during a serve
            countdown or while held. It will be carried by the same current. */
-        fluid_ball_dye(&g->fluid,g->bx,g->by,.065f);
+        if(game_ball_hot(g)) fluid_hot_ball_dye(&g->fluid,g->bx,g->by,.13f);
+        else fluid_ball_dye(&g->fluid,g->bx,g->by,.065f);
         float oldx=g->bx;
         g->bx+=g->bvx*dt; g->by+=g->bvy*dt;
         if(g->by<BALL_RADIUS) { g->by=BALL_RADIUS; g->bvy=fabsf(g->bvy); g->sound_events|=SOUND_WALL; }

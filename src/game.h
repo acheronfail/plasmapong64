@@ -5,6 +5,7 @@
 #define STEP (1.0f/30.0f)
 #define BAT_HALF 14.0f
 #define BALL_RADIUS 3.0f
+#define BALL_HOT_SPEED 240.0f
 #define SUCTION_CHARGE_TICKS 30u
 /* Two ticks (about 67ms) to release at full charge before breaking. */
 #define SUCTION_BREAK_TICKS (SUCTION_CHARGE_TICKS+2u)
@@ -48,6 +49,10 @@ typedef struct {
     Arcade arcade;
     HighScore highs[HIGH_SCORE_COUNT];
 } Game;
+static inline bool game_ball_hot(const Game *g) {
+    return g->serve<=0 && g->held<0 &&
+        g->bvx*g->bvx+g->bvy*g->bvy>BALL_HOT_SPEED*BALL_HOT_SPEED;
+}
 void game_init(Game *g);
 void game_step(Game *g,const Input in[2]);
 float arcade_difficulty(const Game *g);

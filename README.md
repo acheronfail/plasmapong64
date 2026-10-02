@@ -34,6 +34,9 @@ ignores controller 2 during a run.
 Fluid burst strength scales with charge. Undercharged ball launches scale up to
 200 speed (198 at 99% charge). At one second of suction, the full charge bar turns
 green: release during this two-tick window (about 67ms) for a 290-speed shot.
+Above 240 speed, the ball and its motion streak turn red and it deposits red dye
+instead of gold. Perfect shots cross this threshold; normal colouring returns
+as the ball slows, while the red dye already deposited keeps moving with the fluid.
 Holding until 1.067s breaks the suction mechanism with a crack and sputter.
 The bat turns grey with red cracks and
 a shrinking cooldown bar for five seconds of active play. Movement and Z jets

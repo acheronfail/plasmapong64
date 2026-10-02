@@ -42,6 +42,12 @@ int main(int argc,char **argv) {
     }
     if(argc>1 && !strcmp(argv[1],"lobby")) { game_init(&g); g.phase=LOBBY; }
     if(argc>1 && !strcmp(argv[1],"paused")) g.phase=PAUSED;
+    if(argc>1 && !strcmp(argv[1],"hot-shot")) {
+        game_init(&g); g.phase=PLAY; g.serve=0;
+        g.bx=110; g.by=ARENA_H*.5f; g.bvx=290; g.bvy=0;
+        Input idle[2]={{.connected=true},{.connected=true}};
+        for(int t=0;t<8;t++) game_step(&g,idle);
+    }
     if(argc>1 && !strcmp(argv[1],"overcharge")) {
         g.phase=PLAY; g.bat[0].sucking=true; g.bat[0].charge=1;
         g.bat[1].sucking=false; g.bat[1].cooldown_ticks=90;

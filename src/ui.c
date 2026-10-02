@@ -174,15 +174,16 @@ void ui_draw(const Game *g) {
         snprintf(s,sizeof(s),"GOALS %u / 3",g->arcade.goals); label(130,46,0,s);
     }
     float bx=OX+g->bx,by=OY+g->by;
+    bool hot=game_ball_hot(g);
     if(g->serve<=0 && g->held<0) {
         for(int i=4;i>0;i--) {
             float x=maxf(OX,minf(OX+ARENA_W-2,bx-g->bvx*i*.016f));
             float y=maxf(OY,minf(OY+ARENA_H-2,by-g->bvy*i*.016f));
-            rect(x-1,y-1,2,2,0x556b84);
+            rect(x-1,y-1,2,2,hot?0xff3030:0x556b84);
         }
     }
-    rect(bx-4,by-4,8,8,g->held<0?0x447486:0xffd875);
-    rect(bx-2,by-3,4,6,WHITE); rect(bx-3,by-2,6,4,WHITE);
+    rect(bx-4,by-4,8,8,hot?0x8c1724:g->held<0?0x447486:0xffd875);
+    rect(bx-2,by-3,4,6,hot?0xff3030:WHITE); rect(bx-3,by-2,6,4,hot?0xff3030:WHITE);
     if(g->phase==LOBBY) {
         if(g->mode==ARCADE) {
             if(!g->connected[0]) panel("ONE PLAYER REQUIRED","Connect a pad to port 1","[START] PLAY  [B] MENU");

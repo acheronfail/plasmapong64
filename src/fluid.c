@@ -262,8 +262,9 @@ void fluid_dye_step(Fluid *f,float dt) {
     f->dye_bank^=1;
     PROFILE_END(PROFILE_DYE_SWAP);
 }
-void fluid_ball_dye(Fluid *f,float x,float y,float amount) {
+static void ball_dye(Fluid *f,float x,float y,float amount,int hot) {
     FluidInk *ink_grid=fluid_dye(f);
+    FluidInkValue *ink=hot?ink_grid->red:ink_grid->gold;
     PROFILE_BEGIN();
     const float radius=8;
     int x0=(int)clampf((x-radius)/CELL,0,FW-1),x1=(int)clampf((x+radius)/CELL,0,FW-1);
@@ -272,10 +273,12 @@ void fluid_ball_dye(Fluid *f,float x,float y,float amount) {
         float dx=(ix+.5f)*CELL-x,dy=(iy+.5f)*CELL-y;
         float w=maxf(0,1-(dx*dx+dy*dy)/(radius*radius));
         int k=iy*FW+ix;
-        ink_add(&ink_grid->gold[k],amount*w*w,.65f);
+        ink_add(&ink[k],amount*w*w,hot?3:.65f);
     }
     PROFILE_END(PROFILE_BALL_DYE);
 }
+void fluid_ball_dye(Fluid *f,float x,float y,float amount) { ball_dye(f,x,y,amount,0); }
+void fluid_hot_ball_dye(Fluid *f,float x,float y,float amount) { ball_dye(f,x,y,amount,1); }
 static inline uint32_t dye_color(const FluidInk *ink_grid,int k) {
 #ifdef PLASMAPONG_DYE_FIXED
     int r=ink_grid->red[k],b=ink_grid->blue[k],g=ink_grid->gold[k];
