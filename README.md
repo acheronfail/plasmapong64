@@ -50,6 +50,15 @@ libdragon revision. Subsequent builds use Docker's cache. If you already have a
 compatible libdragon install, `N64_INST=/your/toolchain make -j4` also works.
 `just check` needs only a C11 compiler and the system math library.
 
+### GitHub releases
+
+Every push to `master` runs checks, builds with the same pinned Docker toolchain,
+and publishes `plasmapong.z64` as a GitHub release. The release name is the Actions
+run number (1, 2, 3, …), with tag `build-<number>`. Failed runs may leave gaps.
+The **ROM release** workflow can also be run manually on `master`. Reruns reuse
+their original number and leave an already published release intact; an
+interrupted draft is completed before publishing.
+
 ## Ares
 
 An existing Ares checkout was found at `../ares` (the optional emulator directory
