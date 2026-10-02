@@ -209,7 +209,7 @@ void game_step(Game *g,const Input physical[2]) {
                         b->vy*.35f*b->charge,b->charge,p);
             if(g->held==p) {
                 g->held=-1; g->bx=b->x+dir*9; g->by=b->y;
-                g->bvx=dir*(180+b->charge*70); g->bvy=b->vy*.55f;
+                g->bvx=dir*250*b->charge; g->bvy=b->vy*.55f;
             }
             b->charge=0;
         }

@@ -59,10 +59,10 @@ int main(void) {
     ready(); in[0].a=true; g.bx=g.bat[0].x+12; g.by=g.bat[0].y; g.bvx=-50; g.bvy=0;
     game_step(&g,in); assert(g.held==0);
     in[0].y=1; game_step(&g,in); assert(fabsf(g.by-g.bat[0].y)<.01f);
-    in[0].a=false; game_step(&g,in); assert(g.held==-1 && g.bvx>170 && g.bat[0].burst>0);
+    in[0].a=false; game_step(&g,in); assert(g.held==-1 && g.bvx>0 && g.bvx<40 && g.bat[0].burst>0);
     ready(); in[1].a=true; g.bx=g.bat[1].x-12; g.by=g.bat[1].y; g.bvx=50; g.bvy=0;
     game_step(&g,in); assert(g.held==1);
-    in[1].a=false; game_step(&g,in); assert(g.held==-1 && g.bvx<-170);
+    in[1].a=false; game_step(&g,in); assert(g.held==-1 && g.bvx<0 && g.bvx>-40);
     ready(); in[0].a=true; g.bx=g.bat[0].x+15; g.by=g.bat[0].y; g.bvx=-280; g.bvy=0;
     game_step(&g,in); assert(g.held==-1);
     ready(); g.bx=g.bat[0].x+8; g.by=g.bat[0].y; g.bvx=-200; g.bvy=0;
@@ -106,7 +106,11 @@ int main(void) {
             for(int t=0;t<hold_ticks[h];t++) game_step(&g,in);
             assert(fabsf(g.bat[p].charge-hold_ticks[h]*STEP)<.00001f);
             fluid_init(&g.fluid); g.bat[p].sucking=true;
+            /* The serve countdown isolates launch speed from subsequent drag. */
+            g.held=p;
             in[p].a=false; game_step(&g,in);
+            assert(g.held==-1);
+            assert(fabsf(g.bvx-(p?-1:1)*250*hold_ticks[h]*STEP)<.001f);
             release_energy[h]=energy(&g.fluid);
             fluid_sample(&g.fluid,g.bat[p].x+(p?-22:22),g.bat[p].y+24,&u,&v);
             release_speed[h]=fabsf(u);

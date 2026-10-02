@@ -19,7 +19,7 @@ Press START in the lobby to begin.
 | Analog stick / D-pad | Move your bat vertically and a short distance forwards/backwards |
 | Hold Z | Fire a continuous coloured fluid jet towards the opponent |
 | Hold A | Suck nearby fluid towards your bat; catch a nearby ball if it is slow enough |
-| Release A | Burst fluid outwards and launch a caught ball; fluid burst strength is proportional to charge, reaching full strength after holding A for one second |
+| Release A | Burst fluid outwards and launch a caught ball; fluid burst strength and forward ball launch speed are proportional to charge, reaching full strength after holding A for one second |
 | START | Confirm menu selection, start, pause/resume, or multiplayer rematch |
 | Up/down, then A on the main menu | Choose a mode or view high scores |
 | B in the lobby, pause, or winner screen | Return to the main menu |
