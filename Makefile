@@ -5,7 +5,7 @@ ifeq ($(N64_INST),)
 $(error N64_INST is unset. Use ./tools/build-rom.sh or install libdragon)
 endif
 include $(N64_INST)/include/n64.mk
-src := src/main.c src/game.c src/fluid.c src/ui.c
+src := src/main.c src/game.c src/fluid.c src/ui.c src/sound.c
 N64_CFLAGS += -Wall -Wextra -Werror
 ifeq ($(SMOKE),1)
 N64_CFLAGS += -DPLASMAPONG_SMOKE

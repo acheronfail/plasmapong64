@@ -5,6 +5,6 @@ static void smoke_input(const Game *g,Input in[2]) {
         in[p]=(Input){.connected=true,.x=sinf(tick*.021f+p),
             .y=sinf(tick*.037f+p*2.4f),.z=tick%110<90,.a=(tick+40*p)%145>118};
     }
-    in[0].start=(g->phase==LOBBY || g->phase==FINISHED);
+    in[0].start=(g->phase==MENU || g->phase==LOBBY || g->phase==FINISHED) && tick%2==0;
     tick++;
 }

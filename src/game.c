@@ -12,7 +12,29 @@ void game_init(Game *g) {
     memset(g,0,sizeof(*g));
     g->bat[0]=(Bat){.x=20,.y=ARENA_H*.5f};
     g->bat[1]=(Bat){.x=ARENA_W-20,.y=ARENA_H*.5f};
-    g->phase=LOBBY; g->winner=-1; serve(g,1);
+    g->phase=MENU; g->menu_rng=0x76a51c93u; g->winner=-1; serve(g,1);
+}
+static float menu_random(Game *g) {
+    uint32_t x=g->menu_rng?g->menu_rng:1;
+    x^=x<<13; x^=x>>17; x^=x<<5; g->menu_rng=x;
+    return (x&65535)/65535.0f;
+}
+static void menu_step(Game *g) {
+    /* Slowly drifting emitters keep the menu alive even with no controllers. */
+    if(g->menu_ticks%60==0) for(int p=0;p<3;p++) {
+        float angle=menu_random(g)*6.2831853f;
+        g->menu_current[p]=(MenuCurrent){24+menu_random(g)*(ARENA_W-48),
+            24+menu_random(g)*(ARENA_H-48),cosf(angle)*32,sinf(angle)*32};
+    }
+    for(int p=0;p<3;p++) {
+        MenuCurrent *c=&g->menu_current[p];
+        c->x=clampf(c->x+c->u*STEP*.2f,16,ARENA_W-16);
+        c->y=clampf(c->y+c->v*STEP*.2f,16,ARENA_H-16);
+        fluid_splat(&g->fluid,c->x,c->y,26,c->u*.65f,c->v*.65f,p==2?0:.10f,p&1);
+        if(p==2) fluid_ball_dye(&g->fluid,c->x,c->y,.20f);
+    }
+    fluid_velocity_step(&g->fluid,STEP); fluid_dye_step(&g->fluid,STEP);
+    g->menu_ticks++; g->elapsed+=STEP;
 }
 static void limit_ball(Game *g) {
     float speed=sqrtf(g->bvx*g->bvx+g->bvy*g->bvy);
@@ -34,10 +56,13 @@ static void ball_step(Game *g) {
         g->bvy+=(v-g->bvy*.22f)*1.35f*dt;
         if(fabsf(g->bvx)<45) g->bvx+=(g->bvx<0?-1:1)*24*dt;
         limit_ball(g);
+        /* Deposit a little dye along the travelled path, never during a serve
+           countdown or while held. It will be carried by the same current. */
+        fluid_ball_dye(&g->fluid,g->bx,g->by,.065f);
         float oldx=g->bx;
         g->bx+=g->bvx*dt; g->by+=g->bvy*dt;
-        if(g->by<BALL_RADIUS) { g->by=BALL_RADIUS; g->bvy=fabsf(g->bvy); }
-        if(g->by>ARENA_H-BALL_RADIUS) { g->by=ARENA_H-BALL_RADIUS; g->bvy=-fabsf(g->bvy); }
+        if(g->by<BALL_RADIUS) { g->by=BALL_RADIUS; g->bvy=fabsf(g->bvy); g->sound_events|=SOUND_WALL; }
+        if(g->by>ARENA_H-BALL_RADIUS) { g->by=ARENA_H-BALL_RADIUS; g->bvy=-fabsf(g->bvy); g->sound_events|=SOUND_WALL; }
         for(int p=0;p<2;p++) {
             Bat *b=&g->bat[p]; int dir=p?-1:1;
             float dx=g->bx-b->x,dy=g->by-b->y;
@@ -51,6 +76,7 @@ static void ball_step(Game *g) {
             bool crossed=(oldx-face)*dir>=0 && (g->bx-face)*dir<=0;
             bool overlap=fabsf(dx)<6 && fabsf(dy)<BAT_HALF+BALL_RADIUS;
             if((crossed||overlap) && fabsf(dy)<BAT_HALF+BALL_RADIUS && rvx*dir<0) {
+                g->sound_events|=p?SOUND_BAT2:SOUND_BAT1;
                 g->bx=face; g->bvx=dir*maxf(108,fabsf(g->bvx)*1.04f);
                 g->bvy+=dy*3.8f+b->vy*.3f; limit_ball(g);
                 fluid_splat(&g->fluid,g->bx,g->by,13,dir*35,b->vy*.2f,.35f,p);
@@ -58,19 +84,32 @@ static void ball_step(Game *g) {
         }
         if(g->bx<-BALL_RADIUS || g->bx>ARENA_W+BALL_RADIUS) {
             int scorer=g->bx<0?1:0;
-            g->score[scorer]++;
-            if(g->score[scorer]>=9) { g->phase=FINISHED; g->winner=scorer; }
+            g->score[scorer]++; g->sound_events|=SOUND_GOAL;
+            if(g->score[scorer]>=9) { g->phase=FINISHED; g->winner=scorer; g->sound_events|=SOUND_WIN; }
             serve(g,scorer?1:-1); return;
         }
     }
 }
 void game_step(Game *g,const Input in[2]) {
-    bool start=false;
+    g->sound_events=0;
+    bool start=false,confirm=false,back=false;
     for(int p=0;p<2;p++) {
         g->connected[p]=in[p].connected;
         start|=in[p].connected && in[p].start && !g->previous[p].start;
+        confirm|=in[p].connected && in[p].a && !g->previous[p].a;
+        back|=in[p].connected && in[p].b && !g->previous[p].b;
     }
     bool both=in[0].connected && in[1].connected;
+    if(g->phase==MENU) {
+        menu_step(g);
+        if(start || confirm) g->phase=LOBBY;
+        memcpy(g->previous,in,sizeof(g->previous)); return;
+    }
+    if(back && (g->phase==LOBBY || g->phase==PAUSED || g->phase==FINISHED)) {
+        g->phase=MENU; g->held=-1;
+        for(int p=0;p<2;p++) g->bat[p].sucking=false;
+        memcpy(g->previous,in,sizeof(g->previous)); return;
+    }
     if(!both && g->phase==PLAY) g->phase=PAUSED;
     if(start && both) {
         if(g->phase==LOBBY || g->phase==FINISHED) {
@@ -94,7 +133,7 @@ void game_step(Game *g,const Input in[2]) {
             fluid_splat(&g->fluid,b->x+dir*14,b->y,22,dir*1150*STEP,b->vy*.08f,2.6f*STEP,p);
         }
     }
-    fluid_step(&g->fluid,STEP);
+    fluid_velocity_step(&g->fluid,STEP);
     for(int p=0;p<2;p++) {
         Bat *b=&g->bat[p]; int dir=p?-1:1;
         if(in[p].a) {
@@ -111,6 +150,7 @@ void game_step(Game *g,const Input in[2]) {
             b->charge=0;
         }
     }
+    fluid_dye_step(&g->fluid,STEP);
     ball_step(g);
     memcpy(g->previous,in,sizeof(g->previous));
 }
