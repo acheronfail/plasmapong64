@@ -18,8 +18,8 @@ void fluid_curl_fixed(int16_t *curl,const FluidVelocityFixed *v) {
 }
 unsigned fluid_confinement_strength(float dt) {
     assert(CELL==6.0f && dt>=0 && dt<=.25f);
-    /* Curl/96 * CELL * 1.1 * dt * VELOCITY_SCALE = curl * 1.1 * dt. */
-    return (unsigned)(dt*1.1f*32768+.5f);
+    /* Grid and velocity scales cancel: curl * confinement * dt. */
+    return (unsigned)(dt*FLUID_CONFINEMENT*32768+.5f);
 }
 static int absolute(int v) { return v<0?-v:v; }
 static int clamp_velocity(int v) { return v>VELOCITY_LIMIT?VELOCITY_LIMIT:v<-VELOCITY_LIMIT?-VELOCITY_LIMIT:v; }
@@ -38,7 +38,7 @@ static int direction(int n,uint32_t inverse) {
     return value>32767?32767:value<-32768?-32768:value;
 }
 void fluid_confinement_fixed(FluidVelocityFixed *v,const int16_t *curl,unsigned strength) {
-    assert(strength<=9011);
+    assert(strength<=fluid_confinement_strength(.25f));
     for(int y=2;y<FH-2;y++) for(int x=2;x<FW-2;x++) {
         int k=y*FW+x;
         int nx=absolute(curl[k+1])-absolute(curl[k-1]);

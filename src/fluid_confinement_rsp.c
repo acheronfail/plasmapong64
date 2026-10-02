@@ -24,7 +24,7 @@ void fluid_curl_rsp(int16_t *curl,const FluidVelocityFixed *v) {
     finish(); data_cache_hit_invalidate(curl,FN*sizeof(*curl));
 }
 void fluid_confinement_rsp(FluidVelocityFixed *v,const int16_t *curl,unsigned strength) {
-    assert(!((uintptr_t)curl&15) && !((uintptr_t)v&15) && strength<=9011);
+    assert(!((uintptr_t)curl&15) && !((uintptr_t)v&15) && strength<=fluid_confinement_strength(.25f));
     init();
     data_cache_hit_writeback(curl,FN*sizeof(*curl));
     data_cache_hit_writeback_invalidate(v,sizeof(*v));

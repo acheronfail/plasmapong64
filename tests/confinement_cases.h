@@ -11,14 +11,14 @@
 #define CONF_LOG printf
 #endif
 static int conf_clamp(int v) { return v>VELOCITY_LIMIT?VELOCITY_LIMIT:v<-VELOCITY_LIMIT?-VELOCITY_LIMIT:v; }
-/* Frozen float curl/confinement arithmetic from fae1bf7, with Q4 velocity. */
+/* Float curl/confinement reference with Q4 velocity and current tuning. */
 static void confinement_float(FluidVelocityFixed *v,float dt) {
     static float curl[FN];
     for(int y=1;y<FH-1;y++) for(int x=1;x<FW-1;x++) {
         int k=y*FW+x;
         curl[k]=(v->v[k+1]-v->v[k-1]-v->u[k+FW]+v->u[k-FW])*(.5f/(CELL*VELOCITY_SCALE));
     }
-    float confinement=CELL*1.1f*dt;
+    float confinement=CELL*FLUID_CONFINEMENT*dt;
     for(int y=2;y<FH-2;y++) for(int x=2;x<FW-2;x++) {
         int k=y*FW+x;
         float nx=fabsf(curl[k+1])-fabsf(curl[k-1]);

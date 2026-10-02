@@ -208,7 +208,7 @@ void fluid_velocity_step(Fluid *f,float dt) {
     FluidFlow *velocity=fluid_velocity(f);
     PROFILE_BEGIN();
     FluidFlow *next=&f->velocity[f->velocity_bank^1];
-    const float grid_dt=dt/CELL,decay=1-.16f*dt;
+    const float grid_dt=dt/CELL,decay=1-FLUID_DAMPING*dt;
     /* Semi-Lagrangian advection: bounded even during a strong jet. */
 #ifdef PLASMAPONG_VELOCITY_FIXED
     fluid_advect_velocity_fixed(next,velocity,grid_dt,decay,(f->velocity_phase+=40503u)&65535u);
@@ -232,7 +232,7 @@ void fluid_velocity_step(Fluid *f,float dt) {
 #endif
     PROFILE_END(PROFILE_CONFINEMENT);
 #else
-    const float confinement=CELL*1.1f*dt;
+    const float confinement=CELL*FLUID_CONFINEMENT*dt;
     /* Curl confinement returns small vortices lost to coarse-grid advection. */
     for(int y=1;y<FH-1;y++) for(int x=1;x<FW-1;x++) {
         int k=y*FW+x;

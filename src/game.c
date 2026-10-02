@@ -77,9 +77,9 @@ static void ball_step(Game *g) {
     const float dt=STEP/4;
     for(int step=0;step<4;step++) {
         float u,v; fluid_sample(&g->fluid,g->bx,g->by,&u,&v);
-        /* Lift/drag from the actual velocity field, with enough inertia for Pong. */
-        g->bvx+=(u-g->bvx*.22f)*1.35f*dt;
-        g->bvy+=(v-g->bvy*.22f)*1.35f*dt;
+        /* Stronger current response, with the same drag in still water. */
+        g->bvx+=(u*1.7f-g->bvx*.297f)*dt;
+        g->bvy+=(v*1.7f-g->bvy*.297f)*dt;
         if(fabsf(g->bvx)<45) g->bvx+=(g->bvx<0?-1:1)*24*dt;
         limit_ball(g);
         /* Deposit a little dye along the travelled path, never during a serve

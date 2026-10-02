@@ -162,7 +162,23 @@ int main(void) {
     assert(energy(&g.fluid)<e);
     ready(); g.bx=145; g.by=90; g.bvx=100; g.bvy=0;
     for(int i=0;i<FN;i++) fluid_velocity(&g.fluid)->v[i]=fluid_flow_encode(110);
-    game_step(&g,in); assert(g.bvy>1); /* Real fluid-to-ball coupling. */
+    game_step(&g,in); assert(g.bvy>5.5f && g.bvy<7); /* Cross-current bends the ball. */
+    /* A sustained jet leaves useful momentum four seconds after release.
+       Measure decoded speed so every storage backend uses the same units. */
+    for(int p=0;p<2;p++) {
+        ready(); g.serve=100; in[p].z=true;
+        for(int t=0;t<90;t++) game_step(&g,in);
+        in[p].z=false;
+        for(int t=0;t<120;t++) game_step(&g,in);
+        float residual=0;
+        for(int k=0;k<FN;k++) {
+            float fu=fluid_flow_decode(fluid_velocity(&g.fluid)->u[k]);
+            float fv=fluid_flow_decode(fluid_velocity(&g.fluid)->v[k]);
+            residual+=fu*fu+fv*fv;
+        }
+        float speed=sqrtf(residual/FN);
+        assert(speed>13 && speed<20);
+    }
     ready(); in[0].a=true; game_step(&g,in);
     fluid_sample(&g.fluid,g.bat[0].x+22,g.bat[0].y,&u,&v); assert(u<0);
     /* Empty suction never charges or breaks, and releasing it injects no burst. */

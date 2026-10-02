@@ -5,6 +5,9 @@
 #define FH 33
 #define FN (FW * FH)
 #define CELL 6.0f
+/* Momentum loss per second and swirl restoration, shared by CPU/RSP paths. */
+#define FLUID_DAMPING .08f
+#define FLUID_CONFINEMENT 1.25f
 #define ARENA_W (FW * CELL)
 #define ARENA_H (FH * CELL)
 /* Whole grids and rows start on 16-byte cache-line boundaries. Index-based

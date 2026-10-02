@@ -129,7 +129,10 @@ badges. Arcade requires one emulated N64 pad in port 1; multiplayer requires two
   Gauss–Seidel pressure solve uses bounded Q12 integer arithmetic to reduce
   divergence; curl confinement preserves
   small swirls. Boundary cells enforce zero wall-normal velocity. Momentum and
-  dye decay gradually so old currents dissipate. Velocity and dye use aligned
+  dye decay gradually so old currents dissipate. Velocity damping is 0.08 per
+  second, with swirl confinement at 1.25: sustained jets build currents that
+  linger after release. The ball responds to flow with a 1.7 coupling strength
+  while retaining its 0.297 still-water drag and 290 speed cap. Velocity and dye use aligned
   alternating buffers, with no full-grid copies between steps.
 - Bat movement and Z jets inject momentum and dye into the grid. A is an
   intentional local pump/source/sink applied after pressure projection so the

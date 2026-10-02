@@ -1,4 +1,4 @@
-/* Frozen scalar baseline from fae1ba5; deliberately unoptimized oracle. */
+/* Scalar baseline from fae1ba5 with current gameplay tuning; unoptimized oracle. */
 #include "mathutil.h"
 #include "fluid_reference.h"
 #include <math.h>
@@ -84,7 +84,7 @@ void reference_fluid_pump(ReferenceFluid *f,float x,float y,float radius,float s
     }
 }
 void reference_fluid_velocity_step(ReferenceFluid *f,float dt) {
-    const float grid_dt=dt/CELL,decay=1-.16f*dt;
+    const float grid_dt=dt/CELL,decay=1-.08f*dt;
     /* Semi-Lagrangian advection: bounded even during a strong jet. */
     for(int y=0;y<FH;y++) for(int x=0;x<FW;x++) {
         int k=y*FW+x;
@@ -103,8 +103,8 @@ void reference_fluid_velocity_step(ReferenceFluid *f,float dt) {
         float nx=fabsf(f->tr[k+1])-fabsf(f->tr[k-1]);
         float ny=fabsf(f->tr[k+FW])-fabsf(f->tr[k-FW]);
         float inv=1/sqrtf(nx*nx+ny*ny+.00001f);
-        f->u[k]+=ny*inv*f->tr[k]*CELL*1.1f*dt;
-        f->v[k]-=nx*inv*f->tr[k]*CELL*1.1f*dt;
+        f->u[k]+=ny*inv*f->tr[k]*CELL*1.25f*dt;
+        f->v[k]-=nx*inv*f->tr[k]*CELL*1.25f*dt;
     }
     reference_fluid_project(f);
 }
