@@ -1,4 +1,5 @@
-/* Q13 dye, Q15 interpolation fractions. Each command processes one channel.
+/* Signed halfword channels (Q13 dye or Q4 velocity), Q15 fractions.
+ * Sample differences must fit signed 16-bit lanes. One channel per command.
  * A complete 3168-byte source grid fits beside 24 traces and 24 outputs.
  * Scratch is reloaded on every command, including after overlay switches.
  */

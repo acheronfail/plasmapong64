@@ -10,6 +10,27 @@
 /* Whole grids and rows start on 16-byte cache-line boundaries. Index-based
    ping-pong buffers keep Fluid/Game safe to copy by value (no self-pointers). */
 typedef struct { _Alignas(16) float u[FN],v[FN]; } FluidVelocity;
+enum { VELOCITY_SCALE=16, VELOCITY_LIMIT=16383 };
+typedef struct { _Alignas(16) int16_t u[FN],v[FN]; } FluidVelocityFixed;
+#ifdef PLASMAPONG_VELOCITY_FIXED
+typedef FluidVelocityFixed FluidFlow;
+typedef int16_t FluidFlowValue;
+static inline FluidFlowValue fluid_flow_clamp(int v) {
+    return (int16_t)(v>VELOCITY_LIMIT?VELOCITY_LIMIT:v<-VELOCITY_LIMIT?-VELOCITY_LIMIT:v);
+}
+static inline float fluid_flow_decode(FluidFlowValue v) { return v*(1.0f/VELOCITY_SCALE); }
+static inline FluidFlowValue fluid_flow_encode(float v) {
+    v*=VELOCITY_SCALE;
+    if(v>VELOCITY_LIMIT) return VELOCITY_LIMIT;
+    if(v<-VELOCITY_LIMIT) return -VELOCITY_LIMIT;
+    return (int16_t)(v+(v<0?-.5f:.5f));
+}
+#else
+typedef FluidVelocity FluidFlow;
+typedef float FluidFlowValue;
+static inline float fluid_flow_decode(FluidFlowValue v) { return v; }
+static inline FluidFlowValue fluid_flow_encode(float v) { return v; }
+#endif
 typedef struct { _Alignas(16) float red[FN],blue[FN],gold[FN]; } FluidDye;
 enum { DYE_SCALE=8192, DYE_WEIGHT_SCALE=32768 };
 typedef struct { _Alignas(16) int16_t red[FN],blue[FN],gold[FN]; } FluidDyeFixed;
@@ -25,11 +46,14 @@ static inline float fluid_ink_decode(FluidInkValue v) { return v; }
 static inline FluidInkValue fluid_ink_encode(float v) { return v; }
 #endif
 typedef struct {
-    FluidVelocity velocity[2];
+    FluidFlow velocity[2];
     FluidInk dye[2];
     _Alignas(16) int32_t pressure[FN];
     _Alignas(16) union { float curl[FN]; int32_t divergence[FN]; };
     unsigned velocity_bank,dye_bank;
+#ifdef PLASMAPONG_VELOCITY_FIXED
+    unsigned velocity_phase;
+#endif
 #ifdef PLASMAPONG_DYE_FIXED
     unsigned dye_phase;
 #endif

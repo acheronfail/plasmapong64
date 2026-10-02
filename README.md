@@ -451,13 +451,14 @@ just cpu             # CPU reference backend, playable plasmapong-cpu.z64
 just benchmark-cpu   # CPU reference backend, profiled scripted play
 ```
 
-`just build`, `just emulate`, and `just deploy` use RSP pressure solving and vector dye advection.
+`just build`, `just emulate`, and `just deploy` use RSP pressure solving and vector dye/velocity advection.
 Deployment uploads `plasmapong.z64` to `/CUSTOM/plasmapong.z64`, without scripted
 inputs or boot-time test fixtures. `just rsp` remains available to build the same
 backend under the separate name `plasmapong-rsp.z64`.
-`FLUID_RSP=1 DYE_RSP=1` are the Makefile defaults; use `just cpu` (both flags
+`FLUID_RSP=1 DYE_RSP=1 VELOCITY_RSP=1` are the Makefile defaults; use `just cpu` (all three flags
 set to zero) for the CPU reference, or `just float-dye` for float dye with RSP
-pressure. Default objects live in `build/rsp_dye`; use a separate build directory
+pressure. `just float-velocity` keeps RSP pressure/dye with float velocity.
+Default objects live in `build/rsp_velocity`; use a separate build directory
 when changing backend or instrumentation flags. The pinned libdragon RSP build
 rule cannot generate symbols correctly for directories containing hyphens; the
 provided recipes use underscore-separated directories.
@@ -474,8 +475,8 @@ switches. This is a scalar integer RSP kernel, not a SIMD rewrite of Gauss–Sei
 eight queued passes, and a completion syncpoint before CPU gradient subtraction.
 The pressure output owns complete cache lines and is invalidated before DMA to
 prevent stale CPU writebacks. Divergence is read-only. The normal grid/state size
-was unchanged at this checkpoint; velocity, curl, confinement and pressure-gradient
-subtraction still run on the CPU. Dye advection now uses the vector RSP backend
+was unchanged at this checkpoint; curl, confinement and pressure-gradient
+subtraction still run on the CPU. Dye and velocity advection now use the vector RSP backend
 described below.
 
 `tests/rsp_fluid_smoke.h` checks all 1,440 pressure cells for each of 64 fields:
@@ -567,7 +568,7 @@ sanitizers pass with leak detection disabled (the local runner uses ptrace).
 64 cases on the N64 before reporting stage timings. The target checks pass in
 Ares, as do the existing RSP pressure checks in a combined verification ROM.
 The float comparison backend retains both optimized kernels. Normal `just build` /
-`just deploy` use optimized CPU velocity advection and vector RSP dye without test probes.
+`just deploy` use vector RSP velocity and dye advection without test probes.
 For benchmarks, add `--setting Input/Defocus=Allow` to the Ares command so losing
 window focus does not pause the run.
 
@@ -582,15 +583,15 @@ just benchmark-dye    # integer/float comparison and DMA checks, then profiled p
 
 Following a successful user-reported hardware playtest, `just build`, `just emulate`
 and `just deploy` use this implementation by default. `DYE_RSP=1` automatically
-enables `DYE_FIXED=1`. Production objects live in `build/rsp_dye`; float comparison
+enables `DYE_FIXED=1`. Production objects live in `build/rsp_velocity`; float comparison
 objects remain in `build/rsp`, preventing reuse across storage formats.
 `just dye` and `just deploy-dye` remain compatibility recipes for the same backend
 under the separate name `plasmapong-dye.z64`.
-`DYE_FIXED=1 DYE_RSP=0` runs the same integer model on the CPU for comparison.
+`DYE_FIXED=1 DYE_RSP=0 VELOCITY_RSP=0` runs the same integer dye model on the CPU for comparison.
 
 Dye now persists in Q13 halfwords in both ping-pong banks. Injection is quantized
-at its source, and texture colors use integer arithmetic directly. Velocity,
-pressure and ball physics retain their existing representations and algorithms.
+at its source, and texture colors use integer arithmetic directly. At this checkpoint,
+velocity, pressure and ball physics retained their existing representations and algorithms.
 `FluidInk` selects storage at build time; callers reading or writing dye in
 physical units use `fluid_ink_decode` / `fluid_ink_encode`. Game copies also copy
 the temporal-rounding phase, preserving deterministic independent simulations.
@@ -668,3 +669,104 @@ pack links, included licenses, processing, and audition order.
 The checked-in sample bank means `just build` needs no downloads or audio tools.
 To regenerate it from the included originals, use `python3 tools/prepare-audio.py`
 with ffmpeg installed. This also writes individual WAV auditions in `assets/audio/`.
+
+### Default Q4 velocity and RSP advection (2026-10-02)
+
+```sh
+just build                # playable plasmapong.z64 with RSP velocity, dye and pressure
+just deploy               # upload as /CUSTOM/plasmapong.z64; power off N64 first
+just float-velocity       # previous implementation: float velocity, RSP dye/pressure
+just benchmark-velocity   # velocity/dye/pressure checks, then profiled gameplay
+```
+
+Following a successful user-reported hardware playtest, `just build`, `just emulate`
+and `just deploy` use Q4 velocity and RSP advection by default. `VELOCITY_RSP=1`
+automatically enables `VELOCITY_FIXED=1`. Production objects use `build/rsp_velocity`;
+the previous float-velocity comparison uses `build/rsp_dye`. `just velocity` and
+`just deploy-velocity` remain compatibility recipes for the same default backend
+under the separate name `plasmapong-velocity.z64`. `VELOCITY_FIXED=1 VELOCITY_RSP=0` builds the scalar CPU reference with the
+same representation; it still uses RSP dye by default. Instrumentation flags
+need their own build directory. Fixed velocity requires fixed dye, and RSP
+velocity requires the RSP dye overlay.
+
+Both velocity banks now store signed Q4 samples by default: **1/16 pixel/second**
+precision, saturated to **±1023.9375 pixels/second**. This deliberately restricts
+samples to ±16383 so their differences fit a signed vector lane. `FluidFlow`
+selects storage; use `fluid_flow_encode` / `fluid_flow_decode` when accessing
+physical units. Ball position/velocity and gameplay calculations remain floats.
+
+`src/fluid_velocity_fixed.c` prepares integer backtraces using Q12 grid
+coordinates and a shared Q20 timestep coefficient. Coordinates keep the existing
+clamped-edge sampling policy, with a slightly quantized upper boundary. The same
+trace preparation also accelerates dye. Divergence and pressure-gradient
+subtraction use integer arithmetic; curl/confinement still use floats, with
+rounded and saturated velocity updates. The Q12 pressure solve and its eight
+iterations are unchanged.
+
+The existing eight-lane `rsp_dye.S` interpolation/decay kernel processes the two
+signed velocity channels through `fluid_channels_rsp`. No additional microcode
+is needed. DMA/cache ownership and completion waits are retained, and all waits
+are included in timings. A changing per-fluid rounding threshold prevents
+nearest-rounded decay from leaving stationary low-speed residue. Copying a
+`Fluid` also copies that phase. The initial conversion-wrapper prototype cost
+about 6.32 ms per advection step and was rejected; persistent storage avoids
+packing/unpacking the velocity grids each frame.
+
+Against a frozen `fae143f` baseline, using the pinned toolchain, 48 × 33 grid,
+Ares `5f2f7dc0d`, paraLLEl-RDP, audio and identical scripted controller inputs:
+
+| Measurement | Float velocity | Q4 + RSP velocity | Reduction |
+| --- | ---: | ---: | ---: |
+| Profiled velocity advection, including traces/DMA/wait | 4.850 ms | 2.952 ms | 39.1% |
+| Profiled dye advection | 4.879 ms | 3.460 ms | 29.1% |
+| Profiled divergence | 1.633 ms | 0.708 ms | 56.7% |
+| Uninstrumented simulation | 21.290 ms | 16.968 ms | 20.3% |
+| Uninstrumented drawing | 2.330 ms | 2.310 ms | 0.9% |
+| Uninstrumented simulation + drawing | 23.620 ms | 19.278 ms | 18.4% |
+
+Each of these four runs lasted 55 seconds and produced ten complete 150-step/frame
+windows. The submission interval remains about 33.35 ms: the saving is **4.34 ms
+of work per update**, not a change to the 30 Hz schedule. These are emulator
+measurements. Hardware playtesting succeeded; hardware timing has not been measured.
+Confinement gets slower (2.866 → 3.356 ms) because updates now require rounding;
+the larger savings elsewhere outweigh this cost. As trajectories diverge, some
+ball-dependent work differs despite identical controller inputs.
+
+A separate 35-second/six-window control runs the same Q4 algorithm on the CPU.
+Velocity advection averages **5.264 ms CPU versus 2.953 ms RSP** in the matching
+first six RSP windows, a **43.9%** reduction. This is the portable scalar oracle,
+not a claim that no faster CPU implementation is possible. Logs, ROMs and timing
+summaries are in `build/velocity_compare/`, including `results.json`.
+
+Validation and accuracy:
+
+- `just check` includes 64 signed velocity fields with zero/unity decay,
+  alternating signs, random fields, edge-crossing traces and saturation. The RSP
+  matches the integer oracle exactly on N64 emulation, including source/trace
+  integrity, DMA guards and overlay switches.
+- Maximum one-step error against float advection is **0.4144 pixels/second** at
+  normal timesteps and **1.156 pixels/second** including 0.2-second stress steps.
+  These bounds cover unsaturated inputs within ±420; deliberately saturated
+  million-unit inputs are checked for bounded output, not float equivalence.
+- Gameplay and arcade tests pass in both representations, including the
+  120-second stability replay. Quantized release injections allow one velocity
+  LSB of error; gameplay rules and exact release-speed tests remain intact.
+  Address/undefined sanitizers pass with leak detection disabled for the ptrace
+  runner. The default float backend's 120-second comparison CSV matches the
+  frozen baseline exactly on the host.
+- A separate identical-forcing flow run injects jets for 60 seconds and fades for
+  60 seconds. Average RMS speed changes by **0.31%**, maximum sampled velocity is
+  428.19 pixels/second, and no sampled cells saturate. Faint residual currents
+  fade faster: final RMS is 0.0035 versus 0.4058 pixels/second.
+- Ball paths and scores can diverge. The gameplay replay's average RMS flow speed
+  differs by 0.27%, but this is not a bound on local errors or trajectory drift.
+  Combined velocity/dye/pressure fixtures and level-101 arcade gameplay pass with
+  the RDP validator enabled.
+
+`build/velocity_compare/preview.html` is a standalone comparison with selectable
+6-, 18-, 60- and 120-second snapshots of gameplay and identical fluid forcing.
+These are deterministic **host-model previews**, not emulator screenshots; the
+integer kernel is separately verified against the RSP. `tools/velocity-replay.c`
+emits reproducible per-frame CSV statistics and optional field snapshots when
+compiled for either backend. `tools/preview.c` accepts an optional second argument
+for the number of gameplay steps, preserving its default 540-step snapshot.

@@ -94,7 +94,7 @@ int main(void) {
     for(int i=0;i<90;i++) { fluid_velocity_step(&g.fluid,STEP); fluid_dye_step(&g.fluid,STEP); }
     assert(energy(&g.fluid)<e);
     ready(); g.bx=145; g.by=90; g.bvx=100; g.bvy=0;
-    for(int i=0;i<FN;i++) fluid_velocity(&g.fluid)->v[i]=110;
+    for(int i=0;i<FN;i++) fluid_velocity(&g.fluid)->v[i]=fluid_flow_encode(110);
     game_step(&g,in); assert(g.bvy>1); /* Real fluid-to-ball coupling. */
     ready(); in[0].a=true; game_step(&g,in);
     fluid_sample(&g.fluid,g.bat[0].x+22,g.bat[0].y,&u,&v); assert(u<0);
@@ -125,8 +125,14 @@ int main(void) {
         }
         assert(release_energy[0]==0 && release_energy[3]>0);
         assert(release_energy[1]<release_energy[2] && release_energy[2]<release_energy[3]);
+#ifdef PLASMAPONG_VELOCITY_FIXED
+        /* Independently quantized injections can differ by one velocity LSB. */
+        assert(fabsf(release_speed[1]-release_speed[3]*STEP)<1.0f/VELOCITY_SCALE);
+        assert(fabsf(release_speed[2]-release_speed[3]*.5f)<1.0f/VELOCITY_SCALE);
+#else
         assert(fabsf(release_speed[1]/release_speed[3]-STEP)<.00001f);
         assert(fabsf(release_speed[2]/release_speed[3]-.5f)<.00001f);
+#endif
         /* Repeated one-frame taps must stay weaker than a continuous Z jet. */
         ready(); g.serve=100;
         for(int t=0;t<60;t++) { in[p].a=t%2==0; game_step(&g,in); }
@@ -225,7 +231,7 @@ int main(void) {
     ready(); g.held=0; game_step(&g,in); assert(gold_sum(&g.fluid)==0);
     ready();
     int trail=15*FW+20; fluid_dye(&g.fluid)->gold[trail]=fluid_ink_encode(.5f);
-    for(int i=0;i<FN;i++) fluid_velocity(&g.fluid)->u[i]=CELL/STEP;
+    for(int i=0;i<FN;i++) fluid_velocity(&g.fluid)->u[i]=fluid_flow_encode(CELL/STEP);
     fluid_dye_step(&g.fluid,STEP);
     assert(fluid_ink_decode(fluid_dye(&g.fluid)->gold[trail+1])>.45f && fluid_ink_decode(fluid_dye(&g.fluid)->gold[trail])<.001f);
     assert(gold_sum(&g.fluid)<.5f); /* It advects and fades as a third dye. */
@@ -249,8 +255,8 @@ int main(void) {
         for(int i=0;i<FN;i++) {
             physics_hash=hash_float(physics_hash,fluid_velocity(&g.fluid)->u[i]);
             physics_hash=hash_float(physics_hash,fluid_velocity(&g.fluid)->v[i]);
-            assert(isfinite(fluid_velocity(&g.fluid)->u[i]) && isfinite(fluid_velocity(&g.fluid)->v[i]));
-            assert(fabsf(fluid_velocity(&g.fluid)->u[i])<1000 && fabsf(fluid_velocity(&g.fluid)->v[i])<1000);
+            assert(isfinite(fluid_flow_decode(fluid_velocity(&g.fluid)->u[i])) && isfinite(fluid_flow_decode(fluid_velocity(&g.fluid)->v[i])));
+            assert(fabsf(fluid_flow_decode(fluid_velocity(&g.fluid)->u[i]))<1000 && fabsf(fluid_flow_decode(fluid_velocity(&g.fluid)->v[i]))<1000);
             assert(fluid_ink_decode(fluid_dye(&g.fluid)->red[i])>=0 && fluid_ink_decode(fluid_dye(&g.fluid)->red[i])<=3.001f);
             assert(fluid_ink_decode(fluid_dye(&g.fluid)->blue[i])>=0 && fluid_ink_decode(fluid_dye(&g.fluid)->blue[i])<=3.001f);
             assert(fluid_ink_decode(fluid_dye(&g.fluid)->gold[i])>=0 && fluid_ink_decode(fluid_dye(&g.fluid)->gold[i])<=.651f);

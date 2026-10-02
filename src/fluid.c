@@ -3,6 +3,9 @@
 #include "fluid_profile.h"
 #include "fluid_pressure.h"
 #include "fluid_advection.h"
+#ifdef PLASMAPONG_VELOCITY_FIXED
+#include "fluid_velocity_fixed.h"
+#endif
 #ifdef PLASMAPONG_DYE_FIXED
 #include "fluid_dye_fixed.h"
 #endif
@@ -17,7 +20,7 @@ _Static_assert((-1>>1)==-1,"fixed-point pressure requires arithmetic right shift
    each lexicographic pass increases max |pressure| by at most D/2 plus
    rounding. Eight passes and their pre-shift sums stay inside int32_t.
    The clamp is far outside ordinary play (even +/-1000 velocity gives
-   at most 12000 divergence). Velocity and advection remain floating point. */
+   at most 12000 divergence). Velocity optionally uses Q4 storage and vector RSP advection. */
 #define PRESSURE_SCALE 4096
 static inline void ink_add(FluidInkValue *ink,float amount,float limit) {
 #ifdef PLASMAPONG_DYE_FIXED
@@ -30,12 +33,16 @@ static inline void ink_add(FluidInkValue *ink,float amount,float limit) {
 }
 /* Separable interpolation shares coordinates across channels and needs only
    three multiplies per channel. */
-static inline float bilerp(const float *a,int k,float tx,float ty) {
+static inline float bilerp(const FluidFlowValue *a,int k,float tx,float ty) {
     float top=a[k]+tx*(a[k+1]-a[k]);
     float bottom=a[k+FW]+tx*(a[k+FW+1]-a[k+FW]);
+#ifdef PLASMAPONG_VELOCITY_FIXED
+    return (top+ty*(bottom-top))*(1.0f/VELOCITY_SCALE);
+#else
     return top+ty*(bottom-top);
+#endif
 }
-static void sample_pair(const float *a,const float *b,float x,float y,float *va,float *vb) {
+static void sample_pair(const FluidFlowValue *a,const FluidFlowValue *b,float x,float y,float *va,float *vb) {
     x=clampf(x,0,FW-1.001f); y=clampf(y,0,FH-1.001f);
     int ix=(int)x,iy=(int)y,k=iy*FW+ix;
     float tx=x-ix,ty=y-iy;
@@ -44,13 +51,13 @@ static void sample_pair(const float *a,const float *b,float x,float y,float *va,
 }
 void fluid_init(Fluid *f) { memset(f,0,sizeof(*f)); }
 void fluid_sample(const Fluid *f,float x,float y,float *u,float *v) {
-    const FluidVelocity *velocity=fluid_velocity(f);
+    const FluidFlow *velocity=fluid_velocity(f);
     PROFILE_BEGIN();
     sample_pair(velocity->u,velocity->v,x/CELL-.5f,y/CELL-.5f,u,v);
     PROFILE_END(PROFILE_SAMPLE);
 }
 static void walls(Fluid *f) {
-    FluidVelocity *velocity=fluid_velocity(f);
+    FluidFlow *velocity=fluid_velocity(f);
     for(int y=0;y<FH;y++) velocity->u[y*FW]=velocity->u[y*FW+FW-1]=0;
     for(int x=0;x<FW;x++) velocity->v[x]=velocity->v[(FH-1)*FW+x]=0;
 }
@@ -95,15 +102,28 @@ void fluid_pressure_cpu(int32_t *restrict pressure,const int32_t *restrict diver
                __builtin_assume_aligned(pressure+(FH-2)*FW,16),FW*sizeof(pressure[0]));
     }
 }
+static inline void subtract_gradient(FluidFlowValue *v,int32_t difference) {
+#ifdef PLASMAPONG_VELOCITY_FIXED
+    /* pressure Q12 -> velocity Q4: divide by 2*CELL*4096/16. */
+    int change=difference>=0?(difference+1536)/3072:-((-difference+1536)/3072);
+    *v=fluid_flow_clamp(*v-change);
+#else
+    *v-=difference*(.5f/(CELL*PRESSURE_SCALE));
+#endif
+}
 void fluid_project(Fluid *f) {
-    FluidVelocity *velocity=fluid_velocity(f);
+    FluidFlow *velocity=fluid_velocity(f);
     PROFILE_BEGIN();
     walls(f);
     /* Only interior divergence is consumed by the Neumann pressure solve. */
     for(int y=1;y<FH-1;y++) for(int x=1;x<FW-1;x++) {
         int k=y*FW+x;
+#ifdef PLASMAPONG_VELOCITY_FIXED
+        f->divergence[k]=-768*(velocity->u[k+1]-velocity->u[k-1]+velocity->v[k+FW]-velocity->v[k-FW]);
+#else
         float divergence=-.5f*CELL*(velocity->u[k+1]-velocity->u[k-1]+velocity->v[k+FW]-velocity->v[k-FW]);
         f->divergence[k]=(int32_t)(clampf(divergence,-32760,32760)*PRESSURE_SCALE);
+#endif
     }
     PROFILE_END(PROFILE_DIVERGENCE);
 #ifdef PLASMAPONG_FLUID_RSP
@@ -114,26 +134,26 @@ void fluid_project(Fluid *f) {
     PROFILE_END(PROFILE_PRESSURE);
     for(int y=1;y<FH-1;y++) for(int x=1;x<FW-1;x++) {
         int k=y*FW+x;
-        velocity->u[k]-=(f->pressure[k+1]-f->pressure[k-1])*(.5f/(CELL*PRESSURE_SCALE));
-        velocity->v[k]-=(f->pressure[k+FW]-f->pressure[k-FW])*(.5f/(CELL*PRESSURE_SCALE));
+        subtract_gradient(&velocity->u[k],f->pressure[k+1]-f->pressure[k-1]);
+        subtract_gradient(&velocity->v[k],f->pressure[k+FW]-f->pressure[k-FW]);
     }
     /* Tangential edge velocity survives; wall-normal velocity is zero. */
     for(int x=1;x<FW-1;x++) {
-        velocity->u[x]-=(f->pressure[x+1]-f->pressure[x-1])*(.5f/(CELL*PRESSURE_SCALE));
+        subtract_gradient(&velocity->u[x],f->pressure[x+1]-f->pressure[x-1]);
         int k=(FH-1)*FW+x;
-        velocity->u[k]-=(f->pressure[k+1]-f->pressure[k-1])*(.5f/(CELL*PRESSURE_SCALE));
+        subtract_gradient(&velocity->u[k],f->pressure[k+1]-f->pressure[k-1]);
     }
     for(int y=1;y<FH-1;y++) {
         int k=y*FW;
-        velocity->v[k]-=(f->pressure[k+FW]-f->pressure[k-FW])*(.5f/(CELL*PRESSURE_SCALE));
+        subtract_gradient(&velocity->v[k],f->pressure[k+FW]-f->pressure[k-FW]);
         k+=FW-1;
-        velocity->v[k]-=(f->pressure[k+FW]-f->pressure[k-FW])*(.5f/(CELL*PRESSURE_SCALE));
+        subtract_gradient(&velocity->v[k],f->pressure[k+FW]-f->pressure[k-FW]);
     }
     walls(f);
     PROFILE_END(PROFILE_GRADIENT);
 }
 void fluid_splat(Fluid *f,float x,float y,float radius,float u,float v,float dye,int player) {
-    FluidVelocity *velocity=fluid_velocity(f);
+    FluidFlow *velocity=fluid_velocity(f);
     FluidInk *ink_grid=fluid_dye(f);
     PROFILE_BEGIN();
     const float inv_radius2=1/(radius*radius);
@@ -143,14 +163,15 @@ void fluid_splat(Fluid *f,float x,float y,float radius,float u,float v,float dye
         float dx=(ix+.5f)*CELL-x,dy=(iy+.5f)*CELL-y;
         float w=maxf(0,1-(dx*dx+dy*dy)*inv_radius2); w*=w;
         int k=iy*FW+ix;
-        velocity->u[k]=clampf(velocity->u[k]+u*w,-420,420); velocity->v[k]=clampf(velocity->v[k]+v*w,-420,420);
+        velocity->u[k]=fluid_flow_encode(clampf(fluid_flow_decode(velocity->u[k])+u*w,-420,420));
+        velocity->v[k]=fluid_flow_encode(clampf(fluid_flow_decode(velocity->v[k])+v*w,-420,420));
         FluidInkValue *ink=player?ink_grid->red:ink_grid->blue;
         ink_add(&ink[k],dye*w,3);
     }
     PROFILE_END(PROFILE_SPLAT);
 }
 void fluid_pump(Fluid *f,float x,float y,float radius,float strength,float dt,int player) {
-    FluidVelocity *velocity=fluid_velocity(f);
+    FluidFlow *velocity=fluid_velocity(f);
     FluidInk *ink_grid=fluid_dye(f);
     PROFILE_BEGIN();
     const float inv_radius2=1/(radius*radius);
@@ -164,27 +185,44 @@ void fluid_pump(Fluid *f,float x,float y,float radius,float strength,float dt,in
         float w=1-d2*inv_radius2;
         float force=strength*w*dt/sqrtf(d2+9);
         int k=iy*FW+ix;
-        velocity->u[k]=clampf(velocity->u[k]+dx*force,-420,420);
-        velocity->v[k]=clampf(velocity->v[k]+dy*force,-420,420);
+        velocity->u[k]=fluid_flow_encode(clampf(fluid_flow_decode(velocity->u[k])+dx*force,-420,420));
+        velocity->v[k]=fluid_flow_encode(clampf(fluid_flow_decode(velocity->v[k])+dy*force,-420,420));
         FluidInkValue *ink=player?ink_grid->red:ink_grid->blue;
         if(strength>0) ink_add(&ink[k],strength*dt*.0015f*w,3);
     }
     PROFILE_END(PROFILE_PUMP);
 }
+static inline void add_confinement(FluidFlowValue *v,float amount) {
+#ifdef PLASMAPONG_VELOCITY_FIXED
+    amount*=VELOCITY_SCALE;
+    int delta=(int)(amount+(amount<0?-.5f:.5f));
+    *v=fluid_flow_clamp(*v+delta);
+#else
+    *v+=amount;
+#endif
+}
 void fluid_velocity_step(Fluid *f,float dt) {
-    FluidVelocity *velocity=fluid_velocity(f);
+    FluidFlow *velocity=fluid_velocity(f);
     PROFILE_BEGIN();
-    FluidVelocity *next=&f->velocity[f->velocity_bank^1];
+    FluidFlow *next=&f->velocity[f->velocity_bank^1];
     const float grid_dt=dt/CELL,decay=1-.16f*dt,confinement=CELL*1.1f*dt;
     /* Semi-Lagrangian advection: bounded even during a strong jet. */
+#ifdef PLASMAPONG_VELOCITY_FIXED
+    fluid_advect_velocity_fixed(next,velocity,grid_dt,decay,(f->velocity_phase+=40503u)&65535u);
+#else
     fluid_advect_velocity(next,velocity,grid_dt,decay);
+#endif
     PROFILE_END(PROFILE_VELOCITY_ADVECTION);
     f->velocity_bank^=1; velocity=next;
     PROFILE_END(PROFILE_VELOCITY_SWAP);
     /* Curl confinement returns small vortices lost to coarse-grid advection. */
     for(int y=1;y<FH-1;y++) for(int x=1;x<FW-1;x++) {
         int k=y*FW+x;
+#ifdef PLASMAPONG_VELOCITY_FIXED
+        f->curl[k]=(velocity->v[k+1]-velocity->v[k-1]-velocity->u[k+FW]+velocity->u[k-FW])*(.5f/(CELL*VELOCITY_SCALE));
+#else
         f->curl[k]=(velocity->v[k+1]-velocity->v[k-1]-velocity->u[k+FW]+velocity->u[k-FW])*.5f/CELL;
+#endif
     }
     PROFILE_END(PROFILE_CURL);
     for(int y=2;y<FH-2;y++) for(int x=2;x<FW-2;x++) {
@@ -192,14 +230,19 @@ void fluid_velocity_step(Fluid *f,float dt) {
         float nx=fabsf(f->curl[k+1])-fabsf(f->curl[k-1]);
         float ny=fabsf(f->curl[k+FW])-fabsf(f->curl[k-FW]);
         float inv=1/sqrtf(nx*nx+ny*ny+.00001f);
+#ifdef PLASMAPONG_VELOCITY_FIXED
+        add_confinement(&velocity->u[k],ny*(inv*f->curl[k]*confinement));
+        add_confinement(&velocity->v[k],-nx*(inv*f->curl[k]*confinement));
+#else
         velocity->u[k]+=ny*(inv*f->curl[k]*confinement);
         velocity->v[k]-=nx*(inv*f->curl[k]*confinement);
+#endif
     }
     PROFILE_END(PROFILE_CONFINEMENT);
     fluid_project(f);
 }
 void fluid_dye_step(Fluid *f,float dt) {
-    FluidVelocity *velocity=fluid_velocity(f);
+    FluidFlow *velocity=fluid_velocity(f);
     FluidInk *ink_grid=fluid_dye(f);
     PROFILE_BEGIN();
     FluidInk *next=&f->dye[f->dye_bank^1];

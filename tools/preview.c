@@ -1,6 +1,7 @@
 /* Deterministic host preview, using the ROM's simulation and UI. Not an emulator. */
 #include "draw.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <math.h>
 #include <string.h>
 void draw_static(unsigned id,void (*draw)(void)) { (void)id; draw(); }
@@ -31,7 +32,7 @@ int main(int argc,char **argv) {
     static Game g; game_init(&g); g.phase=LOBBY;
     Input in[2]={{.connected=true,.start=true},{.connected=true}};
     game_step(&g,in); in[0].start=false;
-    for(int t=0;t<540;t++) {
+    for(int t=0,ticks=argc>2?atoi(argv[2]):540;t<ticks;t++) {
         for(int p=0;p<2;p++) {
             in[p].y=sinf(t*.037f+p*2.4f); in[p].z=t%110<90;
             in[p].a=(t+40*p)%145>118;

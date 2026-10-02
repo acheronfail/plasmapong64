@@ -109,7 +109,7 @@ int main(void) {
             tick();
             assert(isfinite(g.bx) && isfinite(g.by));
             assert(g.bat[1].y>=BAT_HALF && g.bat[1].y<=ARENA_H-BAT_HALF);
-            for(int i=0;i<FN;i++) assert(isfinite(fluid_velocity(&g.fluid)->u[i]) && isfinite(fluid_velocity(&g.fluid)->v[i]));
+            for(int i=0;i<FN;i++) assert(isfinite(fluid_flow_decode(fluid_velocity(&g.fluid)->u[i])) && isfinite(fluid_flow_decode(fluid_velocity(&g.fluid)->v[i])));
             if(g.phase==FINISHED) break;
         }
     }

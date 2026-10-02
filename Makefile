@@ -1,9 +1,11 @@
 FLUID_RSP ?= 1
 DYE_RSP ?= 1
 DYE_FIXED ?= $(DYE_RSP)
+VELOCITY_RSP ?= 1
+VELOCITY_FIXED ?= $(VELOCITY_RSP)
 # Keep default objects separate from the old CPU build and comparison builds.
-BUILD_DIR ?= build/$(if $(filter 1,$(DYE_RSP)),rsp_dye,$(if $(filter 1,$(DYE_FIXED)),dye_cpu,$(if $(filter 1,$(FLUID_RSP)),rsp,cpu)))
-ROM ?= $(if $(filter 1,$(DYE_RSP)),plasmapong,$(if $(filter 1,$(DYE_FIXED)),plasmapong-dye-cpu,plasmapong-float))
+BUILD_DIR ?= build/$(if $(filter 1,$(VELOCITY_RSP)),rsp_velocity,$(if $(filter 1,$(VELOCITY_FIXED)),velocity_cpu,$(if $(filter 1,$(DYE_RSP)),rsp_dye,$(if $(filter 1,$(DYE_FIXED)),dye_cpu,$(if $(filter 1,$(FLUID_RSP)),rsp,cpu)))))
+ROM ?= $(if $(filter 1,$(VELOCITY_RSP)),plasmapong,$(if $(filter 1,$(VELOCITY_FIXED)),plasmapong-velocity-cpu,$(if $(filter 1,$(DYE_RSP)),plasmapong-float-velocity,$(if $(filter 1,$(DYE_FIXED)),plasmapong-dye-cpu,plasmapong-float))))
 .DEFAULT_GOAL := all
 ifeq ($(N64_INST),)
 $(error N64_INST is unset. Use ./tools/build-rom.sh or install libdragon)
@@ -34,6 +36,28 @@ src += src/fluid_dye_rsp.c
 rsp_obj += $(BUILD_DIR)/src/rsp_dye.o
 N64_CFLAGS += -DPLASMAPONG_DYE_RSP
 endif
+ifeq ($(VELOCITY_FIXED),1)
+ifneq ($(DYE_FIXED),1)
+$(error VELOCITY_FIXED=1 requires DYE_FIXED=1)
+endif
+src += src/fluid_velocity_fixed.c
+N64_CFLAGS += -DPLASMAPONG_VELOCITY_FIXED
+endif
+ifeq ($(VELOCITY_RSP),1)
+ifneq ($(DYE_RSP),1)
+$(error VELOCITY_RSP=1 requires DYE_RSP=1)
+endif
+ifneq ($(VELOCITY_FIXED),1)
+$(error VELOCITY_RSP=1 requires VELOCITY_FIXED=1)
+endif
+N64_CFLAGS += -DPLASMAPONG_VELOCITY_RSP
+endif
+ifeq ($(VELOCITY_TEST),1)
+ifneq ($(VELOCITY_FIXED),1)
+$(error VELOCITY_TEST=1 requires VELOCITY_FIXED=1)
+endif
+N64_CFLAGS += -DPLASMAPONG_VELOCITY_TEST
+endif
 ifeq ($(RSP_TEST),1)
 ifneq ($(FLUID_RSP),1)
 $(error RSP_TEST=1 requires FLUID_RSP=1)
@@ -57,7 +81,7 @@ ifeq ($(FLUID_PROFILE),1)
 N64_CFLAGS += -DPLASMAPONG_FLUID_PROFILE
 endif
 # Inline the fluid sampling loops without expanding the rest of the ROM.
-$(BUILD_DIR)/src/fluid.o $(BUILD_DIR)/src/fluid_advection.o $(BUILD_DIR)/src/fluid_dye_fixed.o: CFLAGS += -O3
+$(BUILD_DIR)/src/fluid.o $(BUILD_DIR)/src/fluid_advection.o $(BUILD_DIR)/src/fluid_dye_fixed.o $(BUILD_DIR)/src/fluid_velocity_fixed.o: CFLAGS += -O3
 ifeq ($(SMOKE),1)
 N64_CFLAGS += -DPLASMAPONG_SMOKE
 endif

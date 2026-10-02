@@ -1,4 +1,7 @@
 #include "fluid_dye_fixed.h"
+#ifdef PLASMAPONG_VELOCITY_FIXED
+#include "fluid_velocity_fixed.h"
+#endif
 #include <assert.h>
 #include <float.h>
 #include <string.h>
@@ -70,8 +73,12 @@ void fluid_dye_fixed_reference(FluidDyeFixed *restrict next,const FluidDyeFixed 
     channel(next->gold,ink->gold,trace,gold_decay,rounding);
 }
 void fluid_advect_ink_reference(FluidDyeFixed *next,const FluidDyeFixed *ink,
-        const FluidVelocity *velocity,float grid_dt,float decay,float gold_decay,unsigned rounding) {
+        const FluidFlow *velocity,float grid_dt,float decay,float gold_decay,unsigned rounding) {
     static _Alignas(16) FluidDyeTrace trace[FN];
+#ifdef PLASMAPONG_VELOCITY_FIXED
+    fluid_velocity_trace(trace,velocity,grid_dt);
+#else
     fluid_dye_trace(trace,velocity,grid_dt);
+#endif
     fluid_dye_fixed_reference(next,ink,trace,fluid_dye_decay(decay),fluid_dye_decay(gold_decay),rounding);
 }
