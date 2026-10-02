@@ -50,7 +50,9 @@ int main(int argc,char **argv) {
         for(int t=0;t<8;t++) game_step(&g,idle);
     }
     if(argc>1 && !strcmp(argv[1],"overcharge")) {
-        g.phase=PLAY; g.bat[0].sucking=true; g.bat[0].charge=1;
+        g.phase=PLAY; g.serve=0; g.held=0;
+        g.bx=g.bat[0].x+8; g.by=g.bat[0].y;
+        g.bat[0].sucking=true; g.bat[0].charge=1;
         g.bat[1].sucking=false; g.bat[1].cooldown_ticks=90;
     }
     if(argc>1 && !strcmp(argv[1],"finished")) { g.phase=FINISHED; g.winner=1; g.score[1]=9; }

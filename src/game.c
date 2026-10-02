@@ -239,7 +239,9 @@ void game_step(Game *g,const Input physical[2]) {
         if(!in[p].a) b->release_required=false;
         if(b->cooldown_ticks || b->release_required) continue;
         if(in[p].a) {
-            b->suction_ticks++;
+            /* Only time spent holding the ball contributes to charge. */
+            if(g->held==p) b->suction_ticks++;
+            else b->suction_ticks=0;
             if(b->suction_ticks>=SUCTION_BREAK_TICKS) {
                 b->sucking=false; b->charge=0; b->burst=0; b->suction_ticks=0;
                 b->cooldown_ticks=SUCTION_COOLDOWN_TICKS; b->release_required=true;
@@ -254,12 +256,13 @@ void game_step(Game *g,const Input physical[2]) {
             b->sucking=true; b->charge=minf(1,(float)b->suction_ticks/SUCTION_CHARGE_TICKS);
             fluid_pump(&g->fluid,b->x+dir*7,b->y,35,-1150,STEP,p);
         } else if(b->sucking) {
-            b->sucking=false; b->burst=.25f;
-            /* Spend only stored charge: tapping must not create a free impulse. */
-            fluid_pump(&g->fluid,b->x,b->y,40,2800,.13f*b->charge,p);
-            fluid_splat(&g->fluid,b->x+dir*12,b->y,27,dir*240*b->charge,
-                        b->vy*.35f*b->charge,b->charge,p);
+            b->sucking=false;
             if(g->held==p) {
+                b->burst=.25f;
+                /* Spend stored charge only when releasing a caught ball. */
+                fluid_pump(&g->fluid,b->x,b->y,40,2800,.13f*b->charge,p);
+                fluid_splat(&g->fluid,b->x+dir*12,b->y,27,dir*240*b->charge,
+                            b->vy*.35f*b->charge,b->charge,p);
                 g->held=-1; g->bx=b->x+dir*9; g->by=b->y;
                 /* Perfect timing earns a clear jump to the ball's speed cap. */
                 g->bvx=dir*(b->charge>=1?290:200*b->charge); g->bvy=b->vy*.55f;
