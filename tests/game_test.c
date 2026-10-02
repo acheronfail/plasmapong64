@@ -37,12 +37,13 @@ int main(void) {
     assert(g.phase==MENU && energy(&g.fluid)>0);
     float menu_dye=0; for(int i=0;i<FN;i++) menu_dye+=g.fluid.red[i]+g.fluid.blue[i]+g.fluid.gold[i];
     assert(menu_dye>0 && g.score[0]==0 && g.score[1]==0);
-    idle[0]=(Input){.connected=true,.a=true}; game_step(&g,idle); assert(g.phase==LOBBY);
+    idle[0]=(Input){.connected=true,.a=true}; game_step(&g,idle); assert(g.phase==LOBBY && (g.sound_events&SOUND_SELECT));
+    game_step(&g,idle); assert(g.sound_events==0);
     idle[0].a=false; idle[0].start=true; game_step(&g,idle); assert(g.phase==LOBBY);
     idle[1].connected=true; game_step(&g,idle); assert(g.phase==LOBBY); /* Release to confirm. */
     idle[0].start=false; game_step(&g,idle); idle[0].start=true; game_step(&g,idle); assert(g.phase==PLAY);
     idle[0].start=false; game_step(&g,idle); idle[0].start=true; game_step(&g,idle); assert(g.phase==PAUSED);
-    idle[0].b=true; game_step(&g,idle); assert(g.phase==MENU);
+    idle[0].b=true; game_step(&g,idle); assert(g.phase==MENU && (g.sound_events&SOUND_BACK));
 
     game_init(&g); g.phase=LOBBY; in[0]=(Input){.connected=true,.start=true};
     game_step(&g,in); assert(g.phase==LOBBY);

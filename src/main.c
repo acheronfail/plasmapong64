@@ -43,8 +43,8 @@ int main(void) {
     audio_set_buffer_callback(fill_audio); audio_write_silence();
     rdpq_init(); ink=surface_alloc(FMT_RGBA16,FW,FH);
     rdpq_font_t *font=rdpq_font_load_builtin(FONT_BUILTIN_DEBUG_VAR);
-    const uint32_t colors[]={0xeaf6ff,0xa0b3c9,0x48dcff,0xff637e,0xffffff,0x02040a};
-    for(int i=0;i<6;i++) rdpq_font_style(font,i,&(rdpq_fontstyle_t){.color=color(colors[i])});
+    const uint32_t colors[]={0xeaf6ff,0xa0b3c9,0x48dcff,0xff637e,0xffffff,0x02040a,0x737d8a};
+    for(int i=0;i<7;i++) rdpq_font_style(font,i,&(rdpq_fontstyle_t){.color=color(colors[i])});
     rdpq_text_register_font(1,font); game_init(&game); game.menu_rng=(uint32_t)get_ticks();
     uint64_t previous=get_ticks(); float accumulator=0;
     uint64_t sim_ticks=0; unsigned sim_steps=0;

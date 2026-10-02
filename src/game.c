@@ -102,11 +102,11 @@ void game_step(Game *g,const Input in[2]) {
     bool both=in[0].connected && in[1].connected;
     if(g->phase==MENU) {
         menu_step(g);
-        if(start || confirm) g->phase=LOBBY;
+        if(start || confirm) { g->phase=LOBBY; g->sound_events|=SOUND_SELECT; }
         memcpy(g->previous,in,sizeof(g->previous)); return;
     }
     if(back && (g->phase==LOBBY || g->phase==PAUSED || g->phase==FINISHED)) {
-        g->phase=MENU; g->held=-1;
+        g->phase=MENU; g->held=-1; g->sound_events|=SOUND_BACK;
         for(int p=0;p<2;p++) g->bat[p].sucking=false;
         memcpy(g->previous,in,sizeof(g->previous)); return;
     }
@@ -116,6 +116,7 @@ void game_step(Game *g,const Input in[2]) {
             game_init(g); g->phase=PLAY;
             g->connected[0]=g->connected[1]=true;
         } else g->phase=g->phase==PLAY?PAUSED:PLAY;
+        g->sound_events|=g->phase==PAUSED?SOUND_BACK:SOUND_SELECT;
         memcpy(g->previous,in,sizeof(g->previous)); return;
     }
     if(g->phase!=PLAY) { memcpy(g->previous,in,sizeof(g->previous)); return; }

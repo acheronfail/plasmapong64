@@ -8,7 +8,7 @@
 typedef struct { bool connected,a,z,start,b; float x,y; } Input;
 typedef struct { float x,y,vx,vy,charge,burst; bool sucking; } Bat;
 typedef enum { MENU, LOBBY, PLAY, PAUSED, FINISHED } Phase;
-enum { SOUND_BAT1=1, SOUND_BAT2=2, SOUND_WALL=4, SOUND_GOAL=8, SOUND_WIN=16 };
+enum { SOUND_BAT1=1, SOUND_BAT2=2, SOUND_WALL=4, SOUND_GOAL=8, SOUND_WIN=16, SOUND_SELECT=32, SOUND_BACK=64 };
 typedef struct { float x,y,u,v; } MenuCurrent;
 typedef struct {
     Fluid fluid;

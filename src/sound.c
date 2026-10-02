@@ -11,7 +11,8 @@ void sound_init(Sound *s,unsigned rate) {
     for(int p=0;p<2;p++) {
         s->voice[p]=voice(pcm_suction,COUNT(pcm_suction),0,p?100:-100,true);
         s->voice[p+2]=voice(pcm_jet,COUNT(pcm_jet),0,p?100:-100,true);
-        if(p) { s->voice[p].position=173u<<16; s->voice[p+2].position=317u<<16; }
+        s->voice[p].loop_start=SUCTION_LOOP_START;
+        if(p) s->voice[p+2].position=317u<<16;
     }
 }
 static void trigger(Sound *s,const int16_t *pcm,unsigned count,int gain,int pan) {
@@ -24,12 +25,17 @@ static void trigger(Sound *s,const int16_t *pcm,unsigned count,int gain,int pan)
 void sound_update(Sound *s,const Game *g) {
     bool active=g->phase==PLAY;
     for(int p=0;p<2;p++) {
-        s->voice[p].target=active && g->bat[p].sucking?18*256:0;
+        int target=active && g->bat[p].sucking?18*256:0;
+        if(target && !s->voice[p].target) s->voice[p].position=0;
+        s->voice[p].target=target;
         s->voice[p+2].target=active && g->previous[p].z?16*256:0;
     }
-    if(g->phase==MENU || g->phase==LOBBY || g->phase==PAUSED) {
+    if(g->phase!=s->phase && (g->phase==MENU || g->phase==LOBBY || g->phase==PAUSED)) {
         for(int i=4;i<SOUND_VOICES;i++) s->voice[i].target=0;
     }
+    s->phase=g->phase;
+    if(g->sound_events&SOUND_SELECT) trigger(s,pcm_select,COUNT(pcm_select),85,0);
+    if(g->sound_events&SOUND_BACK) trigger(s,pcm_back,COUNT(pcm_back),75,0);
     if(g->sound_events&SOUND_BAT1) trigger(s,pcm_bat,COUNT(pcm_bat),110,-100);
     if(g->sound_events&SOUND_BAT2) trigger(s,pcm_bat,COUNT(pcm_bat),110,100);
     if(g->sound_events&SOUND_WALL) trigger(s,pcm_wall,COUNT(pcm_wall),80,0);
@@ -49,7 +55,7 @@ void sound_render(Sound *s,int16_t *stereo,size_t frames) {
             left+=value*v->left/256; right+=value*v->right/256;
             v->position+=s->step;
             if((v->position>>16)>=v->length) {
-                if(v->loop) v->position-=v->length<<16;
+                if(v->loop) v->position-=(v->length-v->loop_start)<<16;
                 else v->pcm=NULL;
             }
         }

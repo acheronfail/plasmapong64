@@ -5,8 +5,8 @@ currents stirred by the bats. Those same currents accelerate and deflect the bal
 The ball leaves a subtle gold dye trail that mixes into the currents and fades.
 First to **9 points** wins. Requires two N64 controllers in **ports 1 and 2**;
 there is no AI opponent. On boot, a main menu runs randomly seeded fluid currents
-and mixing colours across the entire screen, with only shadowed title and option
-text over the fluid. Select **MULTI-PLAYER** with A or START on either controller,
+and mixing colours across the entire screen, with a raised cyan/coral block title and shadowed menu text over the fluid.
+SINGLE PLAYER (COMING SOON) is greyed out and cannot be selected. Select **MULTI-PLAYER** with A or START on either controller,
 then connect both pads and press START in the lobby.
 
 ## Controls
@@ -125,10 +125,12 @@ human-controlled `plasmapong.z64`.
 
 ## Sound assets
 
-All six effects use CC0 stock recordings from Kenney, trimmed, filtered, looped,
+The effects use CC0 stock recordings from Kenney, trimmed, filtered, looped,
 and resampled for a compact N64-era feel. Suction and jet peaks are roughly
 16–18 dB below the bat hit so they can be held without dominating the match.
-These are modern library recordings, not samples extracted from GoldenEye 007.
+Suction has a one-time attack and 1.2-second transition into a soft sustained hum;
+menu confirmation and back actions also have distinct cues. These are modern
+library recordings, not samples extracted from GoldenEye 007.
 See [audio sources and licenses](assets/audio/README.md) for the exact recordings,
 pack links, included licenses, processing, and audition order.
 

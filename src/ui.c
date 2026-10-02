@@ -37,17 +37,43 @@ static void panel(const char *title,const char *line1,const char *line2) {
     rect(37,82,246,78,0x243449); rect(39,84,242,74,0x09111f);
     label(52,102,0,title); hint(52,125,line1); hint(52,146,line2);
 }
-static void menu_label(float y,const char *text) {
+static void menu_label(float y,int style,const char *text) {
     float x=160-label_width(text)*.5f;
     /* A solid offset shadow plus the font outline survives bright dye swirls. */
     label(x+2,y+2,5,text);
-    label(x,y,4,text);
+    label(x,y,style,text);
+}
+/* Compact 5x7 block alphabet for the two-colour title. */
+static void block_word(float x,float y,const char *s,uint32_t color) {
+    const char *alphabet="PLASMONG";
+    static const unsigned char glyphs[][7]={
+        {30,17,17,30,16,16,16}, {16,16,16,16,16,16,31},
+        {14,17,17,31,17,17,17}, {15,16,16,14,1,1,30},
+        {17,27,21,21,17,17,17}, {14,17,17,17,17,17,14},
+        {17,25,25,21,19,19,17}, {14,17,16,23,17,17,14}
+    };
+    for(;*s;s++,x+=18) {
+        const char *found=strchr(alphabet,*s); if(!found) continue;
+        const unsigned char *rows=glyphs[found-alphabet];
+        for(int row=0;row<7;row++) for(int col=0;col<5;) {
+            if(!(rows[row]&(16>>col))) { col++; continue; }
+            int first=col;
+            while(col<5 && (rows[row]&(16>>col))) col++;
+            rect(x+first*3,y+row*3,(col-first)*3,3,color);
+        }
+    }
+}
+static void menu_title(void) {
+    /* Render all shadow pixels first so adjacent blocks form one clear shadow. */
+    block_word(69,61,"PLASMA",0x02040a); block_word(183,61,"PONG",0x02040a);
+    block_word(67,59,"PLASMA",CYAN); block_word(181,59,"PONG",CORAL);
 }
 void ui_draw(const Game *g) {
     if(g->phase==MENU) {
         draw_fluid(&g->fluid,0,0,320,240);
-        menu_label(100,"RIDE THE CURRENT");
-        menu_label(140,"MULTI-PLAYER");
+        menu_title();
+        menu_label(132,4,"MULTI-PLAYER");
+        menu_label(157,6,"SINGLE PLAYER (COMING SOON)");
         return;
     }
     rect(0,0,320,240,0x070c17);

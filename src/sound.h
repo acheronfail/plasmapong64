@@ -7,12 +7,12 @@
 #define SOUND_VOICES 8
 typedef struct {
     const int16_t *pcm;
-    unsigned length;
+    unsigned length,loop_start;
     uint32_t position;
     int gain,target,left,right;
     bool loop;
 } SoundVoice;
-typedef struct { SoundVoice voice[SOUND_VOICES]; uint32_t step; unsigned next; } Sound;
+typedef struct { SoundVoice voice[SOUND_VOICES]; uint32_t step; unsigned next; Phase phase; } Sound;
 void sound_init(Sound *s,unsigned rate);
 /* Call with interrupts disabled when sharing with the N64 audio callback. */
 void sound_update(Sound *s,const Game *g);
