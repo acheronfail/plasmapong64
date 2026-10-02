@@ -3,7 +3,7 @@
 #define REFERENCE_FLUID_H
 #include <stdint.h>
 #define FW 48
-#define FH 30
+#define FH 33
 #define FN (FW * FH)
 #define CELL 6.0f
 #define ARENA_W (FW * CELL)

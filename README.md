@@ -111,7 +111,7 @@ badges. Arcade requires one emulated N64 pad in port 1; multiplayer requires two
 
 ## Implementation
 
-- `src/fluid.c`: 48 × 30 Eulerian grid covering a 288 × 180 arena. Velocity and
+- `src/fluid.c`: 48 × 33 Eulerian grid covering a 288 × 198 arena. Velocity and
   three dye concentrations use bilinear semi-Lagrangian advection. An 8-iteration
   Gauss–Seidel pressure solve uses bounded Q12 integer arithmetic to reduce
   divergence; curl confinement preserves

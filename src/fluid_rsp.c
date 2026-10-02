@@ -4,7 +4,7 @@
 
 DEFINE_RSP_UCODE(rsp_fluid);
 static uint32_t overlay_id;
-_Static_assert(FW==48 && FH==30,"RSP pressure row layout must match the grid");
+_Static_assert(FW==48 && FH==33,"RSP pressure row layout must match the grid");
 _Static_assert(FN*sizeof(int32_t)%16==0,"DMA buffers must cover whole cache lines");
 
 void fluid_pressure_rsp(int32_t *pressure,const int32_t *divergence) {

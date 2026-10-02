@@ -103,9 +103,9 @@ static void menu_title(void) {
     block_word(240,59,"64",GOLD);
 }
 static void court(void) {
-    rect(16,32,288,1,0x304c65); rect(16,214,288,1,0x304c65);
-    for(int y=39;y<211;y+=12) rect(159,y,1,4,0x23374e);
-    rect(13,34,2,180,0x24566c); rect(305,34,2,180,0x71334c);
+    rect(OX,OY-2,ARENA_W,1,0x304c65); rect(OX,OY+ARENA_H,ARENA_W,1,0x304c65);
+    for(int y=OY+5;y<OY+ARENA_H-3;y+=12) rect(OX+ARENA_W*.5f-1,y,1,4,0x23374e);
+    rect(OX-3,OY,2,ARENA_H,0x24566c); rect(OX+ARENA_W+1,OY,2,ARENA_H,0x71334c);
 }
 void ui_draw(const Game *g) {
     if(g->phase==MENU) {
@@ -176,7 +176,6 @@ void ui_draw(const Game *g) {
     }
     rect(bx-4,by-4,8,8,g->held<0?0x447486:0xffd875);
     rect(bx-2,by-3,4,6,WHITE); rect(bx-3,by-2,6,4,WHITE);
-    hint(16,230,"[STICK] MOVE  [Z] JET  HOLD [A] GRAB / RELEASE");
     if(g->phase==LOBBY) {
         if(g->mode==ARCADE) {
             if(!g->connected[0]) panel("ONE PLAYER REQUIRED","Connect a pad to port 1","[START] PLAY  [B] MENU");

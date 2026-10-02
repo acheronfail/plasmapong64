@@ -7,7 +7,7 @@
     .set noreorder
     .set at
 #define ROW_BYTES 192
-#define LAST_ROW 28
+#define LAST_ROW 31
 
     .data
 RSPQ_BeginOverlayHeader
