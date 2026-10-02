@@ -45,12 +45,13 @@ static void menu_label(float y,int style,const char *text) {
 }
 /* Compact 5x7 block alphabet for the two-colour title. */
 static void block_word(float x,float y,const char *s,uint32_t color) {
-    const char *alphabet="PLASMONG";
+    const char *alphabet="PLASMONG64";
     static const unsigned char glyphs[][7]={
         {30,17,17,30,16,16,16}, {16,16,16,16,16,16,31},
         {14,17,17,31,17,17,17}, {15,16,16,14,1,1,30},
         {17,27,21,21,17,17,17}, {14,17,17,17,17,17,14},
-        {17,25,25,21,19,19,17}, {14,17,16,23,17,17,14}
+        {17,25,25,21,19,19,17}, {14,17,16,23,17,17,14},
+        {14,16,16,30,17,17,14}, {2,6,10,18,31,2,2}
     };
     for(;*s;s++,x+=18) {
         const char *found=strchr(alphabet,*s); if(!found) continue;
@@ -65,8 +66,10 @@ static void block_word(float x,float y,const char *s,uint32_t color) {
 }
 static void menu_title(void) {
     /* Render all shadow pixels first so adjacent blocks form one clear shadow. */
-    block_word(69,61,"PLASMA",0x02040a); block_word(183,61,"PONG",0x02040a);
-    block_word(67,59,"PLASMA",CYAN); block_word(181,59,"PONG",CORAL);
+    block_word(50,61,"PLASMA",0x02040a); block_word(164,61,"PONG",0x02040a);
+    block_word(242,61,"64",0x02040a);
+    block_word(48,59,"PLASMA",CYAN); block_word(162,59,"PONG",CORAL);
+    block_word(240,59,"64",CORAL);
 }
 void ui_draw(const Game *g) {
     if(g->phase==MENU) {
@@ -77,7 +80,6 @@ void ui_draw(const Game *g) {
         return;
     }
     rect(0,0,320,240,0x070c17);
-    label(16,20,0,"PLASMA PONG");
     char s[48]; snprintf(s,sizeof(s),"%u  :  %u",g->score[0],g->score[1]);
     label(145,20,0,s); label(233,20,1,"FIRST TO 9");
     draw_fluid(&g->fluid,OX,OY,ARENA_W,ARENA_H);
@@ -95,8 +97,10 @@ void ui_draw(const Game *g) {
         rect(x-5,y-BAT_HALF-2,10,BAT_HALF*2+4,p?0x642739:0x164658);
         rect(x-3,y-BAT_HALF,6,BAT_HALF*2,c);
         rect(x-1,y-BAT_HALF+2,2,BAT_HALF*2-4,WHITE);
-        label(p?OX+ARENA_W-5-label_width("P2"):OX+5,46,p?3:2,p?"P2":"P1");
     }
+    /* Match the visible text edges, excluding the font's trailing advance. */
+    label_edge(OX+5,46,2,"P1",false);
+    label_edge(OX+ARENA_W-5,46,3,"P2",true);
     float bx=OX+g->bx,by=OY+g->by;
     if(g->serve<=0 && g->held<0) {
         for(int i=4;i>0;i--) {

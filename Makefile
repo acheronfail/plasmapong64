@@ -14,7 +14,7 @@ N64_CFLAGS += -DPLASMAPONG_SMOKE
 endif
 all: $(ROM).z64
 $(BUILD_DIR)/$(ROM).elf: $(src:%.c=$(BUILD_DIR)/%.o)
-$(ROM).z64: N64_ROM_TITLE="Plasma Pong"
+$(ROM).z64: N64_ROM_TITLE="Plasma Pong 64"
 clean:
 	rm -rf $(BUILD_DIR) $(ROM).z64 plasmapong-smoke.z64
 -include $(wildcard $(BUILD_DIR)/src/*.d)

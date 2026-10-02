@@ -18,6 +18,21 @@ void rect(float x,float y,float w,float h,uint32_t c) {
 void label(float x,float y,int style,const char *s) {
     rdpq_text_print(&(rdpq_textparms_t){.style_id=style},1,x,y,s);
 }
+void label_edge(float x,float y,int style,const char *s,bool right) {
+    const rdpq_font_t *font=rdpq_text_get_font(1);
+    float pen=0,left=0,end=0;
+    bool first=true;
+    /* These plain ASCII HUD labels have no markup or kerning pairs. Use the
+       glyph bounds so both court edges have the same visible inset. */
+    for(const char *p=s;*p;p++) {
+        rdpq_font_gmetrics_t m;
+        if(!rdpq_font_get_glyph_metrics(font,(unsigned char)*p,&m)) continue;
+        if(first) { left=m.x0; first=false; }
+        end=pen+m.x1;
+        pen+=m.xadvance;
+    }
+    label(x-(right?end:left),y,style,s);
+}
 float label_width(const char *s) {
     float w=0;
     const rdpq_font_t *font=rdpq_text_get_font(1);
@@ -54,7 +69,7 @@ int main(void) {
     uint64_t previous=get_ticks(); float accumulator=0;
     uint64_t sim_ticks=0; unsigned sim_steps=0;
     uint64_t draw_ticks=0; unsigned draw_frames=0;
-    debugf("Plasma Pong: ready, %u-byte game state\n",(unsigned)sizeof(game));
+    debugf("Plasma Pong 64: ready, %u-byte game state\n",(unsigned)sizeof(game));
     while(1) {
         surface_t *frame=display_get();
         uint64_t now=get_ticks();
@@ -82,7 +97,7 @@ int main(void) {
             if(game.phase==PLAY) {
                 sim_ticks+=get_ticks()-begin;
                 if(++sim_steps==150) {
-                    debugf("Plasma Pong: simulation average %llu us/step (budget 33333 us)\n",
+                    debugf("Plasma Pong 64: simulation average %llu us/step (budget 33333 us)\n",
                         (unsigned long long)(TIMER_MICROS_LL(sim_ticks)/sim_steps));
                     sim_ticks=0; sim_steps=0;
                 }
@@ -94,7 +109,7 @@ int main(void) {
         rspq_wait();
         draw_ticks+=get_ticks()-draw_begin;
         if(++draw_frames==150) {
-            debugf("Plasma Pong: draw average %llu us/frame\n",
+            debugf("Plasma Pong 64: draw average %llu us/frame\n",
                 (unsigned long long)(TIMER_MICROS_LL(draw_ticks)/draw_frames));
             draw_ticks=0; draw_frames=0;
         }
