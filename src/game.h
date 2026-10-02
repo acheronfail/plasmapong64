@@ -5,8 +5,16 @@
 #define STEP (1.0f/30.0f)
 #define BAT_HALF 14.0f
 #define BALL_RADIUS 3.0f
+#define SUCTION_CHARGE_TICKS 30u
+/* Round 1000ms + 150ms up to the next 30Hz simulation tick. */
+#define SUCTION_BREAK_TICKS 35u
+#define SUCTION_COOLDOWN_TICKS 150u
 typedef struct { bool connected,a,z,start,b; float x,y; } Input;
-typedef struct { float x,y,vx,vy,charge,burst; bool sucking; } Bat;
+typedef struct {
+    float x,y,vx,vy,charge,burst;
+    unsigned suction_ticks,cooldown_ticks;
+    bool sucking,release_required;
+} Bat;
 typedef enum { MENU, LOBBY, PLAY, PAUSED, FINISHED, SCORES } Phase;
 typedef enum { MULTIPLAYER, ARCADE } GameMode;
 #define HIGH_SCORE_COUNT 10
@@ -15,11 +23,11 @@ typedef struct {
     uint32_t level,points;
     unsigned lives,goals,ticks;
     float level_time,transition,hold_time;
-    bool release_lock[2];
     float ai_wait,ai_y,ai_speed;
     uint32_t rng;
 } Arcade;
-enum { SOUND_BAT1=1, SOUND_BAT2=2, SOUND_WALL=4, SOUND_GOAL=8, SOUND_WIN=16, SOUND_SELECT=32, SOUND_BACK=64 };
+enum { SOUND_BAT1=1, SOUND_BAT2=2, SOUND_WALL=4, SOUND_GOAL=8, SOUND_WIN=16, SOUND_SELECT=32, SOUND_BACK=64,
+       SOUND_BREAK1=128, SOUND_BREAK2=256 };
 typedef struct { float x,y,u,v; } MenuCurrent;
 typedef struct {
     Fluid fluid;

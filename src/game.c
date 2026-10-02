@@ -174,11 +174,6 @@ void game_step(Game *g,const Input physical[2]) {
         effective[1]=arcade_ai(g);
         if(g->serve<=0) g->arcade.level_time+=STEP;
         if(g->held>=0) g->arcade.hold_time+=STEP; else g->arcade.hold_time=0;
-        for(int p=0;p<2;p++) {
-            if(!in[p].a) g->arcade.release_lock[p]=false;
-            if(g->held==p && g->arcade.hold_time>=2) g->arcade.release_lock[p]=true;
-            if(g->arcade.release_lock[p]) effective[p].a=false;
-        }
     }
     g->elapsed+=STEP;
     for(int p=0;p<2;p++) {
@@ -198,8 +193,23 @@ void game_step(Game *g,const Input physical[2]) {
     fluid_velocity_step(&g->fluid,STEP);
     for(int p=0;p<2;p++) {
         Bat *b=&g->bat[p]; int dir=p?-1:1;
+        if(b->cooldown_ticks) b->cooldown_ticks--;
+        if(!in[p].a) b->release_required=false;
+        if(b->cooldown_ticks || b->release_required) continue;
         if(in[p].a) {
-            b->sucking=true; b->charge=minf(1,b->charge+STEP);
+            b->suction_ticks++;
+            if(b->suction_ticks>=SUCTION_BREAK_TICKS) {
+                b->sucking=false; b->charge=0; b->burst=0; b->suction_ticks=0;
+                b->cooldown_ticks=SUCTION_COOLDOWN_TICKS; b->release_required=true;
+                g->sound_events|=p?SOUND_BREAK2:SOUND_BREAK1;
+                if(g->held==p) {
+                    g->held=-1; g->bx=b->x+dir*9; g->by=b->y;
+                    /* Drop into the existing current without a release impulse. */
+                    fluid_sample(&g->fluid,g->bx,g->by,&g->bvx,&g->bvy);
+                }
+                continue;
+            }
+            b->sucking=true; b->charge=minf(1,(float)b->suction_ticks/SUCTION_CHARGE_TICKS);
             fluid_pump(&g->fluid,b->x+dir*7,b->y,35,-1150,STEP,p);
         } else if(b->sucking) {
             b->sucking=false; b->burst=.25f;
@@ -211,7 +221,7 @@ void game_step(Game *g,const Input physical[2]) {
                 g->held=-1; g->bx=b->x+dir*9; g->by=b->y;
                 g->bvx=dir*250*b->charge; g->bvy=b->vy*.55f;
             }
-            b->charge=0;
+            b->charge=0; b->suction_ticks=0;
         }
     }
     fluid_dye_step(&g->fluid,STEP);

@@ -149,15 +149,23 @@ void ui_draw(const Game *g) {
     draw_static(DRAW_COURT,court);
     for(int p=0;p<2;p++) {
         const Bat *b=&g->bat[p]; uint32_t c=p?CORAL:CYAN;
+        bool broken=b->cooldown_ticks>0;
+        if(broken) c=0x737d8a;
         float x=OX+b->x,y=OY+b->y;
         if(b->sucking) {
             ring(x,y,24+2*sinf(g->elapsed*7),c);
-            rect(x-9,y+BAT_HALF+5,18*b->charge,2,c);
+            rect(x-9,y+BAT_HALF+5,18*b->charge,2,b->charge>=1?0xff3030:c);
         }
         if(b->burst>0) ring(x,y,12+(1-b->burst/.25f)*30,c);
-        rect(x-5,y-BAT_HALF-2,10,BAT_HALF*2+4,p?0x642739:0x164658);
+        rect(x-5,y-BAT_HALF-2,10,BAT_HALF*2+4,broken?0x36323c:p?0x642739:0x164658);
         rect(x-3,y-BAT_HALF,6,BAT_HALF*2,c);
-        rect(x-1,y-BAT_HALF+2,2,BAT_HALF*2-4,WHITE);
+        rect(x-1,y-BAT_HALF+2,2,BAT_HALF*2-4,broken?0x434753:WHITE);
+        if(broken) {
+            rect(x-3,y-4,4,2,0xff3030); rect(x-1,y-2,4,2,0xff3030);
+            rect(x-3,y,4,2,0xff3030);
+            rect(x-9,y+BAT_HALF+5,18,2,0x36323c);
+            rect(x-9,y+BAT_HALF+5,18*(float)b->cooldown_ticks/SUCTION_COOLDOWN_TICKS,2,0xff3030);
+        }
     }
     /* Match the visible text edges, excluding the font's trailing advance. */
     label_edge(OX+5,46,2,"P1",false);

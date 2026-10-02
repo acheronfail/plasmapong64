@@ -14,6 +14,7 @@ The original OGG files and each pack's license are included here.
 | Suction attack / texture | `forceField_000.ogg` | [Sci-fi Sounds](https://kenney.nl/assets/sci-fi-sounds) |
 | Menu confirm / back | `threeTone2.ogg` / `lowDown.ogg` | Digital Audio |
 | Jet | `thrusterFire_000.ogg` | Sci-fi Sounds |
+| Suction break | `impactMetal_light_002.ogg` / `lowDown.ogg` | Impact Sounds / Digital Audio |
 
 Retrieved 2026-10-02 from Kenney's own downloads. Packs are Creative Commons Zero
 (CC0 1.0): see `LICENSE-impact.txt`, `LICENSE-digital.txt`, and `LICENSE-scifi.txt`.
@@ -22,7 +23,9 @@ Retrieved 2026-10-02 from Kenney's own downloads. Packs are Creative Commons Zer
 16 kHz WAV auditions here and `src/sound_bank.inc`. It requires ffmpeg and Python,
 uses no network, and performs trimming, DC removal, peak normalization, filtering,
 loop crossfades, onset/tail fades, and a short delayed repeat for the victory cue.
-The checked-in PCM bank is about 171 KB; ordinary ROM builds need no audio tools.
+The checked-in PCM bank is about 180 KiB; ordinary ROM builds need no audio tools.
+The break cue combines a metallic crack with two fading, lower-pitched sputters,
+panned toward the affected bat.
 
 Suction plays a one-time force-field attack, morphs for 1.2 seconds into a quiet
 synthesized hum with a filtered stock texture, and loops only that steady sustain.
@@ -37,7 +40,8 @@ Victory has a short lead-in so the final goal can be heard first.
 
 `just check` creates `build/sound-demo.wav` using the actual runtime mixer:
 0s left bat, 1s right bat, 2s boundary, 3s goal, 4–8s suction, 9–11s jet,
-12s victory, 14s menu confirm, 15s menu back. Source/audition WAVs are normalized assets; the mix demo reflects the
+12s victory, 14s menu confirm, 15s menu back, 16s left suction break, 17s right
+suction break. Source/audition WAVs are normalized assets; the mix demo reflects the
 much quieter in-game levels of the sustained effects.
 
 For historical context, Graeme Norgate describes trimming effects and reducing

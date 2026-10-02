@@ -17,13 +17,13 @@ static void le16(FILE *f,unsigned v) { fputc(v&255,f); fputc((v>>8)&255,f); }
 static void le32(FILE *f,unsigned v) { le16(f,v); le16(f,v>>16); }
 static void preview(void) {
     FILE *f=fopen("build/sound-demo.wav","wb"); assert(f);
-    unsigned seconds=16,bytes=seconds*SOUND_RATE*4;
+    unsigned seconds=18,bytes=seconds*SOUND_RATE*4;
     fwrite("RIFF",1,4,f); le32(f,bytes+36); fwrite("WAVEfmt ",1,8,f); le32(f,16);
     le16(f,1); le16(f,2); le32(f,SOUND_RATE); le32(f,SOUND_RATE*4); le16(f,4); le16(f,16);
     fwrite("data",1,4,f); le32(f,bytes);
     sound_init(&s,SOUND_RATE); g=(Game){.phase=PLAY};
     for(unsigned n=0;n<seconds;n++) {
-        g.sound_events=n==0?SOUND_BAT1:n==1?SOUND_BAT2:n==2?SOUND_WALL:n==3?SOUND_GOAL:n==12?SOUND_WIN:n==14?SOUND_SELECT:n==15?SOUND_BACK:0;
+        g.sound_events=n==0?SOUND_BAT1:n==1?SOUND_BAT2:n==2?SOUND_WALL:n==3?SOUND_GOAL:n==12?SOUND_WIN:n==14?SOUND_SELECT:n==15?SOUND_BACK:n==16?SOUND_BREAK1:n==17?SOUND_BREAK2:0;
         g.bat[0].sucking=n>=4 && n<8;
         g.previous[1].z=n==9 || n==10;
         sound_update(&s,&g); second();
@@ -40,6 +40,13 @@ int main(void) {
     for(unsigned i=0;i<6;i++) {
         sound_init(&s,SOUND_RATE); g.sound_events=events[i]; sound_update(&s,&g); second();
         assert(energy(0)>0 && energy(1)>0);
+    }
+    for(int p=0;p<2;p++) {
+        sound_init(&s,SOUND_RATE); g=(Game){.phase=PLAY,.sound_events=p?SOUND_BREAK2:SOUND_BREAK1};
+        sound_update(&s,&g); second();
+        assert(energy(p)>2*energy(1-p) && energy(1-p)>0 && peak()<32767);
+        g.sound_events=0; sound_update(&s,&g); second();
+        assert(energy(0)==0 && energy(1)==0);
     }
     for(int type=0;type<2;type++) {
         sound_init(&s,SOUND_RATE); g=(Game){.phase=PLAY};

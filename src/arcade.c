@@ -41,7 +41,7 @@ Input arcade_ai(Game *g) {
     /* Powers share exactly the human controls and catch rules. */
     in.z=a->level>=2 && g->serve<=0 && g->held<0 &&
         g->bx>ARENA_W*.55f && fabsf(g->by-g->bat[1].y)<32;
-    in.a=a->level>=4 && g->serve<=0 &&
+    in.a=a->level>=4 && g->serve<=0 && !g->bat[1].cooldown_ticks && !g->bat[1].release_required &&
         ((g->held==1 && a->hold_time<.65f) ||
          (g->held<0 && g->bx>g->bat[1].x-32 && fabsf(g->by-g->bat[1].y)<25));
     return in;

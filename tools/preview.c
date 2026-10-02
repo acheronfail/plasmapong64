@@ -41,6 +41,10 @@ int main(int argc,char **argv) {
     }
     if(argc>1 && !strcmp(argv[1],"lobby")) { game_init(&g); g.phase=LOBBY; }
     if(argc>1 && !strcmp(argv[1],"paused")) g.phase=PAUSED;
+    if(argc>1 && !strcmp(argv[1],"overcharge")) {
+        g.phase=PLAY; g.bat[0].sucking=true; g.bat[0].charge=1;
+        g.bat[1].sucking=false; g.bat[1].cooldown_ticks=90;
+    }
     if(argc>1 && !strcmp(argv[1],"finished")) { g.phase=FINISHED; g.winner=1; g.score[1]=9; }
     if(argc>1 && !strcmp(argv[1],"menu")) {
         game_init(&g); Input idle[2]={0};

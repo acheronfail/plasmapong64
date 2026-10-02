@@ -36,6 +36,8 @@ void sound_update(Sound *s,const Game *g) {
     s->phase=g->phase;
     if(g->sound_events&SOUND_SELECT) trigger(s,pcm_select,COUNT(pcm_select),85,0);
     if(g->sound_events&SOUND_BACK) trigger(s,pcm_back,COUNT(pcm_back),75,0);
+    if(g->sound_events&SOUND_BREAK1) trigger(s,pcm_break,COUNT(pcm_break),110,-100);
+    if(g->sound_events&SOUND_BREAK2) trigger(s,pcm_break,COUNT(pcm_break),110,100);
     if(g->sound_events&SOUND_BAT1) trigger(s,pcm_bat,COUNT(pcm_bat),110,-100);
     if(g->sound_events&SOUND_BAT2) trigger(s,pcm_bat,COUNT(pcm_bat),110,100);
     if(g->sound_events&SOUND_WALL) trigger(s,pcm_wall,COUNT(pcm_wall),80,0);

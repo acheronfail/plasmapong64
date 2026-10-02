@@ -52,9 +52,17 @@ int main(void) {
 
     ready(); g.held=0; in[0].a=true;
     for(int t=0;t<65;t++) tick();
-    assert(g.held!=0 && g.arcade.release_lock[0] && !g.bat[0].sucking);
+    assert(g.held!=0 && g.bat[0].release_required && g.bat[0].cooldown_ticks && !g.bat[0].sucking);
     assert(g.arcade.points==0); /* No holding or survival score farming. */
-    in[0].a=false; tick(); assert(!g.arcade.release_lock[0]);
+    in[0].a=false; tick(); assert(!g.bat[0].release_required && g.bat[0].cooldown_ticks);
+    unsigned cooldown=g.bat[0].cooldown_ticks;
+    g.arcade.transition=1; tick(); assert(g.bat[0].cooldown_ticks==cooldown);
+
+    ready(); g.arcade.level=4; g.serve=0; g.held=1;
+    g.bat[1].suction_ticks=SUCTION_BREAK_TICKS-1; g.bat[1].charge=1; g.bat[1].sucking=true;
+    tick(); assert(g.held!=1 && g.bat[1].cooldown_ticks==SUCTION_COOLDOWN_TICKS);
+    assert(g.sound_events&SOUND_BREAK2);
+    tick(); assert(!g.bat[1].sucking && !g.bat[1].release_required);
 
     ready(); goal(0); assert(g.arcade.points==100 && g.arcade.goals==1);
     goal(1); assert(g.arcade.lives==2 && g.arcade.goals==1);

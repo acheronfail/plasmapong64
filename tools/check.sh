@@ -11,7 +11,7 @@ cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic -Isrc src/game.c src/arcade.c sr
 cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic -Isrc src/save.c tests/save_test.c -o build/save-test
 ./build/save-test
 cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic -Isrc src/game.c src/arcade.c src/fluid.c src/ui.c tools/preview.c -lm -o build/preview
-for state in menu play lobby paused finished arcade gameover scores level; do
+for state in menu play lobby paused finished arcade gameover scores level overcharge; do
     ./build/preview "$state" > "build/preview-$state.svg"
 done
 

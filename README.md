@@ -31,6 +31,13 @@ bat's vertical motion. Z and A can be used together. Unplugging a required
 controller pauses the match; reconnect it and press START to resume. Arcade mode
 ignores controller 2 during a run.
 
+At one second of suction, the full charge bar turns red. Release within the
+next 150ms or the suction mechanism breaks with a crack and sputter (at 1.167s,
+the first 30Hz tick after the deadline). The bat turns grey with red cracks and
+a shrinking cooldown bar for five seconds of active play. Movement and Z jets
+still work. A caught ball drops into the current without a launch or fluid burst.
+Release A before suction can restart; pauses and level transitions freeze recovery.
+
 ## Endless arcade
 
 Start with **3 lives**. Score **3 goals** to advance a level; conceding costs one
@@ -41,8 +48,8 @@ playfield briefly, followed by the usual serve countdown.
 Each goal earns **100 × level**, each level clear earns **500 × level**, and
 clearing in under 60 seconds of active play adds up to **600 points** (10 per
 remaining second). Pauses, serves and transitions do not consume that bonus time.
-Holding or returning the ball gives no points. A caught ball automatically
-releases after two seconds; release A before catching again.
+Holding or returning the ball gives no points. The same suction overcharge and
+five-second recovery rules apply to both the player and the AI.
 
 The AI starts with slow reactions, imprecise predictions and limited movement.
 Difficulty rises with diminishing increments: reactions improve from 0.40 toward

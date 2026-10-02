@@ -129,6 +129,59 @@ int main(void) {
         for(int t=0;t<60;t++) game_step(&g,in);
         assert(tap_energy<energy(&g.fluid));
     }
+    /* Full charge has a five-tick grace window; breaking drops into the flow
+       without injecting a burst, then locks suction for 150 active ticks. */
+    for(int p=0;p<2;p++) for(int caught=0;caught<2;caught++) {
+        ready(); g.serve=100; in[p].a=true;
+        if(caught) g.held=p;
+        for(unsigned t=0;t<SUCTION_CHARGE_TICKS;t++) game_step(&g,in);
+        assert(g.bat[p].charge==1 && g.bat[p].sucking && !g.bat[p].cooldown_ticks);
+        for(unsigned t=SUCTION_CHARGE_TICKS;t<SUCTION_BREAK_TICKS-1;t++) game_step(&g,in);
+        assert(g.bat[p].charge==1 && !g.bat[p].cooldown_ticks);
+        static Game without_burst; without_burst=g;
+        without_burst.bat[p].sucking=false; without_burst.held=-1;
+        Input idle[2]={{.connected=true},{.connected=true}};
+        game_step(&without_burst,idle); game_step(&g,in);
+        assert(!g.bat[p].sucking && g.bat[p].charge==0 && g.bat[p].burst==0);
+        assert(g.bat[p].cooldown_ticks==SUCTION_COOLDOWN_TICKS && g.bat[p].release_required);
+        assert(g.sound_events==(p?SOUND_BREAK2:SOUND_BREAK1) && g.held==-1);
+        for(int k=0;k<FN;k++) {
+            assert(fluid_velocity(&g.fluid)->u[k]==fluid_velocity(&without_burst.fluid)->u[k]);
+            assert(fluid_velocity(&g.fluid)->v[k]==fluid_velocity(&without_burst.fluid)->v[k]);
+        }
+        if(caught) {
+            fluid_sample(&g.fluid,g.bx,g.by,&u,&v);
+            assert(g.bvx==u && g.bvy==v);
+        }
+        g.phase=PAUSED;
+        for(int t=0;t<10;t++) game_step(&g,in);
+        assert(g.bat[p].cooldown_ticks==SUCTION_COOLDOWN_TICKS);
+        g.phase=PLAY;
+        for(unsigned t=1;t<=SUCTION_COOLDOWN_TICKS;t++) {
+            game_step(&g,in);
+            assert(g.bat[p].cooldown_ticks==SUCTION_COOLDOWN_TICKS-t);
+            assert(!g.bat[p].sucking && g.bat[p].charge==0 && g.sound_events==0);
+        }
+        game_step(&g,in); assert(!g.bat[p].sucking); /* Must release A to rearm. */
+        in[p].a=false; game_step(&g,in); assert(!g.bat[p].release_required);
+        in[p].a=true; game_step(&g,in); assert(g.bat[p].sucking && g.bat[p].suction_ticks==1);
+        ready(); g.serve=100; in[p].a=true;
+        for(unsigned t=0;t<SUCTION_BREAK_TICKS-1;t++) game_step(&g,in);
+        in[p].a=false; game_step(&g,in);
+        assert(g.bat[p].burst>0 && !g.bat[p].cooldown_ticks && !g.bat[p].suction_ticks);
+        /* Releasing during recovery rearms A, but tapping cannot bypass the
+           cooldown; movement and jets remain available throughout it. */
+        ready(); g.serve=100; g.bat[p].cooldown_ticks=SUCTION_COOLDOWN_TICKS;
+        g.bat[p].release_required=true;
+        float old_y=g.bat[p].y; in[p].y=1; in[p].z=true;
+        for(unsigned t=1;t<SUCTION_COOLDOWN_TICKS;t++) {
+            in[p].a=t%2==0; game_step(&g,in);
+            assert(!g.bat[p].sucking && g.bat[p].charge==0 && g.bat[p].burst==0);
+        }
+        assert(g.bat[p].y<old_y && energy(&g.fluid)>0);
+        in[p].a=true; game_step(&g,in);
+        assert(!g.bat[p].cooldown_ticks && g.bat[p].sucking && g.bat[p].suction_ticks==1);
+    }
     /* Suction must transport EXISTING dye, not just influence the ball or
        paint a new coloured patch. Check both mirrored ends against no suction. */
     for(int p=0;p<2;p++) {
