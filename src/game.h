@@ -31,7 +31,8 @@ enum { SOUND_BAT1=1, SOUND_BAT2=2, SOUND_WALL=4, SOUND_GOAL=8, SOUND_WIN=16, SOU
        SOUND_BREAK1=128, SOUND_BREAK2=256 };
 typedef enum { FLOW_NONE, FLOW_PARTICLES, FLOW_TAILS, FLOW_SPEED, FLOW_COUNT } FlowEffect;
 #define FLOW_TRACERS 96
-typedef struct { float x[3],y[3]; unsigned life; } FlowTracer;
+#define FLOW_HISTORY 9
+typedef struct { float x[FLOW_HISTORY],y[FLOW_HISTORY]; unsigned life; } FlowTracer;
 typedef struct { float x,y,u,v; } MenuCurrent;
 typedef struct {
     Fluid fluid;

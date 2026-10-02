@@ -112,13 +112,14 @@ static void flow_background(const Game *g,float x,float y,float w,float h) {
     /* A small, saturated palette preserves batching: at most four color
        changes per layer, rather than one per particle. Read nearest-cell dye
        once per head; tails share its tint. Mixed/clear fluid stays neutral. */
-    static const uint32_t colors[4][3]={
-        {0x526d82,0x344b60,0x253849}, /* neutral */
-        {0x29afd2,0x207f9c,0x18566f}, /* cyan */
-        {0xdb506b,0x96384f,0x64283c}, /* coral */
-        {0xc7a333,0x897026,0x594a1e}  /* gold */
+    static const uint32_t colors[4][5]={
+        {0x526d82,0x465d70,0x3b4e5e,0x30404c,0x25313a}, /* neutral */
+        {0x29afd2,0x2397b5,0x1d7f99,0x18677c,0x124f60}, /* cyan */
+        {0xdb506b,0xbd455c,0x9f3a4e,0x812f3f,0x632430}, /* coral */
+        {0xc7a333,0xac8d2c,0x917725,0x75611e,0x5a4a17}  /* gold */
     };
     uint8_t buckets[4][FLOW_TRACERS]; unsigned counts[4]={0};
+    float tail_scale[FLOW_TRACERS];
     const FluidInk *ink=fluid_dye(&g->fluid);
     const FluidInkValue minimum=fluid_ink_encode(.04f);
     for(unsigned i=0;i<FLOW_TRACERS;i++) {
@@ -130,14 +131,22 @@ static void flow_background(const Game *g,float x,float y,float w,float h) {
         else if(r>minimum && r>b+b/2 && r>gold+gold/2) tint=2;
         else if(gold>minimum && gold>r+r/2 && gold>b+b/2) tint=3;
         buckets[tint][counts[tint]++]=(uint8_t)i;
+        tail_scale[i]=1;
+        if(g->flow_effect==FLOW_TAILS) {
+            float extent=0;
+            for(int j=2;j<FLOW_HISTORY;j+=2)
+                extent=maxf(extent,maxf(fabsf(t->x[j]-t->x[0]),fabsf(t->y[j]-t->y[0])));
+            /* Scale the entire trail together so fast tails keep spaced dots. */
+            if(extent>24) tail_scale[i]=24/extent;
+        }
     }
-    for(int j=g->flow_effect==FLOW_TAILS?2:0;j>=0;j--) {
+    for(int j=g->flow_effect==FLOW_TAILS?4:0;j>=0;j--) {
         for(unsigned tint=0;tint<4;tint++) for(unsigned n=0;n<counts[tint];n++) {
-            const FlowTracer *t=&g->tracers[buckets[tint][n]];
-            float dx=t->x[j]-t->x[0],dy=t->y[j]-t->y[0];
+            unsigned i=buckets[tint][n];
+            const FlowTracer *t=&g->tracers[i];
+            float dx=(t->x[j*2]-t->x[0])*tail_scale[i],dy=(t->y[j*2]-t->y[0])*tail_scale[i];
             float length=maxf(fabsf(dx),fabsf(dy));
             if(j && length<1) continue;
-            if(length>8) { dx*=8/length; dy*=8/length; }
             float px=floorf(x+(t->x[0]+dx)*w/ARENA_W);
             float py=floorf(y+(t->y[0]+dy)*h/ARENA_H);
             if(px>=x && py>=y && px<x+w && py<y+h) rect(px,py,1,1,colors[tint][j]);
@@ -152,8 +161,8 @@ void ui_draw(const Game *g) {
         const char *effects[]={"NONE","PARTICLES","PARTICLE TAILS","SPEED"};
         char setting[64]; snprintf(setting,sizeof(setting),"< FLOW EFFECT: %s >",effects[g->flow_effect]);
         menu_label(125,4,setting);
-        menu_label(149,1,!g->save_available?"NO SAVE STORAGE - SESSION ONLY":
-            g->save_failed?"SAVE FAILED - SESSION ONLY":"AUTOMATICALLY SAVED TO CARTRIDGE");
+        if(!g->save_available || g->save_failed)
+            menu_label(149,1,!g->save_available?"NO SAVE STORAGE - SESSION ONLY":"SAVE FAILED - SESSION ONLY");
         centered_hint(195,"[LEFT] / [RIGHT] CHANGE");
         centered_hint(216,"[B] BACK"); return;
     }
@@ -183,8 +192,8 @@ void ui_draw(const Game *g) {
             snprintf(s,sizeof(s),"%u",(unsigned)h->points); label_edge(201,67+i*13,style,s,true);
             snprintf(s,sizeof(s),"%u",(unsigned)h->level); label_edge(296,67+i*13,style,s,true);
         }
-        menu_label(212,1,!g->save_available?"NO SAVE STORAGE - SESSION SCORES":
-            g->save_failed?"SAVE FAILED - SESSION SCORES":"HIGH SCORES SAVED TO CARTRIDGE");
+        if(!g->save_available || g->save_failed)
+            menu_label(212,1,!g->save_available?"NO SAVE STORAGE - SESSION SCORES":"SAVE FAILED - SESSION SCORES");
         hint(107,230,"[B] BACK TO MENU"); return;
     }
     if(g->mode==ARCADE) {

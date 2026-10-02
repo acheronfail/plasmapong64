@@ -30,11 +30,11 @@ void game_flow_step(Game *g) {
             t->x[0]=(i%12+tracer_random(g))*(ARENA_W/12);
             t->y[0]=(i/12+tracer_random(g))*(ARENA_H/8);
             t->life=45+(unsigned)(tracer_random(g)*90);
-            for(int j=1;j<3;j++) { t->x[j]=t->x[0]; t->y[j]=t->y[0]; }
+            for(int j=1;j<FLOW_HISTORY;j++) { t->x[j]=t->x[0]; t->y[j]=t->y[0]; }
             continue;
         }
         float u,v; fluid_sample(&g->fluid,t->x[0],t->y[0],&u,&v);
-        for(int j=2;j>0;j--) { t->x[j]=t->x[j-1]; t->y[j]=t->y[j-1]; }
+        for(int j=g->flow_effect==FLOW_TAILS?FLOW_HISTORY-1:0;j>0;j--) { t->x[j]=t->x[j-1]; t->y[j]=t->y[j-1]; }
         t->x[0]+=u*STEP; t->y[0]+=v*STEP; t->life--;
         if(t->x[0]<0 || t->x[0]>=ARENA_W || t->y[0]<0 || t->y[0]>=ARENA_H) t->life=0;
     }

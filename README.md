@@ -888,15 +888,16 @@ Choose **OPTIONS** from the main menu, then press left/right on the D-pad or
 stick to cycle **FLOW EFFECT** through **NONE**, **PARTICLES**, **PARTICLE TAILS**,
 and **SPEED**. B returns to the main menu. The animated background
 previews the selected effect. Each change automatically saves to cartridge EEPROM;
-missing storage or a failed write is shown in the options screen.
+missing storage or a failed write is shown in the options screen. Successful
+saves are silent, without confirmation text in the options or high-score screens.
 
 Particles use 96 visual-only tracers sampled from the current velocity field at
 30 Hz, with periodic distributed respawns. Heads and tails are single framebuffer
 pixels, strongly tinted cyan, coral or gold by the dominant local dye (mixed/clear
 fluid uses a dim blue-grey). Four colour batches per layer keep render-state changes
 bounded; tinting reads one grid cell per particle without extra interpolation.
-Particle tails add two dim history
-markers, with an eight-arena-pixel maximum extent. They freeze with gameplay and
+Particle tails add four fading history markers spanning eight simulation ticks
+(about 267 ms), with a 24-arena-pixel maximum extent. They freeze with gameplay and
 do not change the fluid or ball physics. SPEED maps velocity magnitude to a fixed
 colour spectrum: dark navy at rest, blue at 16, cyan at 32, green at 64, yellow
 at 128, and red at 256 or more arena pixels/second. The magnitude is the existing

@@ -65,6 +65,12 @@ static void flow_tests(void) {
     for(int i=0;i<FN;i++) fluid_velocity(&a.fluid)->u[i]=fluid_flow_encode(30);
     a.tracers[0].x[0]=100; a.tracers[0].y[0]=100;
     game_flow_step(&a); assert(fabsf(a.tracers[0].x[0]-101)<.001f && a.tracers[0].x[1]==100);
+    for(int i=1;i<FLOW_HISTORY-1;i++) game_flow_step(&a);
+    assert(fabsf(a.tracers[0].x[0]-108)<.001f && a.tracers[0].x[FLOW_HISTORY-1]==100);
+    a.tracers[0].life=0; game_flow_step(&a);
+    for(int i=1;i<FLOW_HISTORY;i++) {
+        assert(a.tracers[0].x[i]==a.tracers[0].x[0] && a.tracers[0].y[i]==a.tracers[0].y[0]);
+    }
     for(int i=0;i<400;i++) game_flow_step(&a);
     for(int i=0;i<FLOW_TRACERS;i++) if(a.tracers[i].life) {
         assert(a.tracers[i].x[0]>=0 && a.tracers[i].x[0]<ARENA_W);
