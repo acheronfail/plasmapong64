@@ -2,6 +2,7 @@
 #include <libdragon.h>
 #include <math.h>
 #include <string.h>
+#include <assert.h>
 #include "draw.h"
 #include "sound.h"
 #include "save.h"
@@ -14,14 +15,44 @@
 #endif
 static Game game;
 static Sound sound;
-static void fill_audio(short *buffer,size_t frames) { sound_render(&sound,buffer,frames); }
+#ifdef PLASMAPONG_FLUID_PROFILE
+static uint64_t audio_ticks;
+static unsigned audio_frames;
+#endif
+static void fill_audio(short *buffer,size_t frames) {
+#ifdef PLASMAPONG_FLUID_PROFILE
+    uint64_t begin=get_ticks();
+#endif
+    sound_render(&sound,buffer,frames);
+#ifdef PLASMAPONG_FLUID_PROFILE
+    audio_ticks+=get_ticks()-begin; audio_frames+=frames;
+#endif
+}
 static surface_t ink;
+static rspq_block_t *ink_blit;
+static float ink_x,ink_y,ink_w,ink_h;
+static bool fill_mode;
+static uint32_t fill_color;
+static rspq_block_t *static_draw[DRAW_STATIC_COUNT];
+void draw_static(unsigned id,void (*draw)(void)) {
+    assert(id<DRAW_STATIC_COUNT);
+    fill_mode=false;
+    if(!static_draw[id]) {
+        rspq_block_begin(); draw(); static_draw[id]=rspq_block_end();
+    }
+    rspq_block_run(static_draw[id]);
+    fill_mode=false;
+}
 static color_t color(uint32_t c) { return RGBA32(c>>16,(c>>8)&255,c&255,255); }
 void rect(float x,float y,float w,float h,uint32_t c) {
     if(w<=0 || h<=0) return;
-    rdpq_set_mode_fill(color(c)); rdpq_fill_rectangle(x,y,x+w,y+h);
+    if(!fill_mode || fill_color!=c) {
+        rdpq_set_mode_fill(color(c)); fill_color=c; fill_mode=true;
+    }
+    rdpq_fill_rectangle(x,y,x+w,y+h);
 }
 void label(float x,float y,int style,const char *s) {
+    fill_mode=false;
     rdpq_text_print(&(rdpq_textparms_t){.style_id=style},1,x,y,s);
 }
 void label_edge(float x,float y,int style,const char *s,bool right) {
@@ -49,12 +80,23 @@ float label_width(const char *s) {
     return w;
 }
 void draw_fluid(const Fluid *f,float x,float y,float width,float height) {
+    fill_mode=false;
     /* Generate all pixels together so bank selection and call overhead stay
        outside the cell loop. Preserve the padded RGBA32 upload layout. */
     fluid_pixels(f,ink.buffer,ink.stride/sizeof(uint32_t));
-    rdpq_set_mode_standard(); rdpq_mode_filter(FILTER_BILINEAR);
-    rdpq_tex_blit(&ink,x,y,&(rdpq_blitparms_t){
-        .width=FW,.height=FH,.scale_x=width/FW,.scale_y=height/FH,.filtering=true});
+    /* Geometry and texture address are constant until switching menu/court.
+       Record upload/tiling commands once; pixel contents remain dynamic. The
+       frame-start wait also makes freeing the previous block safe. */
+    if(!ink_blit || x!=ink_x || y!=ink_y || width!=ink_w || height!=ink_h) {
+        if(ink_blit) rspq_block_free(ink_blit);
+        ink_x=x; ink_y=y; ink_w=width; ink_h=height;
+        rspq_block_begin();
+        rdpq_set_mode_standard(); rdpq_mode_filter(FILTER_BILINEAR);
+        rdpq_tex_blit(&ink,x,y,&(rdpq_blitparms_t){
+            .width=FW,.height=FH,.scale_x=width/FW,.scale_y=height/FH,.filtering=true});
+        ink_blit=rspq_block_end();
+    }
+    rspq_block_run(ink_blit);
 }
 int main(void) {
     debug_init_isviewer(); debug_init_emulog(); timer_init(); joypad_init();
@@ -74,13 +116,22 @@ int main(void) {
     uint64_t previous=get_ticks(); float accumulator=0;
     uint64_t sim_ticks=0; unsigned sim_steps=0;
     uint64_t draw_ticks=0; unsigned draw_frames=0;
+    uint64_t frame_window=get_ticks(); unsigned frame_steps=0;
     debugf("Plasma Pong 64: ready, %u-byte game state\n",(unsigned)sizeof(game));
     while(1) {
-        surface_t *frame=display_get();
         uint64_t now=get_ticks();
         float elapsed=TIMER_MICROS_LL(now-previous)*.000001f; previous=now;
         /* Bound catch-up after stalls; fixed physics works on PAL and NTSC. */
         accumulator+=minf(elapsed,.1f);
+        /* There is no render interpolation: a frame with no new simulation
+           step repeats the same image. Reserve that time for the next 30 Hz
+           update instead of spending it regenerating/uploading the texture.
+           Interrupts remain enabled so audio continues during this wait. */
+        if(accumulator<STEP) {
+            /* Round up: sub-microsecond remainders must still make progress. */
+            wait_ticks(TICKS_FROM_US(1+(uint32_t)((STEP-accumulator)*1000000.0f)));
+            continue;
+        }
         joypad_poll(); Input input[2]={0};
         for(int p=0;p<2;p++) {
             joypad_inputs_t in=joypad_get_inputs((joypad_port_t)p);
@@ -105,6 +156,7 @@ int main(void) {
             memcpy(calls_before,fluid_profile.calls,sizeof(calls_before));
 #endif
             game_step(&game,input); accumulator-=STEP;
+            frame_steps++;
             disable_interrupts(); sound_update(&sound,&game); enable_interrupts();
             if(game.scores_dirty) {
                 scores_store(&game);
@@ -138,14 +190,30 @@ int main(void) {
                 }
             }
         }
+        surface_t *frame=display_get();
         uint64_t draw_begin=get_ticks();
-        rdpq_attach(frame,NULL); ui_draw(&game); rdpq_detach_show();
-        /* The CPU updates a shared dye texture next frame. Wait for its RDP read. */
+        /* Finish the previous frame before overwriting its shared texture or
+           freeing a blit block. The simulation above can run alongside RDP. */
         rspq_wait();
+        fill_mode=false;
+        rdpq_attach(frame,NULL); ui_draw(&game); rdpq_detach_show();
         draw_ticks+=get_ticks()-draw_begin;
         if(++draw_frames==150) {
             debugf("Plasma Pong 64: draw average %llu us/frame\n",
                 (unsigned long long)(TIMER_MICROS_LL(draw_ticks)/draw_frames));
+            uint64_t window_end=get_ticks();
+            debugf("Plasma Pong 64: frame interval %llu us (%u steps / %u frames)\n",
+                (unsigned long long)(TIMER_MICROS_LL(window_end-frame_window)/draw_frames),
+                frame_steps,draw_frames);
+            frame_window=window_end; frame_steps=0;
+#ifdef PLASMAPONG_FLUID_PROFILE
+            disable_interrupts();
+            uint64_t audio_time=audio_ticks; unsigned samples=audio_frames;
+            audio_ticks=0; audio_frames=0;
+            enable_interrupts();
+            debugf("Plasma Pong 64: audio %llu us for %u samples\n",
+                (unsigned long long)TIMER_MICROS_LL(audio_time),samples);
+#endif
             draw_ticks=0; draw_frames=0;
         }
     }

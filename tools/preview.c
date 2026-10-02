@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <math.h>
 #include <string.h>
+void draw_static(unsigned id,void (*draw)(void)) { (void)id; draw(); }
 void rect(float x,float y,float w,float h,uint32_t c) {
     if(w>0 && h>0) printf("<rect x='%g' y='%g' width='%g' height='%g' fill='#%06x'/>\n",x,y,w,h,c);
 }

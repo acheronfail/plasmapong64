@@ -73,10 +73,15 @@ static void menu_title(void) {
     block_word(48,59,"PLASMA",CYAN); block_word(162,59,"PONG",CORAL);
     block_word(240,59,"64",GOLD);
 }
+static void court(void) {
+    rect(16,32,288,1,0x304c65); rect(16,214,288,1,0x304c65);
+    for(int y=39;y<211;y+=12) rect(159,y,1,4,0x23374e);
+    rect(13,34,2,180,0x24566c); rect(305,34,2,180,0x71334c);
+}
 void ui_draw(const Game *g) {
     if(g->phase==MENU) {
         draw_fluid(&g->fluid,0,0,320,240);
-        menu_title();
+        draw_static(DRAW_MENU_TITLE,menu_title);
         const char *items[]={"MULTI-PLAYER","SINGLE PLAYER","HIGH SCORES"};
         for(unsigned i=0;i<3;i++) {
             char item[40]; snprintf(item,sizeof(item),g->menu_selection==i?"> %s <":"%s",items[i]);
@@ -113,9 +118,7 @@ void ui_draw(const Game *g) {
         label(145,20,0,s); label(233,20,1,"FIRST TO 9");
     }
     draw_fluid(&g->fluid,OX,OY,ARENA_W,ARENA_H);
-    rect(16,32,288,1,0x304c65); rect(16,214,288,1,0x304c65);
-    for(int y=39;y<211;y+=12) rect(159,y,1,4,0x23374e);
-    rect(13,34,2,180,0x24566c); rect(305,34,2,180,0x71334c);
+    draw_static(DRAW_COURT,court);
     for(int p=0;p<2;p++) {
         const Bat *b=&g->bat[p]; uint32_t c=p?CORAL:CYAN;
         float x=OX+b->x,y=OY+b->y;

@@ -138,7 +138,9 @@ badges. Arcade requires one emulated N64 pad in port 1; multiplayer requires two
   the former RGBA16 upload; the framebuffer remains 16-bit. Padded texture rows
   avoid RGBA32 block-upload artifacts in the pinned libdragon version, and
   filtered tile overlaps keep chunk boundaries smooth. RDP completion is
-  synchronized before reusing texture memory. Game state occupies about 70 KB;
+  synchronized after the next simulation step and before reusing texture memory.
+  Immutable drawing commands are recorded as RSPQ blocks; rendering follows the
+  30 Hz simulation instead of generating duplicate frames between updates. Game state occupies about 70 KB;
   the ROM does not require an Expansion Pak. Emulator debug output reports the
   average simulation cost every 150 active steps and draw cost every 150 frames.
   The fluid source uses `-O3` on N64, and shared timestep/radius factors are
@@ -339,6 +341,90 @@ trajectories. Additional checks cover copied-state independence, alignment,
 extreme finite pressure inputs, and exact RGBA texture output/padding. The
 existing 120-second gameplay stress and late-level arcade tests pass, as do
 AddressSanitizer and UndefinedBehaviorSanitizer checks (leak detection disabled).
+
+### Modern homebrew guidance applied (2026-10-02)
+
+The most relevant primary resources for this game are:
+
+- [Libdragon RDPQ blocks](https://libdragon.dev/ref/group__rdpq.html): record
+  repeated command sequences to avoid rebuilding them on the CPU. This game now
+  records the fluid upload/blit, static menu title, and court markings. The blit
+  still uploads the current texture pixels on every replay; only its commands
+  are reused. Changing between menu and court geometry rebuilds it after a full
+  synchronization, so no queued block is freed while in use.
+- [Libdragon asynchronous presentation](https://libdragon.dev/ref/rdpq__attach_8h.html):
+  `rdpq_detach_show` lets the CPU continue while the RDP finishes. The texture
+  reuse wait now happens after the next simulation update, before drawing begins.
+  Consecutive same-colour rectangles also reuse their fill mode.
+- [Libdragon cache/DMA interfaces](https://libdragon.dev/ref/group__n64sys.html):
+  CPU caches require explicit coherency when sharing memory with hardware. A
+  cached texture-write experiment with explicit writeback was correct but slower
+  in this Ares build, so it was discarded. The existing uncached texture allocation
+  is retained. Hardware measurements could justify revisiting that decision.
+- [RSPQ overlays](https://libdragon.dev/ref/rspq_8h.html) and
+  [RSPL](https://github.com/HailToDodongo/rspl): the route to custom vector work
+  on the RSP. My recommendation for a larger follow-up is a batched fixed-point
+  advection overlay, starting with dye. It needs a DMA-friendly layout, bounded
+  fixed-point precision, and differential/visual tests. The pressure solver has
+  a serial left-neighbour dependency; it cannot simply become eight independent
+  SIMD lanes without changing the algorithm. No custom microcode is added here.
+
+The application also rendered many frames without a new simulation update.
+There is no interpolation in the renderer, so these repeated the same state.
+It now waits with audio interrupts enabled until the next 30 Hz update, then
+renders once. Input, menu animation, physics, fluid resolution, and pressure
+iterations retain their existing simulation rate and equations. Catch-up still
+handles delayed steps. This reduces redundant work rather than lowering the
+rate of distinct animation frames.
+
+A fresh 55-second Ares comparison used the pinned toolchain and Ares
+`5f2f7dc0d`, Homebrew Mode and paraLLEl-RDP, with normal audio enabled. The control
+uses revision `fae145f`'s original renderer/pacing plus matching frame counters;
+the extracted control main is `build/perf-control-main.c`. Both runs produced ten
+150-step simulation windows. The control produced sixteen 150-frame windows;
+the final build produced ten.
+
+| Measurement | Control | Final |
+| --- | ---: | ---: |
+| Simulation, elapsed ms/step | 23.679 | 23.626 |
+| Main-thread drawing, elapsed ms/frame | 5.240 | 4.763 |
+| Frame submission interval, ms | 21.806 | 33.354 |
+| Frames submitted per emulated second | 45.86 | 29.98 |
+| Steps / frames in complete frame windows | 1,569 / 2,400 | 1,500 / 1,500 |
+| Main-thread drawing time per emulated second, ms | 240.3 | 142.8 |
+
+Drawing takes **9.1% less time per submitted frame**, and avoiding duplicate
+frames reduces measured drawing time per emulated second by **40.6%**. This
+recovers about 98 ms of main-thread time each second. Simulation speed is
+essentially unchanged; this is not a 40.6% overall game speedup. The old submission
+rate counted repeated states, while the new rate follows the 30 Hz simulation.
+Drawing measurements include synchronization and audio interrupts; the new wait
+is deferred, so they are not isolated GPU execution timings or pure CPU usage.
+These are window averages in an emulator, not worst-case or real-console results.
+Raw logs: `build/perf-{control,final}.log`. The normal `plasmapong.z64` has been
+rebuilt. Real-console frame pacing and controller feel still need a hardware test.
+
+A separate 55-second main-menu comparison reduced drawing from **8.175 to
+4.661 ms/frame (43.0%)**. Menu fluid seeds are randomized, so this is not a
+pixel-identical replay; the static title drawing is unchanged. The final menu
+also reports one simulation step per submitted frame at approximately 30 Hz.
+Logs: `build/perf-menu-{control,final}.log`.
+
+Validation: all host suites pass, and all nine generated SVG previews are
+byte-identical to previews made with the original UI source. Scripted N64
+multiplayer renders correctly in Ares. A 55-second level-101 arcade run
+averaged 23.562 ms/step and 4.996 ms/draw, with 1,500 steps for 1,500 frames
+in complete windows (`build/perf-late.log`). Its mean submission interval was
+33.563 ms, including phase/save transitions. A separate 25-second smoke run
+with `rdpq_debug_start()` enabled reported no RDP validation errors
+(`build/perf-validate.log`). Menu and gameplay screenshots were visually checked.
+The numerical solver is unchanged.
+
+The regular log now includes frame interval and simulation-step/frame counts.
+`just benchmark` additionally reports audio callback cost; that time is already
+included in elapsed simulation/draw measurements and must not be added again.
+The exploratory gameplay run spent about 4–5% of emulated time in audio, making
+fluid advection the stronger candidate for substantial RSP acceleration.
 
 ## Sound assets
 
