@@ -19,7 +19,8 @@ static void ring(float x,float y,float radius,uint32_t color) {
     }
 }
 /* Bracketed control names become N64-coloured keycaps everywhere. */
-static void hint(float x,float y,const char *s) {
+static float hint_layout(float x,float y,const char *s,bool draw) {
+    float start=x;
     while(*s) {
         bool button=*s=='[';
         if(button) s++;
@@ -30,9 +31,36 @@ static void hint(float x,float y,const char *s) {
         float w=label_width(part);
         if(button) {
             uint32_t c=!strcmp(part,"A")?0x285dce:!strcmp(part,"START")?0xc63743:!strcmp(part,"B")?0x258846:0x626b78;
-            rect(x,y-9,w+6,12,c);
-            label(x+3,y,4,part); x+=w+6;
-        } else { label(x,y,1,part); x+=w; }
+            if(draw) {
+                rect(x,y-9,w+6,12,c);
+                label(x+3,y,4,part);
+            }
+            x+=w+6;
+        } else { if(draw) label(x,y,1,part); x+=w; }
+    }
+    return x-start;
+}
+static void hint(float x,float y,const char *s) {
+    hint_layout(roundf(x),roundf(y),s,true);
+}
+static void centered_hint(float y,const char *s) {
+    hint(160-hint_layout(0,0,s,false)*.5f,y,s);
+}
+static void name_entry(const Game *g,float y) {
+    const char *initials=g->highs[g->score_entry].initials;
+    const char *title="HIGH SCORE!  ";
+    float x=roundf(160-(label_width(title)+label_width(initials)+12)*.5f);
+    label(x,y,2,title); x+=label_width(title);
+    for(unsigned i=0;i<3;i++) {
+        char letter[]={initials[i],0};
+        float w=label_width(letter);
+        bool selected=i==g->initial_cursor;
+        if(selected) {
+            rect(x-1,y-9,w+2,11,CYAN);
+            rect(x-1,y+3,w+2,1,CYAN);
+        }
+        label(x,y,selected?5:2,letter);
+        x+=w+4;
     }
 }
 static void panel(const char *title,const char *line1,const char *line2) {
@@ -87,7 +115,7 @@ void ui_draw(const Game *g) {
             char item[40]; snprintf(item,sizeof(item),g->menu_selection==i?"> %s <":"%s",items[i]);
             menu_label(124+i*25,g->menu_selection==i?4:1,item);
         }
-        menu_label(216,1,"UP / DOWN TO SELECT    A TO PLAY");
+        centered_hint(216,"[UP] / [DOWN] SELECT   [A] PLAY");
         return;
     }
     rect(0,0,320,240,0x070c17);
@@ -166,9 +194,9 @@ void ui_draw(const Game *g) {
             snprintf(s,sizeof(s),"SCORE %u   LEVEL %u",(unsigned)g->arcade.points,(unsigned)g->arcade.level);
             menu_label(111,0,s);
             if(g->score_entry>=0) {
-                snprintf(s,sizeof(s),"HIGH SCORE!  %s",g->highs[g->score_entry].initials); menu_label(133,2,s);
-                snprintf(s,sizeof(s),"EDIT LETTER %u: UP / DOWN",g->initial_cursor+1); menu_label(150,1,s);
-                menu_label(166,1,"LEFT / RIGHT: CHOOSE LETTER");
+                name_entry(g,133);
+                centered_hint(150,"[UP] / [DOWN] CHANGE LETTER");
+                centered_hint(166,"[LEFT] / [RIGHT] CHOOSE LETTER");
             } else menu_label(145,1,"TRY AGAIN FOR THE TOP TEN");
             hint(103,183,"[A] HIGH SCORES");
         } else {

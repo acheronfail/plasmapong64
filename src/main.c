@@ -7,6 +7,9 @@
 #include "sound.h"
 #include "save.h"
 #include "fluid_profile.h"
+#ifdef PLASMAPONG_RSP_TEST
+#include "../tests/rsp_fluid_smoke.h"
+#endif
 #ifdef PLASMAPONG_SAVE_SMOKE
 #include "../tests/save_smoke.h"
 #endif
@@ -53,7 +56,10 @@ void rect(float x,float y,float w,float h,uint32_t c) {
 }
 void label(float x,float y,int style,const char *s) {
     fill_mode=false;
-    rdpq_text_print(&(rdpq_textparms_t){.style_id=style},1,x,y,s);
+    /* The built-in bitmap font has integer advances. Centering can put its
+       origin on a half pixel, where RDP coverage/point sampling clips strokes.
+       Snap every text origin, including shadows and edge-aligned labels. */
+    rdpq_text_print(&(rdpq_textparms_t){.style_id=style},1,roundf(x),roundf(y),s);
 }
 void label_edge(float x,float y,int style,const char *s,bool right) {
     const rdpq_font_t *font=rdpq_text_get_font(1);
@@ -106,6 +112,9 @@ int main(void) {
     /* Pad rows so partial-width uploads use LoadTile. The pinned libdragon's
        RGBA32 LoadBlock path corrupts this non-power-of-two texture width. */
     rdpq_init(); ink=surface_alloc(FMT_RGBA32,64,FH);
+#ifdef PLASMAPONG_RSP_TEST
+    rsp_fluid_smoke();
+#endif
     rdpq_font_t *font=rdpq_font_load_builtin(FONT_BUILTIN_DEBUG_VAR);
     const uint32_t colors[]={0xeaf6ff,0xa0b3c9,0x48dcff,0xff637e,0xffffff,0x02040a,0x737d8a};
     for(int i=0;i<7;i++) rdpq_font_style(font,i,&(rdpq_fontstyle_t){.color=color(colors[i])});

@@ -1,6 +1,7 @@
 #include "mathutil.h"
 #include "fluid.h"
 #include "fluid_profile.h"
+#include "fluid_pressure.h"
 #ifdef PLASMAPONG_FLUID_PROFILE
 FluidProfile fluid_profile;
 #endif
@@ -40,6 +41,47 @@ static void walls(Fluid *f) {
     for(int y=0;y<FH;y++) velocity->u[y*FW]=velocity->u[y*FW+FW-1]=0;
     for(int x=0;x<FW;x++) velocity->v[x]=velocity->v[(FH-1)*FW+x]=0;
 }
+void fluid_pressure_cpu(int32_t *restrict pressure,const int32_t *restrict divergence) {
+    /* Solve the branch-free interior, then copy Neumann boundary pressure.
+       Keep the hot loop small enough for the R4300's instruction cache. */
+    memset(pressure,0,FW*sizeof(pressure[0]));
+    for(int pass=0;pass<8;pass++) {
+        if(pass==0) {
+            /* Zero initial pressure makes the right/bottom neighbors zero.
+               Fill every interior cell without clearing the whole grid. */
+            for(int y=1;y<FH-1;y++) {
+                int32_t left=0;
+                for(int x=1;x<FW-1;x++) {
+                    int k=y*FW+x;
+                    pressure[k]=left=(divergence[k]+left+pressure[k-FW])>>2;
+                }
+            }
+        } else for(int y=1;y<FH-1;y++) {
+            int k=y*FW+1;
+            int32_t left=pressure[k-1];
+            for(int x=1;x<FW-1;x+=2,k+=2) {
+                /* Prepare independent neighbor sums before the serial left
+                   dependency. Keep the same lexicographic eight-pass solve. */
+                int32_t a=(divergence[k]+pressure[k+1])+
+                        (pressure[k-FW]+pressure[k+FW]);
+                int32_t b=(divergence[k+1]+pressure[k+2])+
+                        (pressure[k-FW+1]+pressure[k+FW+1]);
+                pressure[k]=left=(a+left)>>2;
+                pressure[k+1]=left=(b+left)>>2;
+            }
+        }
+        for(int y=1;y<FH-1;y++) {
+            pressure[y*FW]=pressure[y*FW+1];
+            pressure[y*FW+FW-1]=pressure[y*FW+FW-2];
+        }
+        /* Both row starts are 16-byte aligned. Give GCC the alignment at
+           the copy site to avoid MIPS unaligned load/store pairs. */
+        memcpy(__builtin_assume_aligned(pressure,16),
+               __builtin_assume_aligned(pressure+FW,16),FW*sizeof(pressure[0]));
+        memcpy(__builtin_assume_aligned(pressure+(FH-1)*FW,16),
+               __builtin_assume_aligned(pressure+(FH-2)*FW,16),FW*sizeof(pressure[0]));
+    }
+}
 void fluid_project(Fluid *f) {
     FluidVelocity *velocity=fluid_velocity(f);
     PROFILE_BEGIN();
@@ -51,45 +93,11 @@ void fluid_project(Fluid *f) {
         f->divergence[k]=(int32_t)(clampf(divergence,-32760,32760)*PRESSURE_SCALE);
     }
     PROFILE_END(PROFILE_DIVERGENCE);
-    /* Solve the branch-free interior, then copy Neumann boundary pressure.
-       Keep the hot loop small enough for the R4300's instruction cache. */
-    memset(f->pressure,0,FW*sizeof(f->pressure[0]));
-    for(int pass=0;pass<8;pass++) {
-        if(pass==0) {
-            /* Zero initial pressure makes the right/bottom neighbors zero.
-               Fill every interior cell without clearing the whole grid. */
-            for(int y=1;y<FH-1;y++) {
-                int32_t left=0;
-                for(int x=1;x<FW-1;x++) {
-                    int k=y*FW+x;
-                    f->pressure[k]=left=(f->divergence[k]+left+f->pressure[k-FW])>>2;
-                }
-            }
-        } else for(int y=1;y<FH-1;y++) {
-            int k=y*FW+1;
-            int32_t left=f->pressure[k-1];
-            for(int x=1;x<FW-1;x+=2,k+=2) {
-                /* Prepare independent neighbor sums before the serial left
-                   dependency. Keep the same lexicographic eight-pass solve. */
-                int32_t a=(f->divergence[k]+f->pressure[k+1])+
-                        (f->pressure[k-FW]+f->pressure[k+FW]);
-                int32_t b=(f->divergence[k+1]+f->pressure[k+2])+
-                        (f->pressure[k-FW+1]+f->pressure[k+FW+1]);
-                f->pressure[k]=left=(a+left)>>2;
-                f->pressure[k+1]=left=(b+left)>>2;
-            }
-        }
-        for(int y=1;y<FH-1;y++) {
-            f->pressure[y*FW]=f->pressure[y*FW+1];
-            f->pressure[y*FW+FW-1]=f->pressure[y*FW+FW-2];
-        }
-        /* Both row starts are 16-byte aligned. Give GCC the alignment at
-           the copy site to avoid MIPS unaligned load/store pairs. */
-        memcpy(__builtin_assume_aligned(f->pressure,16),
-               __builtin_assume_aligned(f->pressure+FW,16),FW*sizeof(f->pressure[0]));
-        memcpy(__builtin_assume_aligned(f->pressure+(FH-1)*FW,16),
-               __builtin_assume_aligned(f->pressure+(FH-2)*FW,16),FW*sizeof(f->pressure[0]));
-    }
+#ifdef PLASMAPONG_FLUID_RSP
+    fluid_pressure_rsp(f->pressure,f->divergence);
+#else
+    fluid_pressure_cpu(f->pressure,f->divergence);
+#endif
     PROFILE_END(PROFILE_PRESSURE);
     for(int y=1;y<FH-1;y++) for(int x=1;x<FW-1;x++) {
         int k=y*FW+x;

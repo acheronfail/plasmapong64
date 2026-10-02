@@ -70,9 +70,9 @@ Dependencies: Docker, `just`, and `sc64deployer` for deployment. The pinned
 libdragon Docker image and library commit match `../n64-util-rom`.
 
 ```sh
-just build     # produces plasmapong.z64
+just build     # produces plasmapong.z64 with RSP pressure solving
 just check     # portable physics tests and SVG previews in build/
-just deploy    # build, then upload to /CUSTOM/plasmapong.z64
+just deploy    # build the RSP ROM, then upload to /CUSTOM/plasmapong.z64
 just clean
 ```
 
@@ -192,8 +192,9 @@ For a reproducible automated gameplay run, `just smoke` builds
 `plasmapong-smoke.z64` with scripted inputs for both controllers. Open that ROM
 in Ares with Homebrew Mode enabled. This exercises the actual N64 rendering and
 simulation and emits timing measurements to the emulator debug log. It is a
-separate testing artifact: `just build` and `just deploy` always use the normal
-human-controlled `plasmapong.z64`. `just smoke-arcade` builds
+separate testing artifact: `just build` produces the human-controlled RSP ROM,
+and `just deploy` builds and uploads that same ROM.
+`just smoke-arcade` builds
 `plasmapong-arcade-smoke.z64`, which navigates to single player and exercises the
 real AI using one scripted human controller. Host previews also include
 `preview-{arcade,gameover,scores,level}.svg`. `just smoke-save` builds a separate
@@ -367,7 +368,8 @@ The most relevant primary resources for this game are:
   advection overlay, starting with dye. It needs a DMA-friendly layout, bounded
   fixed-point precision, and differential/visual tests. The pressure solver has
   a serial left-neighbour dependency; it cannot simply become eight independent
-  SIMD lanes without changing the algorithm. No custom microcode is added here.
+  SIMD lanes without changing the algorithm. That rendering pass did not add custom microcode; the experimental pressure
+  backend below now provides the first fluid overlay.
 
 The application also rendered many frames without a new simulation update.
 There is no interpolation in the renderer, so these repeated the same state.
@@ -425,6 +427,91 @@ The regular log now includes frame interval and simulation-step/frame counts.
 included in elapsed simulation/draw measurements and must not be added again.
 The exploratory gameplay run spent about 4–5% of emulated time in audio, making
 fluid advection the stronger candidate for substantial RSP acceleration.
+
+### RSP pressure backend
+
+The rendering/pacing checkpoint is commit `fae187b`. The next optimization starts
+with the existing Q12 pressure solve, because it can move to the RSP without
+changing numerical precision or the eight-pass lexicographic algorithm.
+
+```sh
+just build           # playable plasmapong.z64 with RSP pressure solving
+just benchmark-rsp   # boot-time differential checks, then profiled scripted play
+just benchmark       # default RSP backend, profiled scripted play
+just cpu             # CPU reference backend, playable plasmapong-cpu.z64
+just benchmark-cpu   # CPU reference backend, profiled scripted play
+```
+
+`just build`, `just emulate`, and `just deploy` use the RSP pressure solver.
+Deployment uploads `plasmapong.z64` to `/CUSTOM/plasmapong.z64`, without scripted
+inputs or boot-time test fixtures. `just rsp` remains available to build the same
+backend under the separate name `plasmapong-rsp.z64`.
+`FLUID_RSP=1` is the Makefile default; set `FLUID_RSP=0` for the CPU reference.
+Default objects live in `build/rsp` or `build/cpu`; use a separate build directory
+when changing backend or instrumentation flags. The pinned libdragon RSP build
+rule cannot generate symbols correctly for directories containing hyphens; the
+provided recipes use `build/rsp` and `build/rsp_benchmark`.
+
+`src/rsp_fluid.S` implements one pressure pass per RSPQ command, allowing
+high-priority RSPQ work between passes. Three rotating pressure rows plus one divergence row
+use **768 bytes of DMEM scratch**. The normal row is unrolled in IMEM to avoid
+per-cell address/loop instructions; the linked RSP text occupies **2,832 bytes**.
+All DMA is row-aligned and completes before its scratch row is consumed or reused.
+Each pass reloads its inputs, so it does not rely on scratch surviving overlay
+switches. This is a scalar integer RSP kernel, not a SIMD rewrite of Gauss–Seidel.
+
+`src/fluid_rsp.c` handles overlay registration, cache writeback/invalidation,
+eight queued passes, and a completion syncpoint before CPU gradient subtraction.
+The pressure output owns complete cache lines and is invalidated before DMA to
+prevent stale CPU writebacks. Divergence is read-only. The normal grid/state size
+is unchanged; velocity, curl, confinement, pressure-gradient subtraction and dye
+advection still run on the CPU.
+
+`tests/rsp_fluid_smoke.h` checks all 1,440 pressure cells for each of 64 fields:
+zero, maximum positive/negative divergence, alternating signs, impulses and seeded
+random data at ordinary and extreme magnitudes. Every output must match the CPU
+solver bit-for-bit. Dirty output is overwritten from a zero initial solve, input
+integrity and DMA guard regions are checked through RDRAM, and RDP commands force
+overlay switches between calls. `RSP_TEST=1` enables these boot-time checks only;
+they do not run in the playable ROM. The portable reference/gameplay,
+arcade, save and audio suites also pass after extracting the CPU solver.
+
+With the same pinned toolchain and Ares `5f2f7dc0d` configuration as above,
+55-second uninstrumented scripted runs produced ten 150-step/frame windows each:
+
+| Measurement | CPU backend | RSP pressure backend |
+| --- | ---: | ---: |
+| Simulation average, ms/step | 23.681 | 22.053 |
+| Simulation window range, ms/step | 23.541–23.760 | 21.921–22.125 |
+| Drawing average, ms/frame | 4.757 | 4.719 |
+| Frame submission interval, ms | 33.353 | 33.353 |
+
+That is **1.628 ms less simulation time per step (6.9%)**. The separate 64-field
+boot test measures approximately **4.10 ms CPU versus 2.83 ms RSP per solve**,
+including the RSP API's cache maintenance and completion wait. These synthetic
+fields and cache states differ from gameplay, so the kernel measurement is not
+interchangeable with the full-frame measurements. Both backends produced 1,500
+updates and 1,500 submitted frames in complete windows. Logs are
+`build/rsp-{cpu-gameplay,pressure-gameplay}.log`.
+
+Separate profiled gameplay runs measure the pressure stage at **4.401 ms CPU
+versus 2.792 ms RSP (36.6% reduction)**, including cache maintenance, queueing and
+waiting. The CPU run yielded nine complete 150-step windows and the RSP run ten;
+logs are `build/rsp-cpu-profile-final.log` and `build/rsp-pressure-unrolled.log`.
+These instrumented measurements are separate from the table above.
+
+The host suites pass. The RSP boot checks also pass with libdragon's RDP validator
+enabled, and the 25-second combined graphics/fluid run reports no RDP validation
+errors (`build/rsp-validate.log`). Gameplay was visually inspected in Ares. A separate 55-second level-101 RSP
+arcade run completed without errors (`build/rsp-pressure-late.log`).
+These results are emulator timings, not a real-console speed guarantee. Following
+a successful user-reported hardware playtest, the RSP pressure backend is now the
+default. No grid reduction or pressure iteration reduction is involved; hardware
+performance has not yet been quantified.
+
+This establishes the queue, DMA and numerical-test infrastructure for later RSP
+components. The larger remaining target is dye/velocity advection; those use
+floating point and need an explicitly validated fixed-point/vector design.
 
 ## Sound assets
 
