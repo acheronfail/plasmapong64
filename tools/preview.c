@@ -45,6 +45,15 @@ int main(int argc,char **argv) {
         game_init(&g); Input idle[2]={0};
         for(int t=0;t<180;t++) game_step(&g,idle);
     }
+    if(argc>1 && (!strcmp(argv[1],"arcade") || !strcmp(argv[1],"gameover") || !strcmp(argv[1],"scores") || !strcmp(argv[1],"level"))) {
+        g.mode=ARCADE;
+        g.arcade=(Arcade){.level=8,.lives=2,.goals=1,.points=18720};
+        g.phase=PLAY;
+        g.highs[0]=(HighScore){.level=8,.points=18720,.initials="ACE"};
+        if(!strcmp(argv[1],"gameover")) { g.phase=FINISHED; g.arcade.lives=0; g.score_entry=0; }
+        if(!strcmp(argv[1],"scores")) g.phase=SCORES;
+        if(!strcmp(argv[1],"level")) g.arcade.transition=1;
+    }
     puts("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 320 240' width='960' height='720'>");
     ui_draw(&g); puts("</svg>");
 }

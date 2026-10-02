@@ -20,3 +20,11 @@ clean:
 # Build a separate, scripted two-player ROM for emulator/performance testing.
 smoke:
     ./tools/build-rom.sh -j4 SMOKE=1 ROM=plasmapong-smoke BUILD_DIR=build/smoke
+
+# Exercise one-controller arcade mode against the real AI in Ares.
+smoke-arcade:
+    ./tools/build-rom.sh -j4 SMOKE=1 SMOKE_ARCADE=1 ROM=plasmapong-arcade-smoke BUILD_DIR=build/arcade-smoke
+
+# Dedicated EEPROM fixture ROM: run twice to verify persistence across boots.
+smoke-save:
+    ./tools/build-rom.sh -j4 SMOKE_SAVE=1 ROM=plasmapong-save-smoke BUILD_DIR=build/save-smoke

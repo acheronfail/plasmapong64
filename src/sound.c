@@ -23,7 +23,7 @@ static void trigger(Sound *s,const int16_t *pcm,unsigned count,int gain,int pan)
     s->voice[slot]=voice(pcm,count,gain,pan,false); s->next=(slot-3)%4;
 }
 void sound_update(Sound *s,const Game *g) {
-    bool active=g->phase==PLAY;
+    bool active=g->phase==PLAY && (g->mode!=ARCADE || g->arcade.transition<=0);
     for(int p=0;p<2;p++) {
         int target=active && g->bat[p].sucking?18*256:0;
         if(target && !s->voice[p].target) s->voice[p].position=0;

@@ -1,15 +1,16 @@
 # Plasma Pong 64 — Nintendo 64
 
-Two-player Pong inside a real-time 2D fluid simulation. Cyan and coral dye reveal
+Arcade and two-player Pong inside a real-time 2D fluid simulation. Cyan and coral dye reveal
 currents stirred by the bats. Those same currents accelerate and deflect the ball.
 The ball leaves a subtle gold dye trail that mixes into the currents and fades.
-First to **9 points** wins. Requires two N64 controllers in **ports 1 and 2**;
-there is no AI opponent. On boot, a main menu runs randomly seeded fluid currents
+In multiplayer, first to **9 points** wins, using N64 controllers in **ports 1
+and 2**. Single player uses **port 1** against an AI opponent. On boot, a main
+menu runs randomly seeded fluid currents
 and mixing colours across the entire screen, with a raised cyan/coral/gold PLASMA PONG 64
 block title and shadowed menu text over the fluid. The game screen omits the title;
-P1 and P2 sit at matching insets from the court edges.
-SINGLE PLAYER (COMING SOON) is greyed out and cannot be selected. Select **MULTI-PLAYER** with A or START on either controller,
-then connect both pads and press START in the lobby.
+Player labels sit at matching insets from the court edges. Use up/down to choose
+**MULTI-PLAYER**, **SINGLE PLAYER**, or **HIGH SCORES**, then A or START to confirm.
+Press START in the lobby to begin.
 
 ## Controls
 
@@ -19,15 +20,49 @@ then connect both pads and press START in the lobby.
 | Hold Z | Fire a continuous coloured fluid jet towards the opponent |
 | Hold A | Suck nearby fluid towards your bat; catch a nearby ball if it is slow enough |
 | Release A | Burst fluid outwards and launch a caught ball; holding A for up to one second charges the release |
-| START, either player | Select MULTI-PLAYER, start, pause/resume, or rematch |
-| A on the main menu | Select MULTI-PLAYER |
+| START | Confirm menu selection, start, pause/resume, or multiplayer rematch |
+| Up/down, then A on the main menu | Choose a mode or view high scores |
 | B in the lobby, pause, or winner screen | Return to the main menu |
 
 Suction reaches about 35 arena pixels; actual capture requires the ball to be
 within 18 pixels on the playing side of the bat. Fast shots and strong currents
 can beat a grab. You can move while holding the ball and aim a release with the
-bat's vertical motion. Z and A can be used together. Unplugging either controller
-pauses the match; reconnect both and press START to resume.
+bat's vertical motion. Z and A can be used together. Unplugging a required
+controller pauses the match; reconnect it and press START to resume. Arcade mode
+ignores controller 2 during a run.
+
+## Endless arcade
+
+Start with **3 lives**. Score **3 goals** to advance a level; conceding costs one
+life without removing your goals. Clear every fifth level for an extra life,
+up to five. Levels continue until you run out of lives. Transitions freeze the
+playfield briefly, followed by the usual serve countdown.
+
+Each goal earns **100 × level**, each level clear earns **500 × level**, and
+clearing in under 60 seconds of active play adds up to **600 points** (10 per
+remaining second). Pauses, serves and transitions do not consume that bonus time.
+Holding or returning the ball gives no points. A caught ball automatically
+releases after two seconds; release A before catching again.
+
+The AI starts with slow reactions, imprecise predictions and limited movement.
+Difficulty rises with diminishing increments: reactions improve from 0.40 toward
+0.08 seconds, aiming error decreases, movement approaches the human limit, and
+serves accelerate from 108 toward 180 arena pixels/second. The existing ball-speed
+cap remains 290. The opponent unlocks jets at level 2 and suction/catches at level
+4. It generates ordinary controller inputs and obeys the same physics and catch
+rules as the player; it does not run another fluid simulation. From level 6,
+cross, rising and swirling currents rotate each level and strengthen with the
+difficulty curve. Runs use the same initial AI random seed for repeatability.
+
+The top ten scores include score, level and three initials. At game over, use
+left/right to choose a letter and up/down to change it, then A or START to view
+the table and save. Return to the menu to start another run. The ROM requests
+**4K EEPROM** cartridge save storage, supported by compatible flash cartridges
+and emulators. Two versioned, checksummed records alternate writes; the previous
+complete record survives an interrupted update. Saving happens only after
+confirming initials, outside gameplay. If storage is unavailable or verification
+fails, the score screen explicitly reports session-only scores. Cartridge save
+behavior still needs a SummerCart64 hardware playtest.
 
 ## Build and SummerCart64
 
@@ -69,10 +104,10 @@ just emulate
 just emulate /path/to/ares
 ```
 
-The recipe enables Ares Homebrew Mode. Configure the two N64 controller ports in
+The recipe enables Ares Homebrew Mode. Configure the required N64 controller ports in
 Ares **Settings → Input** before playing, including the analog axes, A, Z, and
 START. On-screen hints use white lettering on blue A, grey Z/stick, green B, and red START
-badges. The ROM still requires two connected emulated N64 pads.
+badges. Arcade requires one emulated N64 pad in port 1; multiplayer requires two.
 
 ## Implementation
 
@@ -87,6 +122,10 @@ badges. The ROM still requires two connected emulated N64 pads.
   Dye advection runs after the pump update, so suction visibly draws existing
   colours inward rather than emitting new dye. Bats stir the grid through forces; they are not rasterized as solid fluid
   obstacles. Ball/bat collisions are handled independently.
+- `src/arcade.c`: lightweight AI, diminishing difficulty increases, arcade goal
+  rewards, lives, arena-current patterns, and ranked scores with saturating points.
+- `src/save.c` and `src/save_n64.c`: portable score serialization/checksums and a
+  two-slot EEPROM backend. ROM metadata requests 4K EEPROM.
 - `src/game.c`: fixed 30 Hz simulation, four ball collision substeps per tick,
   velocity-field coupling, conditional catches, launch, scoring, and match state.
   Bats stay in their own end of the court. Time accumulation supports PAL and
@@ -115,7 +154,11 @@ suction/release flow, catches for both players, rejection of fast catches,
 bat/wall collisions, scoring and rematches, disconnect/pause/resume, pressure
 projection, velocity decay, actual fluid-to-ball coupling, inward dye transport
 from both bats, gold-trail advection/fading, and a deterministic
-120-second numerical stress test. It also verifies the main-menu flow, live menu
+120-second numerical stress test. The arcade suite covers one-controller start,
+AI reaction intervals, forced releases, level/extra-life rules, pause timing,
+score overflow, ranked initials, score retention across runs, and stability at
+levels 1, 26, 51, 76 and 101. Save tests check serialization, corrupt bytes,
+incomplete records and invalid initials. It also verifies the main-menu flow, live menu
 currents without controllers, sound event timing, sampled effects, stereo panning,
 loop persistence, fade-out, and mix headroom. `build/sound-demo.wav` auditions the
 actual runtime mix.
@@ -134,15 +177,24 @@ RGBA16 in the same test. These are separate costs, not a guarantee of sustained
 30 FPS within the 33.3 ms frame budget. The spatial grid stays at 48 × 30 to avoid
 adding simulation load. AddressSanitizer and UndefinedBehaviorSanitizer pass the
 host gameplay suite (leak detection disabled in the sandbox).
-Real-console frame rate, controller feel, and balance still need a two-player
-SummerCart64 playtest. Scores are not saved between sessions.
+The one-controller arcade smoke ROM measures about 29.7–29.9 ms per simulation
+step in Ares at the initial level, plus about 6.2 ms drawing. A level-101 smoke
+run measured about 29.9–30.2 ms simulation and 6.3–6.5 ms drawing. The EEPROM
+fixture successfully recovered its score after an Ares restart. That is not a claim
+of sustained 30 FPS on hardware. Real-console frame rate, controller feel, AI
+balance, and later-level difficulty still need a SummerCart64 playtest.
 
 For a reproducible automated gameplay run, `just smoke` builds
 `plasmapong-smoke.z64` with scripted inputs for both controllers. Open that ROM
 in Ares with Homebrew Mode enabled. This exercises the actual N64 rendering and
 simulation and emits timing measurements to the emulator debug log. It is a
 separate testing artifact: `just build` and `just deploy` always use the normal
-human-controlled `plasmapong.z64`.
+human-controlled `plasmapong.z64`. `just smoke-arcade` builds
+`plasmapong-arcade-smoke.z64`, which navigates to single player and exercises the
+real AI using one scripted human controller. Host previews also include
+`preview-{arcade,gameover,scores,level}.svg`. `just smoke-save` builds a separate
+EEPROM fixture ROM: the first boot saves an ACE score, and a second boot asserts
+that it survived. This fixture never runs in the playable ROM.
 
 ## Sound assets
 

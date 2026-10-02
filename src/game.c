@@ -5,13 +5,14 @@
 static float axis(float a) { return fabsf(a)<.12f?0:clampf(a,-1,1); }
 static void serve(Game *g,int dir) {
     g->bx=ARENA_W*.5f; g->by=ARENA_H*.5f;
-    g->bvx=dir*108; g->bvy=(g->rally%2?1:-1)*31;
+    g->bvx=dir*(g->mode==ARCADE?108+72*arcade_difficulty(g):108); g->bvy=(g->rally%2?1:-1)*31;
     g->serve=1.2f; g->serve_dir=dir; g->held=-1; g->rally++;
 }
 void game_init(Game *g) {
     memset(g,0,sizeof(*g));
     g->bat[0]=(Bat){.x=20,.y=ARENA_H*.5f};
     g->bat[1]=(Bat){.x=ARENA_W-20,.y=ARENA_H*.5f};
+    g->score_entry=-1; g->arcade.level=1;
     g->phase=MENU; g->menu_rng=0x76a51c93u; g->winner=-1; serve(g,1);
 }
 static float menu_random(Game *g) {
@@ -85,24 +86,70 @@ static void ball_step(Game *g) {
         if(g->bx<-BALL_RADIUS || g->bx>ARENA_W+BALL_RADIUS) {
             int scorer=g->bx<0?1:0;
             g->score[scorer]++; g->sound_events|=SOUND_GOAL;
-            if(g->score[scorer]>=9) { g->phase=FINISHED; g->winner=scorer; g->sound_events|=SOUND_WIN; }
+            if(g->mode==ARCADE) arcade_goal(g,scorer);
+            else if(g->score[scorer]>=9) { g->phase=FINISHED; g->winner=scorer; g->sound_events|=SOUND_WIN; }
             serve(g,scorer?1:-1); return;
         }
     }
 }
-void game_step(Game *g,const Input in[2]) {
+static int direction(float value) { return value>.5f?1:value<-.5f?-1:0; }
+static void start_game(Game *g) {
+    HighScore saved[HIGH_SCORE_COUNT]; memcpy(saved,g->highs,sizeof(saved));
+    GameMode mode=g->mode; uint32_t seed=g->menu_rng;
+    bool available=g->save_available,failed=g->save_failed;
+    game_init(g); memcpy(g->highs,saved,sizeof(saved));
+    g->save_available=available; g->save_failed=failed;
+    g->mode=mode; g->menu_selection=mode==ARCADE?1:0;
+    g->menu_rng=seed; g->phase=PLAY;
+    g->arcade=(Arcade){.level=1,.lives=3,.rng=0x706f6e67u,.ai_y=ARENA_H*.5f};
+    g->connected[0]=true; g->connected[1]=mode==MULTIPLAYER;
+}
+void game_step(Game *g,const Input physical[2]) {
+    Input effective[2]={physical[0],physical[1]};
+    const Input *in=effective;
     g->sound_events=0;
     bool start=false,confirm=false,back=false;
     for(int p=0;p<2;p++) {
-        g->connected[p]=in[p].connected;
+        g->connected[p]=physical[p].connected;
+        if(g->mode==ARCADE && g->phase!=MENU && p==1) continue;
         start|=in[p].connected && in[p].start && !g->previous[p].start;
         confirm|=in[p].connected && in[p].a && !g->previous[p].a;
         back|=in[p].connected && in[p].b && !g->previous[p].b;
     }
-    bool both=in[0].connected && in[1].connected;
+    bool both=in[0].connected && (g->mode==ARCADE || in[1].connected);
     if(g->phase==MENU) {
         menu_step(g);
-        if(start || confirm) { g->phase=LOBBY; g->sound_events|=SOUND_SELECT; }
+        for(int p=0;p<2;p++) if(in[p].connected) {
+            int nav=direction(in[p].y);
+            if(nav && nav!=direction(g->previous[p].y)) {
+                g->menu_selection=(g->menu_selection+(nav>0?2:1))%3;
+                g->sound_events|=SOUND_SELECT; break;
+            }
+        }
+        if(start || confirm) {
+            if(g->menu_selection==2) g->phase=SCORES;
+            else { g->mode=g->menu_selection==1?ARCADE:MULTIPLAYER; g->phase=LOBBY; }
+            g->sound_events|=SOUND_SELECT;
+        }
+        memcpy(g->previous,in,sizeof(g->previous)); return;
+    }
+    if(g->phase==SCORES) {
+        if(back || start || confirm) { g->phase=MENU; g->sound_events|=SOUND_BACK; }
+        memcpy(g->previous,in,sizeof(g->previous)); return;
+    }
+    if(g->mode==ARCADE && g->phase==FINISHED) {
+        if(g->score_entry>=0 && in[0].connected) {
+            int x=direction(in[0].x),y=direction(in[0].y);
+            if(x && x!=direction(g->previous[0].x)) g->initial_cursor=(g->initial_cursor+(x>0?1:2))%3;
+            if(y && y!=direction(g->previous[0].y)) {
+                char *c=&g->highs[g->score_entry].initials[g->initial_cursor];
+                *c='A'+(*c-'A'+(y>0?1:25))%26;
+            }
+        }
+        if(start || confirm || back) {
+            g->scores_dirty=g->score_entry>=0;
+            g->phase=SCORES; g->sound_events|=SOUND_SELECT;
+        }
         memcpy(g->previous,in,sizeof(g->previous)); return;
     }
     if(back && (g->phase==LOBBY || g->phase==PAUSED || g->phase==FINISHED)) {
@@ -113,13 +160,26 @@ void game_step(Game *g,const Input in[2]) {
     if(!both && g->phase==PLAY) g->phase=PAUSED;
     if(start && both) {
         if(g->phase==LOBBY || g->phase==FINISHED) {
-            game_init(g); g->phase=PLAY;
-            g->connected[0]=g->connected[1]=true;
+            start_game(g);
         } else g->phase=g->phase==PLAY?PAUSED:PLAY;
         g->sound_events|=g->phase==PAUSED?SOUND_BACK:SOUND_SELECT;
         memcpy(g->previous,in,sizeof(g->previous)); return;
     }
     if(g->phase!=PLAY) { memcpy(g->previous,in,sizeof(g->previous)); return; }
+    if(g->mode==ARCADE) {
+        if(g->arcade.transition>0) {
+            g->arcade.transition=maxf(0,g->arcade.transition-STEP);
+            memcpy(g->previous,in,sizeof(g->previous)); return;
+        }
+        effective[1]=arcade_ai(g);
+        if(g->serve<=0) g->arcade.level_time+=STEP;
+        if(g->held>=0) g->arcade.hold_time+=STEP; else g->arcade.hold_time=0;
+        for(int p=0;p<2;p++) {
+            if(!in[p].a) g->arcade.release_lock[p]=false;
+            if(g->held==p && g->arcade.hold_time>=2) g->arcade.release_lock[p]=true;
+            if(g->arcade.release_lock[p]) effective[p].a=false;
+        }
+    }
     g->elapsed+=STEP;
     for(int p=0;p<2;p++) {
         Bat *b=&g->bat[p]; int dir=p?-1:1;
@@ -134,6 +194,7 @@ void game_step(Game *g,const Input in[2]) {
             fluid_splat(&g->fluid,b->x+dir*14,b->y,22,dir*1150*STEP,b->vy*.08f,2.6f*STEP,p);
         }
     }
+    if(g->mode==ARCADE) arcade_currents(g);
     fluid_velocity_step(&g->fluid,STEP);
     for(int p=0;p<2;p++) {
         Bat *b=&g->bat[p]; int dir=p?-1:1;
@@ -153,5 +214,6 @@ void game_step(Game *g,const Input in[2]) {
     }
     fluid_dye_step(&g->fluid,STEP);
     ball_step(g);
-    memcpy(g->previous,in,sizeof(g->previous));
+    memcpy(g->previous,physical,sizeof(g->previous));
+    if(g->mode==ARCADE) g->previous[1]=effective[1];
 }

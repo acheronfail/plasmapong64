@@ -1,10 +1,25 @@
-/* Explicit test-ROM-only input replay. The normal ROM always needs two players. */
-static void smoke_input(const Game *g,Input in[2]) {
+/* Explicit test-ROM-only controller replay. */
+static void smoke_input(Game *g,Input in[2]) {
     static unsigned tick;
     for(int p=0;p<2;p++) {
         in[p]=(Input){.connected=true,.x=sinf(tick*.021f+p),
             .y=sinf(tick*.037f+p*2.4f),.z=tick%110<90,.a=(tick+40*p)%145>118};
     }
-    in[0].start=(g->phase==MENU || g->phase==LOBBY || g->phase==FINISHED) && tick%2==0;
+#ifdef PLASMAPONG_SMOKE_ARCADE
+    in[1]=(Input){0};
+    static bool level_set;
+    if(g->phase==PLAY && !level_set) { g->arcade.level=PLASMAPONG_SMOKE_LEVEL; level_set=true; }
+    if(g->phase==MENU) level_set=false;
+    const unsigned selection=1;
+#else
+    const unsigned selection=0;
+#endif
+    if(g->phase!=PLAY) {
+        in[0]=(Input){.connected=true};
+        in[1].x=in[1].y=0; in[1].a=in[1].z=false;
+        if(g->phase==MENU && g->menu_selection!=selection)
+            in[0].y=tick%2==0?-1:0;
+        else in[0].start=tick%2==0;
+    }
     tick++;
 }

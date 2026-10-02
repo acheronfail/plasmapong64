@@ -71,6 +71,10 @@ int main(void) {
     assert(clipped==0);
     g.phase=MENU; g.sound_events=0; sound_update(&s,&g); second(); second();
     assert(energy(0)==0 && energy(1)==0);
+    g=(Game){.phase=PLAY,.mode=ARCADE}; g.arcade.transition=1;
+    g.bat[0].sucking=true; g.previous[1].z=true;
+    sound_update(&s,&g); second(); second();
+    assert(energy(0)==0 && energy(1)==0); /* No power loops during level cards. */
     preview();
     puts("PASS: sampled effects, stereo panning, quiet sustained loops, fade-out, headroom; build/sound-demo.wav");
 }

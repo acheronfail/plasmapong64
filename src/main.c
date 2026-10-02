@@ -3,6 +3,10 @@
 #include <math.h>
 #include "draw.h"
 #include "sound.h"
+#include "save.h"
+#ifdef PLASMAPONG_SAVE_SMOKE
+#include "../tests/save_smoke.h"
+#endif
 #ifdef PLASMAPONG_SMOKE
 #include "../tests/rom_smoke.h"
 #endif
@@ -65,7 +69,10 @@ int main(void) {
     rdpq_font_t *font=rdpq_font_load_builtin(FONT_BUILTIN_DEBUG_VAR);
     const uint32_t colors[]={0xeaf6ff,0xa0b3c9,0x48dcff,0xff637e,0xffffff,0x02040a,0x737d8a};
     for(int i=0;i<7;i++) rdpq_font_style(font,i,&(rdpq_fontstyle_t){.color=color(colors[i])});
-    rdpq_text_register_font(1,font); game_init(&game); game.menu_rng=(uint32_t)get_ticks();
+    rdpq_text_register_font(1,font); game_init(&game); scores_load(&game); game.menu_rng=(uint32_t)get_ticks();
+#ifdef PLASMAPONG_SAVE_SMOKE
+    save_smoke(&game);
+#endif
     uint64_t previous=get_ticks(); float accumulator=0;
     uint64_t sim_ticks=0; unsigned sim_steps=0;
     uint64_t draw_ticks=0; unsigned draw_frames=0;
@@ -94,6 +101,10 @@ int main(void) {
 #endif
             game_step(&game,input); accumulator-=STEP;
             disable_interrupts(); sound_update(&sound,&game); enable_interrupts();
+            if(game.scores_dirty) {
+                scores_store(&game);
+                previous=get_ticks(); accumulator=0;
+            }
             if(game.phase==PLAY) {
                 sim_ticks+=get_ticks()-begin;
                 if(++sim_steps==150) {
