@@ -280,7 +280,7 @@ void ui_draw(const Game *g) {
     } else if(g->mode==ARCADE && g->arcade.transition>0) {
         snprintf(s,sizeof(s),"LEVEL %u",(unsigned)g->arcade.level);
         const char *challenge=g->arcade.level==2?"Opponent jets unlocked":
-            g->arcade.level==4?"Opponent suction unlocked":"Quicker reactions. Faster serves.";
+            g->arcade.level==4?"Opponent suction unlocked":"Quicker reactions. Better aim.";
         if(g->arcade.level>=6) {
             const char *currents[]={"Cross currents","Rising currents","Swirling currents"};
             challenge=currents[(g->arcade.level-6)%3];

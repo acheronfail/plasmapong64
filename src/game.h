@@ -45,8 +45,8 @@ typedef struct {
     Bat bat[2];
     Input previous[2];
     float bx,by,bvx,bvy,serve,elapsed;
-    unsigned score[2],rally;
-    int held,serve_dir,winner;
+    unsigned score[2];
+    int held,winner;
     Phase phase;
     bool connected[2];
     bool save_available,save_failed,scores_dirty;

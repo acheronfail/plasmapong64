@@ -60,9 +60,10 @@ five-second recovery rules apply to both the player and the AI.
 
 The AI starts with slow reactions, imprecise predictions and limited movement.
 Difficulty rises with diminishing increments: reactions improve from 0.40 toward
-0.08 seconds, aiming error decreases, movement approaches the human limit, and
-serves accelerate from 108 toward 180 arena pixels/second. The existing ball-speed
-cap remains 290. The opponent unlocks jets at level 2 and suction/catches at level
+0.08 seconds, aiming error decreases, and movement approaches the human limit.
+Every serve starts at rest in the centre; after the countdown, fluid currents
+and players' jets set the ball in motion. There is no automatic low-speed boost.
+The ball-speed cap remains 290. The opponent unlocks jets at level 2 and suction/catches at level
 4. It generates ordinary controller inputs and obeys the same physics and catch
 rules as the player; it does not run another fluid simulation. From level 6,
 cross, rising and swirling currents rotate each level and strengthen with the

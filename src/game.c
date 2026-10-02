@@ -3,17 +3,18 @@
 #include <math.h>
 #include <string.h>
 static float axis(float a) { return fabsf(a)<.12f?0:clampf(a,-1,1); }
-static void serve(Game *g,int dir) {
+static void serve(Game *g) {
     g->bx=ARENA_W*.5f; g->by=ARENA_H*.5f;
-    g->bvx=dir*(g->mode==ARCADE?108+72*arcade_difficulty(g):108); g->bvy=(g->rally%2?1:-1)*31;
-    g->serve=1.2f; g->serve_dir=dir; g->held=-1; g->rally++;
+    /* Let the fluid and players' jets determine the opening motion. */
+    g->bvx=0; g->bvy=0;
+    g->serve=1.2f; g->held=-1;
 }
 void game_init(Game *g) {
     memset(g,0,sizeof(*g));
     g->bat[0]=(Bat){.x=20,.y=ARENA_H*.5f};
     g->bat[1]=(Bat){.x=ARENA_W-20,.y=ARENA_H*.5f};
     g->score_entry=-1; g->arcade.level=1;
-    g->phase=MENU; g->menu_rng=0x76a51c93u; g->winner=-1; serve(g,1);
+    g->phase=MENU; g->menu_rng=0x76a51c93u; g->winner=-1; serve(g);
 }
 /* Visual-only state and RNG never affect the fluid or gameplay randomness. */
 static float tracer_random(Game *g) {
@@ -80,7 +81,6 @@ static void ball_step(Game *g) {
         /* Stronger current response, with the same drag in still water. */
         g->bvx+=(u*1.7f-g->bvx*.297f)*dt;
         g->bvy+=(v*1.7f-g->bvy*.297f)*dt;
-        if(fabsf(g->bvx)<45) g->bvx+=(g->bvx<0?-1:1)*24*dt;
         limit_ball(g);
         /* Deposit a little dye along the travelled path, never during a serve
            countdown or while held. It will be carried by the same current. */
@@ -114,7 +114,7 @@ static void ball_step(Game *g) {
             g->score[scorer]++; g->sound_events|=SOUND_GOAL;
             if(g->mode==ARCADE) arcade_goal(g,scorer);
             else if(g->score[scorer]>=9) { g->phase=FINISHED; g->winner=scorer; g->sound_events|=SOUND_WIN; }
-            serve(g,scorer?1:-1); return;
+            serve(g); return;
         }
     }
 }

@@ -102,6 +102,22 @@ static void flow_tests(void) {
 }
 int main(void) {
     flow_tests();
+    /* A serve stays at rest through the countdown and in still water. */
+    ready(); g.serve=1.2f;
+    for(int t=0;t<90;t++) {
+        game_step(&g,in);
+        assert(g.bvx==0 && g.bvy==0);
+        assert(g.bx==ARENA_W*.5f && g.by==ARENA_H*.5f);
+    }
+    assert(g.serve==0);
+    /* Either player's jet can start the ball from rest. */
+    for(int p=0;p<2;p++) {
+        ready(); in[p].z=true;
+        for(int t=0;t<60;t++) game_step(&g,in);
+        assert(g.bvx*(p?-1:1)>0);
+        assert((g.bx-ARENA_W*.5f)*(p?-1:1)>0);
+    }
+    memset(in,0,sizeof(in));
     game_init(&g); Input idle[2]={0};
     assert(g.phase==MENU);
     for(int t=0;t<90;t++) game_step(&g,idle);
@@ -144,6 +160,8 @@ int main(void) {
     ready(); g.by=3; g.bvy=-150; game_step(&g,in); assert(g.bvy>0 && (g.sound_events&SOUND_WALL));
     ready(); g.bx=-2; g.by=12; g.bvx=-200; game_step(&g,in);
     assert(g.score[1]==1 && g.serve>0 && (g.sound_events&SOUND_GOAL));
+    assert(g.bvx==0 && g.bvy==0);
+    assert(g.bx==ARENA_W*.5f && g.by==ARENA_H*.5f);
     game_step(&g,in); assert(g.sound_events==0);
     g.serve=0; g.score[0]=8; g.bx=ARENA_W+2; g.bvx=200;
     game_step(&g,in); assert(g.phase==FINISHED && g.winner==0 && (g.sound_events&SOUND_WIN));
