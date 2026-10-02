@@ -7,7 +7,7 @@ ifeq ($(N64_INST),)
 $(error N64_INST is unset. Use ./tools/build-rom.sh or install libdragon)
 endif
 include $(N64_INST)/include/n64.mk
-src := src/main.c src/game.c src/arcade.c src/fluid.c src/ui.c src/sound.c src/save.c src/save_n64.c
+src := src/main.c src/game.c src/arcade.c src/fluid.c src/fluid_advection.c src/ui.c src/sound.c src/save.c src/save_n64.c
 ifeq ($(FLUID_RSP),1)
 # This pinned n64.mk does not sanitize hyphens in embedded ucode symbols.
 ifneq ($(findstring -,$(BUILD_DIR)),)
@@ -24,11 +24,14 @@ endif
 N64_CFLAGS += -DPLASMAPONG_RSP_TEST
 endif
 N64_CFLAGS += -Wall -Wextra -Werror
+ifeq ($(ADVECTION_TEST),1)
+N64_CFLAGS += -DPLASMAPONG_ADVECTION_TEST
+endif
 ifeq ($(FLUID_PROFILE),1)
 N64_CFLAGS += -DPLASMAPONG_FLUID_PROFILE
 endif
 # Inline the fluid sampling loops without expanding the rest of the ROM.
-$(BUILD_DIR)/src/fluid.o: CFLAGS += -O3
+$(BUILD_DIR)/src/fluid.o $(BUILD_DIR)/src/fluid_advection.o: CFLAGS += -O3
 ifeq ($(SMOKE),1)
 N64_CFLAGS += -DPLASMAPONG_SMOKE
 endif

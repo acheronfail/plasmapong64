@@ -517,8 +517,55 @@ default. No grid reduction or pressure iteration reduction is involved; hardware
 performance has not yet been quantified.
 
 This establishes the queue, DMA and numerical-test infrastructure for later RSP
-components. The larger remaining target is dye/velocity advection; those use
-floating point and need an explicitly validated fixed-point/vector design.
+components. Dye/velocity advection still uses floating point; a future RSP port
+needs an explicitly validated fixed-point/vector design. The next pass below
+improves the existing CPU advection kernels first.
+
+### CPU advection optimization (2026-10-02)
+
+`src/fluid_advection.c` contains separate velocity and dye kernels. Explicitly
+non-overlapping input/output banks and a separate compilation unit let the pinned
+MIPS compiler use simpler sample addresses and schedule independent channels
+together. Float loop coordinates avoid per-cell integer-to-float conversions.
+A finite-binary32 coordinate clamp uses one unsigned comparison on the common
+path instead of two serial FPU comparisons. The grid, interpolation arithmetic,
+decay factors, pressure solver and simulation frequency are unchanged.
+
+The comparison pins gameplay/UI/audio to `fae1d58` so concurrent gameplay changes
+cannot affect the results. Both versions use the **48 × 33** grid, RSP pressure,
+the pinned libdragon toolchain and Ares `5f2f7dc0d` with paraLLEl-RDP and audio.
+Each profiled run lasted 55 seconds and produced ten 150-step windows:
+
+| Profiled stage | Before, ms/step | After, ms/step | Reduction |
+| --- | ---: | ---: | ---: |
+| Velocity advection | 5.289 | 4.843 | 8.4% |
+| Dye advection | 7.616 | 7.051 | 7.4% |
+| Combined advection | 12.905 | 11.893 | 7.8% |
+
+Separate 55-second runs with profiling disabled averaged **24.348 → 23.403 ms
+per simulation step**, saving **0.946 ms (3.9%)**. Each run again produced ten
+150-step windows. Drawing averaged 4.472 → 4.481 ms/frame; the submission interval
+remained 33.353 → 33.352 ms, providing more headroom within the existing 30 Hz
+schedule. All profiled stage call counts match between the two versions.
+
+These are emulator timings; the new optimization has not been timed on hardware.
+Earlier tables used the smaller 48 × 30 grid and are not a direct comparison.
+Controlled logs and ROMs are in `build/advection_compare/`, including
+`control-profile.log`, `final-profile.log`, `control.log` and `final.log`.
+
+`just check` includes a 64-field exact float-reference regression for both kernels:
+zero/signed-zero velocity, constant/ramp/checkerboard/random dye, strong flows,
+boundary-crossing backtraces, zero dt and three nonzero time steps. Every output
+is checked and the source banks must remain unchanged. The existing full-fluid
+reference, gameplay, arcade, save and audio tests also pass. Address/undefined
+sanitizers pass with leak detection disabled (the local runner uses ptrace).
+
+`just benchmark-advection` builds a separate scripted ROM that runs these same
+64 cases on the N64 before reporting stage timings. The target checks pass in
+Ares, as do the existing RSP pressure checks in a combined verification ROM.
+Normal `just build` / `just deploy` use the optimized kernels without test probes.
+For benchmarks, add `--setting Input/Defocus=Allow` to the Ares command so losing
+window focus does not pause the run.
 
 ## Sound assets
 

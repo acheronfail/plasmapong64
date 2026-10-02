@@ -7,6 +7,9 @@
 #include "sound.h"
 #include "save.h"
 #include "fluid_profile.h"
+#ifdef PLASMAPONG_ADVECTION_TEST
+#include "../tests/advection_cases.h"
+#endif
 #ifdef PLASMAPONG_RSP_TEST
 #include "../tests/rsp_fluid_smoke.h"
 #endif
@@ -112,6 +115,10 @@ int main(void) {
     /* Pad rows so partial-width uploads use LoadTile. The pinned libdragon's
        RGBA32 LoadBlock path corrupts this non-power-of-two texture width. */
     rdpq_init(); ink=surface_alloc(FMT_RGBA32,64,FH);
+#ifdef PLASMAPONG_ADVECTION_TEST
+    advection_cases();
+    debugf("Advection PASS: 64 exact float-reference fields; source banks unchanged\n");
+#endif
 #ifdef PLASMAPONG_RSP_TEST
     rsp_fluid_smoke();
 #endif

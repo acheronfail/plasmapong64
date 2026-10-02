@@ -2,6 +2,7 @@
 #include "fluid.h"
 #include "fluid_profile.h"
 #include "fluid_pressure.h"
+#include "fluid_advection.h"
 #ifdef PLASMAPONG_FLUID_PROFILE
 FluidProfile fluid_profile;
 #endif
@@ -164,12 +165,7 @@ void fluid_velocity_step(Fluid *f,float dt) {
     FluidVelocity *next=&f->velocity[f->velocity_bank^1];
     const float grid_dt=dt/CELL,decay=1-.16f*dt,confinement=CELL*1.1f*dt;
     /* Semi-Lagrangian advection: bounded even during a strong jet. */
-    for(int y=0;y<FH;y++) for(int x=0;x<FW;x++) {
-        int k=y*FW+x;
-        float px=x-grid_dt*velocity->u[k],py=y-grid_dt*velocity->v[k];
-        sample_pair(velocity->u,velocity->v,px,py,&next->u[k],&next->v[k]);
-        next->u[k]*=decay; next->v[k]*=decay;
-    }
+    fluid_advect_velocity(next,velocity,grid_dt,decay);
     PROFILE_END(PROFILE_VELOCITY_ADVECTION);
     f->velocity_bank^=1; velocity=next;
     PROFILE_END(PROFILE_VELOCITY_SWAP);
@@ -196,16 +192,7 @@ void fluid_dye_step(Fluid *f,float dt) {
     PROFILE_BEGIN();
     FluidDye *next=&f->dye[f->dye_bank^1];
     const float grid_dt=dt/CELL,decay=1-.22f*dt,gold_decay=1-1.1f*dt;
-    for(int y=0;y<FH;y++) for(int x=0;x<FW;x++) {
-        int k=y*FW+x;
-        float px=x-grid_dt*velocity->u[k],py=y-grid_dt*velocity->v[k];
-        px=clampf(px,0,FW-1.001f); py=clampf(py,0,FH-1.001f);
-        int ix=(int)px,iy=(int)py,j=iy*FW+ix;
-        float tx=px-ix,ty=py-iy;
-        next->red[k]=bilerp(ink_grid->red,j,tx,ty)*decay;
-        next->blue[k]=bilerp(ink_grid->blue,j,tx,ty)*decay;
-        next->gold[k]=bilerp(ink_grid->gold,j,tx,ty)*gold_decay;
-    }
+    fluid_advect_dye(next,ink_grid,velocity,grid_dt,decay,gold_decay);
     PROFILE_END(PROFILE_DYE_ADVECTION);
     f->dye_bank^=1;
     PROFILE_END(PROFILE_DYE_SWAP);

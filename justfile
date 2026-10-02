@@ -40,6 +40,10 @@ rsp:
 benchmark-rsp:
     ./tools/build-rom.sh -j4 FLUID_RSP=1 RSP_TEST=1 SMOKE=1 FLUID_PROFILE=1 ROM=plasmapong-rsp-benchmark BUILD_DIR=build/rsp_benchmark
 
+# Exact float-advection checks at boot, then profiled scripted gameplay.
+benchmark-advection:
+    ./tools/build-rom.sh -j4 ADVECTION_TEST=1 SMOKE=1 FLUID_PROFILE=1 ROM=plasmapong-advection-benchmark BUILD_DIR=build/advection_benchmark
+
 # Exercise one-controller arcade mode against the real AI in Ares.
 smoke-arcade:
     ./tools/build-rom.sh -j4 SMOKE=1 SMOKE_ARCADE=1 ROM=plasmapong-arcade-smoke BUILD_DIR=build/arcade_smoke_rsp
