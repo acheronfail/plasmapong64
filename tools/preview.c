@@ -69,6 +69,7 @@ int main(int argc,char **argv) {
         game_init(&g); Input idle[MAX_PLAYERS]={0};
         if(!strcmp(argv[1],"menu-4p")) for(int p=0;p<4;p++) idle[p].connected=true;
         if(!strcmp(argv[1],"menu-options")) g.menu_selection=3;
+        ui_measure_menu(&g);
         for(int t=0;t<180;t++) game_step(&g,idle);
     }
     if(argc>1 && (!strcmp(argv[1],"arcade") || !strcmp(argv[1],"gameover") || !strcmp(argv[1],"scores") || !strcmp(argv[1],"level"))) {

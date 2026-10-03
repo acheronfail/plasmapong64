@@ -349,6 +349,7 @@ int main(void) {
             memcpy(profile_before,fluid_profile.ticks,sizeof(profile_before));
             memcpy(calls_before,fluid_profile.calls,sizeof(calls_before));
 #endif
+            if(game.phase==MENU) ui_measure_menu(&game);
             game_step(&game,input); accumulator-=frame_step;
             frame_steps++;
             disable_interrupts(); sound_update(&sound,&game); enable_interrupts();

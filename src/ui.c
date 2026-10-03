@@ -98,11 +98,20 @@ static void menu_triangle(float x,float y,bool right,uint32_t color) {
         rect(x+column,y-height*.5f,1,height,color);
     }
 }
+static const char *menu_items[]={"MULTI-PLAYER","SINGLE PLAYER","HIGH SCORES","OPTIONS"};
+static float multiplayer_width(const char *count) {
+    return label_width(menu_items[0])+14+4+6+label_width(count)+6+4;
+}
+void ui_measure_menu(Game *g) {
+    char count[8]; snprintf(count,sizeof(count),"%uP",g->players);
+    g->menu_label_widths[0]=multiplayer_width(count);
+    for(unsigned i=1;i<4;i++) g->menu_label_widths[i]=label_width(menu_items[i]);
+}
 static void multiplayer_label(const Game *g,unsigned pads,float y,int style) {
-    const char *title="MULTI-PLAYER";
+    const char *title=menu_items[0];
     char count[8]; snprintf(count,sizeof(count),"%uP",g->players);
     float title_width=label_width(title),count_width=label_width(count);
-    float x=roundf(160-(title_width+14+4+6+count_width+6+4)*.5f);
+    float x=roundf(160-multiplayer_width(count)*.5f);
     label(x+2,y+2,5,title); label(x,y,style,title);
     x+=title_width+14;
     uint32_t bright=style==MENU_SELECTED_STYLE?GOLD:style==6?0x737d8a:0xa0b3c9;
@@ -269,25 +278,18 @@ void ui_draw(const Game *g) {
         menu_label(139,g->options_selection==1?2:1,setting);
         if(!g->save_available || g->save_failed)
             menu_label(169,1,!g->save_available?"NO SAVE STORAGE - SESSION ONLY":"SAVE FAILED - SESSION ONLY");
-        centered_hint(196,"[UP] / [DOWN] SELECT");
-        centered_hint(213,"[LEFT] / [RIGHT] CHANGE");
-        centered_hint(232,"[B] BACK"); return;
+        return;
     }
     if(g->phase==MENU) {
         flow_background(g,0,0,320,240);
         draw_static(DRAW_MENU_TITLE,menu_title);
-        const char *items[]={"MULTI-PLAYER","SINGLE PLAYER","HIGH SCORES","OPTIONS"};
         unsigned pads=0; for(unsigned p=0;p<MAX_PLAYERS;p++) if(g->connected[p]) pads++;
         for(unsigned i=0;i<4;i++) {
             int style=i==0 && pads<2?6:g->menu_selection==i?MENU_SELECTED_STYLE:1;
             float y=MENU_FIRST_ROW+i*MENU_ROW_SPACING;
             if(i==0) multiplayer_label(g,pads,y,style);
-            else menu_label(y,style,items[i]);
+            else menu_label(y,style,menu_items[i]);
         }
-        if(g->menu_selection==0) {
-            centered_hint(207,pads<2?"CONNECT AT LEAST TWO CONTROLLERS":"[LEFT] / [RIGHT] PLAYERS");
-            centered_hint(228,"[UP] / [DOWN] SELECT   [A] PLAY");
-        } else centered_hint(216,"[UP] / [DOWN] SELECT   [A] SELECT");
         return;
     }
     rect(0,0,320,240,0x070c17);

@@ -25,6 +25,8 @@ static void serve(Game *g) {
 void game_init(Game *g) {
     memset(g,0,sizeof(*g));
     g->players=2; g->frame_rate=FPS_60;
+    const float menu_widths[]={134,99,89,59};
+    memcpy(g->menu_label_widths,menu_widths,sizeof(menu_widths));
     for(unsigned p=0;p<MAX_PLAYERS;p++) { g->player_port[p]=p; g->lives[p]=MULTIPLAYER_LIVES; }
     place_bats(g);
     g->score_entry=-1; g->arcade.level=1;
@@ -90,8 +92,9 @@ static void menu_step(Game *g) {
         FluidInk *ink=fluid_dye(&g->fluid);
         /* sqrt(.94): same menu fade per second at twice the update rate. */
         for(int k=0;k<FN;k++) ink->gold[k]=fluid_ink_encode(fluid_ink_decode(ink->gold[k])*(g->frame_rate==FPS_30?.94f:.969535971f));
-        const float widths[]={158,116,104,70};
-        float width=widths[g->menu_selection];
+        /* Inset sources by their eight-unit radius, so their footprint fits
+           the measured label instead of extending beyond both ends. */
+        float width=maxf(0,g->menu_label_widths[g->menu_selection]-16*(320/ARENA_W));
         float y=(MENU_FIRST_ROW+MENU_ROW_SPACING*g->menu_selection-4)*(ARENA_H/240);
         for(int i=0;i<=12;i++) {
             float t=i/12.0f;
@@ -105,6 +108,20 @@ static void menu_step(Game *g) {
         }
     }
     fluid_velocity_step(&g->fluid,step); fluid_dye_step(&g->fluid,step);
+    if(g->phase==MENU) {
+        /* Currents can carry gold beyond the label. Fade its edges inside the
+           measured bounds, including half a texture cell for filtering. */
+        FluidInk *ink=fluid_dye(&g->fluid);
+        float half_width=g->menu_label_widths[g->menu_selection]*.5f*(ARENA_W/320);
+        for(int x=0;x<FW;x++) {
+            float edge=half_width-fabsf((x+.5f)*CELL-ARENA_W*.5f)-CELL*.5f;
+            float fade=clampf(edge/CELL,0,1);
+            for(int y=0;y<FH;y++) {
+                int k=y*FW+x;
+                ink->gold[k]=fluid_ink_encode(fluid_ink_decode(ink->gold[k])*fade);
+            }
+        }
+    }
     game_flow_step(g);
     g->menu_ticks+=game_tick_units(g); g->elapsed+=step;
 }
@@ -238,6 +255,7 @@ void game_step(Game *g,const Input physical[MAX_PLAYERS]) {
         if(!menu && (p>=(g->mode==ARCADE?1:g->players) || (g->phase!=FINISHED && !game_alive(g,p)))) continue;
         start|=in[p].connected && in[p].start && !g->previous[p].start;
         confirm|=in[p].connected && in[p].a && !g->previous[p].a;
+        if(g->phase==MENU) confirm|=in[p].connected && in[p].z && !g->previous[p].z;
         back|=in[p].connected && in[p].b && !g->previous[p].b;
     }
     bool all_connected=game_ready(g);

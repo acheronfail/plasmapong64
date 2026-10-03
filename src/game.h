@@ -53,6 +53,7 @@ typedef struct {
     uint32_t tracer_rng;
     unsigned tracer_head;
     MenuCurrent menu_current[3];
+    float menu_label_widths[4]; /* Screen pixels, measured by the UI. */
     uint32_t menu_rng;
     unsigned menu_ticks, sound_events;
     Bat bat[MAX_PLAYERS];

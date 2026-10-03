@@ -40,7 +40,7 @@ Two-player labels sit at matching insets from the court edges; 3P/4P uses the
 colour-matched life counters above the court. The active menu row uses bright
 text and continuously emits gold dye. Dedicated triangles surround the player
 count, with unavailable directions dimmed. Use up/down to choose
-**MULTI-PLAYER**, **SINGLE PLAYER**, **HIGH SCORES**, or **OPTIONS**, then A or START to confirm.
+**MULTI-PLAYER**, **SINGLE PLAYER**, **HIGH SCORES**, or **OPTIONS**, then A, Z, or START to confirm.
 Press START in the lobby to begin.
 
 ## Controls
@@ -53,7 +53,7 @@ Press START in the lobby to begin.
 | Release A | Launch a caught ball with an outward fluid burst; hold the ball for one second and release during the brief green bar for a bonus-speed shot |
 | START | Confirm menu selection, start, pause/resume, or multiplayer rematch |
 | Left/right on MULTI-PLAYER | Select an available player count |
-| Up/down, then A on the main menu | Choose a mode or view high scores |
+| Up/down, then A, Z, or START on the main menu | Choose a mode, view high scores, or open options |
 | B in the lobby, pause, or winner screen | Return to the main menu |
 
 Suction reaches about 35 arena pixels; actual capture requires the ball to be

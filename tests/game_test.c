@@ -112,7 +112,29 @@ static void flow_tests(void) {
     assert(fluid_speed_color(&a.fluid,0)==colors[6]);
     puts("PASS: options navigation, effect retention, tracer transport/pause, visual-only physics, speed spectrum");
 }
+static void menu_confirm_tests(void) {
+    static Game menu;
+    const Phase destinations[]={LOBBY,LOBBY,SCORES,OPTIONS};
+    for(unsigned button=0;button<3;button++) for(unsigned row=0;row<4;row++) {
+        Input input[MAX_PLAYERS]={{.connected=true},{.connected=true}};
+        game_init(&menu); menu.menu_selection=row;
+        input[1].a=button==0; input[1].z=button==1; input[1].start=button==2;
+        game_step(&menu,input);
+        assert(menu.phase==destinations[row] && (menu.sound_events&SOUND_SELECT));
+        /* Holding the select button must not immediately leave the new screen. */
+        game_step(&menu,input);
+        assert(menu.phase==destinations[row] && !menu.sound_events);
+        game_init(&menu); menu.menu_selection=row; input[1].connected=false;
+        game_step(&menu,input); assert(menu.phase==MENU);
+        if(row==0) {
+            input[0]=input[1]; input[0].connected=true;
+            game_step(&menu,input); assert(menu.phase==MENU);
+        }
+    }
+    puts("PASS: A/Z/START main-menu selection, held-button debounce, disconnected input and multiplayer gating");
+}
 int main(void) {
+    menu_confirm_tests();
     flow_tests();
     /* A serve stays at rest through the countdown and in still water. */
     ready(); g.serve=1.2f;
