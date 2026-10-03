@@ -1235,3 +1235,44 @@ scheduler produced 32 intervals of three refreshes across 1,780 measured refresh
 intervals and 83 repeated refreshes out of 1,873. This demanding run is worse than
 the earlier fixed-60 checkpoint; neither mode should be described as perfectly
 paced based on emulator averages. Console testing remains the final check.
+
+### Multiplayer visibility and ring rendering (2026-10-03)
+
+The 3P/4P court is visually smaller, but it still uses the complete **48 × 33**
+fluid grid and full **288 × 198** fluid texture. The square court covers the side
+strips and corner wedges after drawing. Hidden fluid cells continue participating
+in pressure and advection, and all 96 tracers continue updating. Extra paddles,
+jets, suction and HUD elements therefore add work without reducing the solver.
+A true 33-column square simulation would remove about 31% of cells, but would also
+change boundary conditions and flow; this is not an equivalent rendering change.
+
+Two rendering changes avoid work without changing physics or particle density:
+tracer dots behind the square court's side masks are omitted, and each ring's 20
+invariant sine/cosine direction pairs are evaluated once, using the platform's
+own math implementation. Ring positions, pulse animation and clipping are retained.
+The corner-mask block also groups fills by color; tested alone this did not improve
+presentation, so it is not counted as a measured saving.
+
+Matched eight-window ares runs use 60 FPS, continuous TAILS, scripted controllers,
+audio and HUD enabled, without a diagnostic draw fence:
+
+| Workload/change | Simulation, ms/step | Draw submission, ms/frame | Frame interval, ms | Repeated VI |
+| --- | ---: | ---: | ---: | ---: |
+| 2P baseline | 11.171 | 3.232 | 16.714 | 0 / 1,194 |
+| 4P baseline | 12.801 | 3.750 | 17.885 | 83 / 1,273 |
+| 4P grouped mask only | 12.767 | 3.798 | 17.885 | 83 / 1,273 |
+| 4P plus hidden-dot culling | 12.688 | 3.544 | 17.132 | 29 / 1,219 |
+| 4P plus cached ring directions | 12.643 | 3.382 | 16.757 | 3 / 1,193 |
+
+Draw submission drops about **0.368 ms (9.8%)** against the 4P baseline. The solver
+was not changed; differences in simulation averages include scheduling and replay
+progress when frames are missed. These timings are not serialized CPU+RSP+RDP
+completion measurements. The portable suite passes; deterministic host previews
+retain identical pixels for the mask/culling changes and identical SVG output for
+active-suction ring caching. Logs and comparisons are in `build/multiplayer_perf/`.
+
+The final 18-window continuous-tail run (~45 seconds) recorded **3 repeated
+refreshes out of 2,693**, longest gap 2 VI. A separate RDP-validation run completed
+without assertion, RDP or DMA/cache warnings. Its slower instrumented frame rate
+is not the acceptance measurement. The default playable ROM includes these changes;
+hardware confirmation is still needed before claiming a locked 60 FPS.

@@ -15,9 +15,19 @@ static const int player_styles[]={2,3,7,8};
 /* Match the ball dye's RGB contribution in fluid_color(). */
 #define GOLD 0xffcd19
 static void ring(const Game *g,float x,float y,float radius,uint32_t color) {
+    /* Angles are invariant. Evaluate them once with the platform's own math
+       implementation, retaining identical coordinates on subsequent frames. */
+    static float direction[20][2];
+    static bool initialized;
+    if(!initialized) {
+        for(int i=0;i<20;i++) {
+            float a=i*6.2831853f/20;
+            direction[i][0]=cosf(a); direction[i][1]=sinf(a);
+        }
+        initialized=true;
+    }
     for(int i=0;i<20;i++) {
-        float a=i*6.2831853f/20;
-        float px=x+cosf(a)*radius-1,py=y+sinf(a)*radius-1;
+        float px=x+direction[i][0]*radius-1,py=y+direction[i][1]*radius-1;
         if(px<OX+game_left(g) || px>OX+game_right(g)-2 || py<OY || py>OY+ARENA_H-2) continue;
         if(game_square(g)) {
             float edge_x=minf(px-OX-game_left(g),OX+game_right(g)-px-2);
@@ -149,6 +159,11 @@ static void square_mask(void) {
         rect(right-width,OY+row,width,1,0x070c17);
         rect(left,OY+ARENA_H-row-1,width,1,0x070c17);
         rect(right-width,OY+ARENA_H-row-1,width,1,0x070c17);
+    }
+    /* Rows do not overlap: batch the wall color after all background wedges.
+       The cached block otherwise replays two fill-mode changes per row. */
+    for(int row=0;row<(int)CORNER_SIZE;row++) {
+        float width=CORNER_SIZE-row;
         rect(left+width-1,OY+row,2,1,0x737d8a);
         rect(right-width-1,OY+row,2,1,0x737d8a);
         rect(left+width-1,OY+ARENA_H-row-1,2,1,0x737d8a);
@@ -190,6 +205,11 @@ static void flow_background(const Game *g,float x,float y,float w,float h) {
     unsigned head=g->tracer_head,history[5];
     for(unsigned j=0;j<5;j++) history[j]=(head+j*FLOW_SAMPLE_TICKS)%FLOW_HISTORY;
     const float sx=w/ARENA_W,sy=h/ARENA_H;
+    /* Gameplay masks the side strips after drawing the fluid. Do not submit
+       tracer dots that will be completely covered. Menus remain full width. */
+    const bool cropped=game_square(g) && g->phase!=MENU && g->phase!=OPTIONS && g->phase!=SCORES;
+    const float clip_left=cropped?x+game_left(g)*sx:x;
+    const float clip_right=cropped?x+game_right(g)*sx:x+w;
     /* Prepare every dot for one tracer while its history is in cache. Keep
        the existing back-to-front, color-grouped draw order in compact batches. */
     static DrawPoint points[5][4][FLOW_TRACERS];
@@ -220,7 +240,7 @@ static void flow_background(const Game *g,float x,float y,float w,float h) {
                screen domain. Integer truncation is therefore floor. */
             int px=(int)(x+(hx+dx[j]*scale)*sx);
             int py=(int)(y+(hy+dy[j]*scale)*sy);
-            if(px>=x && py>=y && px<x+w && py<y+h)
+            if(px>=clip_left && py>=y && px<clip_right && py<y+h)
                 points[j][tint][counts[j][tint]++]=(DrawPoint){px,py};
         }
     }
