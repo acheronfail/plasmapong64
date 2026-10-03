@@ -48,20 +48,20 @@ void game_flow_step(Game *g) {
         FlowTracer *t=&g->tracers[i];
         if(!t->life) {
             /* Stratified respawns retain coverage while allowing free advection. */
-            t->x[0]=(i%12+tracer_random(g))*(ARENA_W/12);
-            t->y[0]=(i/12+tracer_random(g))*(ARENA_H/8);
+            g->tracer_history[0][i].x=(i%12+tracer_random(g))*(ARENA_W/12);
+            g->tracer_history[0][i].y=(i/12+tracer_random(g))*(ARENA_H/8);
             t->life=GAME_HZ*3/2+(unsigned)(tracer_random(g)*(3*GAME_HZ));
-            for(int j=1;j<FLOW_HISTORY;j++) { t->x[j]=t->x[0]; t->y[j]=t->y[0]; }
+            for(int j=1;j<FLOW_HISTORY;j++) { g->tracer_history[j][i].x=g->tracer_history[0][i].x; g->tracer_history[j][i].y=g->tracer_history[0][i].y; }
             continue;
         }
-        float u,v; fluid_sample(&g->fluid,t->x[old],t->y[old],&u,&v);
-        t->x[head]=t->x[old]+u*step; t->y[head]=t->y[old]+v*step; t->life=t->life>ticks?t->life-ticks:0;
+        float u,v; fluid_sample(&g->fluid,g->tracer_history[old][i].x,g->tracer_history[old][i].y,&u,&v);
+        g->tracer_history[head][i].x=g->tracer_history[old][i].x+u*step; g->tracer_history[head][i].y=g->tracer_history[old][i].y+v*step; t->life=t->life>ticks?t->life-ticks:0;
         if(ticks==2) {
             unsigned middle=(head+1)%FLOW_HISTORY;
-            t->x[middle]=(t->x[head]+t->x[old])*.5f;
-            t->y[middle]=(t->y[head]+t->y[old])*.5f;
+            g->tracer_history[middle][i].x=(g->tracer_history[head][i].x+g->tracer_history[old][i].x)*.5f;
+            g->tracer_history[middle][i].y=(g->tracer_history[head][i].y+g->tracer_history[old][i].y)*.5f;
         }
-        if(t->x[head]<0 || t->x[head]>=ARENA_W || t->y[head]<0 || t->y[head]>=ARENA_H) t->life=0;
+        if(g->tracer_history[head][i].x<0 || g->tracer_history[head][i].x>=ARENA_W || g->tracer_history[head][i].y<0 || g->tracer_history[head][i].y>=ARENA_H) t->life=0;
     }
 }
 static float menu_random(Game *g) {

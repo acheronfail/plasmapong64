@@ -27,7 +27,8 @@ void fluid_velocity_trace(FluidDyeTrace *trace,const FluidVelocityFixed *velocit
         int px=x*4096-((u*step+2048)>>12),py=y*4096-((v*step+2048)>>12);
         if(px<0) px=0; else if(px>(FW-1)*4096-5) px=(FW-1)*4096-5;
         if(py<0) py=0; else if(py>(FH-1)*4096-5) py=(FH-1)*4096-5;
-        trace[k]=(FluidDyeTrace){((py>>12)*FW+(px>>12))*2,(px&4095)*8,(py&4095)*8};
+        trace[k/8].offset[k%8]=((py>>12)*FW+(px>>12))*2;
+        trace[k/8].tx[k%8]=(px&4095)*8; trace[k/8].ty[k%8]=(py&4095)*8;
     }
 }
 void fluid_velocity_unpack(FluidVelocity *next,const FluidVelocityFixed *packed) {
@@ -41,17 +42,17 @@ void fluid_velocity_fixed_reference(FluidVelocityFixed *next,const FluidVelocity
         const FluidDyeTrace *trace,unsigned decay,unsigned rounding) {
     assert(decay<=32768 && rounding<=65535);
     for(int c=0;c<2;c++) for(int k=0;k<FN;k++) {
-        int j=trace[k].offset/2;
+        int j=trace[k/8].offset[k%8]/2;
         const int16_t *p=c?packed->v:packed->u;
         int16_t *out=c?next->v:next->u;
-        int top=lerp(p[j],p[j+1],trace[k].tx),bottom=lerp(p[j+FW],p[j+FW+1],trace[k].tx);
-        int value=lerp(top,bottom,trace[k].ty);
+        int top=lerp(p[j],p[j+1],trace[k/8].tx[k%8]),bottom=lerp(p[j+FW],p[j+FW+1],trace[k/8].tx[k%8]);
+        int value=lerp(top,bottom,trace[k/8].ty[k%8]);
         out[k]=(int16_t)((value*(int)decay*2+(int)rounding)>>16);
     }
 }
 void fluid_advect_velocity_fixed(FluidVelocityFixed *next,const FluidVelocityFixed *velocity,
         float grid_dt,float decay,unsigned rounding) {
-    static _Alignas(16) FluidDyeTrace trace[FN];
+    static _Alignas(16) FluidDyeTrace trace[FLUID_TRACE_BATCHES];
 #ifdef PLASMAPONG_PREPARE_RSP
 #ifdef PLASMAPONG_ADVECTION_CHAIN
     fluid_velocity_trace_rsp_begin(trace,velocity,grid_dt);

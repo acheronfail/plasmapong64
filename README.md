@@ -1276,3 +1276,219 @@ refreshes out of 2,693**, longest gap 2 VI. A separate RDP-validation run comple
 without assertion, RDP or DMA/cache warnings. Its slower instrumented frame rate
 is not the acceptance measurement. The default playable ROM includes these changes;
 hardware confirmation is still needed before claiming a locked 60 FPS.
+
+### Current-game profiling baseline (2026-10-03)
+
+Fresh builds of `fae17e5e16c66bd745dde2ab78606c036c9e2375`, before further game
+optimisations. Ares ran each ROM separately for twelve 150-frame/150-PLAY-step
+measurement windows (about 30 emulated seconds). All runs explicitly select
+60 FPS and a fixed flow effect, with scripted controllers, audio and the HUD
+on. Default RSP backends are enabled; neither RDP validation nor the diagnostic
+end-of-draw fence is enabled. No warm-up windows are discarded. Drawing windows
+include the short startup/menu transition; simulation windows count PLAY only.
+The replay includes moving paddles, jets and intermittent suction, and normal
+match progression; it is not a bound for every possible four-player action.
+
+| Workload | Simulation ms/step | Draw submission ms/frame | Sum, ms | Frame interval, ms | Repeated VI |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 4P NONE | 11.606 | 1.426 | 13.032 | 16.714 | 0 / 1,790 |
+| 4P PARTICLES | 12.423 | 2.092 | 14.516 | 16.714 | 0 / 1,790 |
+| 4P TAILS | 12.451 | 3.388 | 15.838 | 16.789 | 7 / 1,797 |
+| 4P SPEED | 11.606 | 1.601 | 13.207 | 16.714 | 0 / 1,790 |
+| 2P TAILS | 11.177 | 3.128 | 14.305 | 16.714 | 0 / 1,794 |
+
+The sum is a useful approximate work budget, not a serialized CPU+RSP+RDP
+completion measurement. Simulation and drawing windows are independently
+counted; simulation can overlap the preceding frame's rendering. Four-player
+tails has only **0.829 ms nominal average margin** against 16.667 ms and still
+misses refreshes (longest gap: two VIs). Window averages hide individual-frame
+spikes; the runner's min/max values are extrema of window averages, not frame
+percentiles. These are emulator observations, not a hardware 60 FPS guarantee.
+
+A separate `FLUID_PROFILE=1` 4P TAILS run gives the following disjoint breakdown.
+The profiled run totals 12.652 ms simulation + 3.256 ms draw submission and has
+9 repeats / 1,799 VI. Instrumentation changes timing and scheduling, so use the
+ordinary ROM above for presentation acceptance and this run for attribution.
+
+| Simulation stage | ms/step |
+| --- | ---: |
+| Dye advection | 2.351 |
+| Velocity advection | 1.929 |
+| Pressure solve (eight passes) | 2.817 |
+| CPU splats (paddles, jets, bursts) | 1.435 |
+| Pressure gradient | 1.025 |
+| Velocity sampling (tracers and gameplay) | 0.604 |
+| Confinement | 0.538 |
+| Divergence and wall preparation | 0.439 |
+| Curl | 0.303 |
+| Suction/burst pumps | 0.257 |
+| Ball dye | 0.060 |
+| Velocity/dye bank swaps combined | 0.004 |
+| Remaining simulation and profiling overhead | 0.891 |
+
+| Drawing stage | ms/frame |
+| --- | ---: |
+| Tail point preparation | 1.520 |
+| Tail command emission/submission | 0.333 |
+| Fluid pixel generation | 0.727 |
+| Texture command submission | 0.005 |
+| Frame-start completion wait | 0.046 |
+| Remaining UI/court/HUD/submission work | 0.624 |
+
+Stage timings include interrupts/audio occurring inside them and, for RSP
+stages, CPU cache maintenance, queue submission and completion waits. They are
+not isolated coprocessor execution timings. Audio must not be added again.
+Tail preparation and emission are already included in `draw_other`; the table
+subtracts them to avoid double counting. Texture submission does not measure
+RDP texture rendering, and the small frame-start wait does not imply the RDP
+has no cost: other work can hide completion latency.
+
+Recommended optimisation targets:
+
+1. **Shared RSP advection: 4.280 ms**, approximately 27% of profiled simulation
+   plus drawing. Both velocity (two channels) and dye (three channels) use
+   `fluid_channels_rsp` / `rsp_dye.S`, so one improvement benefits every mode.
+   The current kernel reloads traces per channel and synchronously transfers
+   24-cell trace/output chunks around scalar-addressed gathers and vector
+   interpolation. Benchmark larger chunks or DMA double buffering within DMEM
+   limits, and separate trace generation, cache work and kernel completion
+   before choosing a rewrite. A hypothetical 20% stage reduction would recover
+   about **0.856 ms**; that saving has not yet been demonstrated.
+2. **Tail preparation: 1.520 ms CPU-side**, plus 0.333 ms emission. This is a
+   contained first experiment for the workload currently missing refreshes:
+   inspect history memory traffic and per-dot coordinate/math work while
+   retaining all layers, clipping and draw order. TAILS adds about 1.295 ms of
+   draw submission over PARTICLES in the ordinary runs. Both effects update
+   the same tracers, so this comparison points directly at tail rendering.
+3. **CPU splats: 1.435 ms average**, ranging from 1.095 to 1.798 ms across the
+   profiled windows. Repeated float/fixed conversions and full bounding-square
+   processing in `fluid_splat` are candidates for equivalent simplification
+   or batching. This work grows with active paddles/jets and is relevant to
+   adding mechanics. Check zero-weight cells and numerical equivalence before
+   skipping or combining writes.
+4. **Pressure solve: 2.817 ms**, the largest single stage, but a less contained
+   change: the existing unrolled Gauss-Seidel kernel already prefetches
+   divergence and has a serial left-neighbour dependency. Further DMA overlap
+   is worth investigating; vectorizing or changing the solver can alter the
+   fluid. Pressure gradient (1.025 ms) is another shared RSP candidate.
+
+Reducing grid size, pressure iterations or particle density would change the
+simulation or effect and is not needed to begin these experiments. A useful
+next-round target is to reclaim 2–3 ms in the heavy workload, with frame-level
+spike measurements and a longer presentation run before spending that budget
+on new effects.
+
+Raw logs, per-run JSON, aggregate `results.json`, and source/ROM/emulator hashes
+are retained in `build/round2/`. The benchmark runner now preserves existing
+draw/flow detail lines in JSON and waits for complete flow windows. Its parser
+was checked by replaying the captured profile log and comparing every summary.
+No game code or playable default ROM was changed for this profiling round.
+
+Reproduce the heavy baseline and its instrumented counterpart:
+
+```sh
+./tools/build-rom.sh -j4 SMOKE=1 SMOKE_PLAYERS=4 SMOKE_FPS=60 SMOKE_EFFECT=2 ROM=round2_base4 BUILD_DIR=build/round2/base4
+python3 tools/benchmark-ares.py round2_base4.z64 build/round2/base4.log --windows 12 --timeout 240
+./tools/build-rom.sh -j4 SMOKE=1 SMOKE_PLAYERS=4 SMOKE_FPS=60 SMOKE_EFFECT=2 FLUID_PROFILE=1 ROM=round2_profile4 BUILD_DIR=build/round2/profile4
+python3 tools/benchmark-ares.py round2_profile4.z64 build/round2/profile4.log --windows 12 --timeout 240
+```
+
+Use distinct ROM/build directories for comparisons: `SMOKE_EFFECT=0`, `1`, `3`
+select NONE, PARTICLES and SPEED; `SMOKE_PLAYERS=2` selects the two-player replay.
+
+### Second optimisation round: more 60 FPS headroom (2026-10-03)
+
+The final ordinary build reduces four-player continuous TAILS work from
+**15.839 ms to 13.649 ms**, a **2.190 ms / 13.8% reduction**. Nominal average
+headroom against 16.667 ms grows from 0.829 ms to **3.018 ms**. These comparisons
+use the first twelve windows of the same scripted workload, audio/HUD enabled,
+with neither fluid profiling, RDP validation nor the diagnostic drawing fence.
+
+| Matched workload | Simulation ms/step | Draw submission ms/frame | Sum, ms | Frame interval, ms | Repeated VI in first 12 windows |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Original 4P TAILS | 12.451 | 3.388 | 15.839 | 16.789 | 7 / 1,797 |
+| Final 4P TAILS | 10.887 | 2.761 | 13.649 | 16.715 | 0 / 1,790 |
+| Original 2P TAILS | 11.177 | 3.128 | 14.305 | 16.714 | 0 / 1,794 |
+| Final 2P TAILS | 9.821 | 2.647 | 12.469 | 16.715 | 0 / 1,794 |
+
+The final 24-window four-player run (about 60 emulated seconds) averaged
+**10.756 ms simulation + 2.741 ms drawing = 13.498 ms**, with no repeated refreshes
+reported in any window and a longest observed gap of one VI. The presentation
+counters reset on a match transition; the last snapshots of its two observed
+segments account for 3,481 refreshes. That count excludes any refreshes between
+the last pre-transition snapshot and the reset. Normal match progression also
+changes workload over time, so the longer-run average is not used to claim a
+larger improvement against the twelve-window baseline.
+
+Retained changes:
+
+- Advection traces store eight offsets, eight X weights and eight Y weights
+  together. RSP vector loads/stores replace scalar weight loading and trace
+  interleaving. DMA batches grow from 24 to 48 cells; consumed trace storage
+  doubles as the output buffer, keeping the full source grid inside DMEM.
+  Trace values, interpolation, decay and rounding are unchanged.
+- The pressure solver pipelines the same eight Gauss-Seidel passes over a
+  wavefront of rows. Nine pressure rows and eight divergence rows remain in
+  DMEM; divergence is read once and only final pressure is written to RDRAM.
+  A pass processes row `tick - pass`, after its below-row dependency is ready.
+  Top/bottom copied boundaries and the serial left dependency remain exact.
+- Fixed-storage splats work in Q4 storage units, avoiding redundant float
+  decode/encode and the wider storage clamp. Zero-weight cells use integer
+  clamps and still apply the original pigment limits: simply skipping those
+  cells would have changed the result.
+- Tracer history stores adjacent X/Y pairs, with all tracers for a given time
+  sample contiguous. This improves cache reuse in simulation and drawing.
+  All 96 tracers, 17 history samples and five visible tail layers remain.
+- Tail clipping compares integer pixel bounds, and tails guaranteed to lie
+  entirely behind the side masks are rejected before preparation. A conservative
+  25-unit halo retains the existing 24-unit maximum tail extent and rounding.
+
+Matched eight-window diagnostic profiles show where the work was reduced:
+
+| Profiled stage | Original, ms | Final, ms |
+| --- | ---: | ---: |
+| Velocity + dye advection | 4.319 | 3.682 |
+| Pressure solve | 2.815 | 2.504 |
+| CPU splats | 1.574 | 1.196 |
+| Tail point preparation | 1.520 | 1.027 |
+
+These stage averages include interrupt time and cache/queue/completion costs.
+They are attribution measurements, not additions to the ordinary-build results.
+Tail command emission did not improve (0.328 to 0.363 ms in these profiles).
+A smaller, color-major tail loop was slower and was discarded. A separate
+48-cell trace/output allocation exceeded DMEM; the retained batch implementation
+reuses consumed trace space instead. Paired per-tracer history improved timing,
+but the final time-major layout improved it further.
+
+Validation completed:
+
+- The full portable suite passes across float, fixed dye, fixed velocity and
+  fixed confinement backends; all four 120-second physics trace hashes match
+  the pre-change run. Both 30/60 FPS history and timing tests pass.
+- All six RSP numerical suites pass, including **128 bit-exact pressure fields**
+  with impulses at both side edges of every interior row, DMA guards and overlay
+  switches. Trace/advection fixtures cover both frame rates and extreme inputs.
+- **2,000 randomized full-grid splats** match the frozen original implementation.
+  A portable golden-hash regression now retains that check in `tools/check.sh`.
+- **32 complete SVG outputs** match the original byte-for-byte, covering menu,
+  2P/3P/4P, particles/tails and multiple replay lengths.
+- A 28-window four-player run cycles all four effects under RDP validation;
+  a separate eight-window final-tail validation run covers the final cull.
+  Neither reports assertions, RDP errors or DMA/cache warnings. Validation
+  overhead causes missed refreshes and is not the performance acceptance path.
+- The CPU fallback and default playable `plasmapong.z64` both build successfully.
+
+Raw logs, experiment JSON, original source snapshots, hashes and final aggregate
+results are retained in `build/optimise2/`; `results.json` includes the matched
+first-twelve-window comparison. No grid cells, solver passes, gameplay mechanics
+or visible effect density were removed. The timing sum remains an approximate
+simulation/submission budget, not serialized GPU completion or a per-frame
+worst-case bound. Hardware confirmation is still needed before claiming a locked
+60 FPS on console.
+
+```sh
+./tools/check.sh
+./tools/build-rom.sh -j4
+./tools/build-rom.sh -j4 SMOKE=1 SMOKE_PLAYERS=4 SMOKE_FPS=60 SMOKE_EFFECT=2 ROM=opt2_final4 BUILD_DIR=build/optimise2/final4
+python3 tools/benchmark-ares.py opt2_final4.z64 build/optimise2/final4.log --windows 24 --timeout 360
+```

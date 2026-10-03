@@ -36,6 +36,10 @@ echo "PASS: float and fixed dye produce identical 120-second physics traces"
 cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -DPLASMAPONG_DYE_FIXED -Isrc src/game.c src/arcade.c src/fluid.c src/fluid_advection.c src/fluid_dye_fixed.c tests/arcade_test.c -lm -o build/arcade-fixed-test
 ./build/arcade-fixed-test
 
+# Exact fixed-storage force regression, including out-of-footprint clamps.
+cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -DPLASMAPONG_DYE_FIXED -DPLASMAPONG_VELOCITY_FIXED -Isrc src/fluid.c src/fluid_advection.c src/fluid_dye_fixed.c src/fluid_velocity_fixed.c tests/force_test.c -lm -o build/force-test
+./build/force-test
+
 # Experimental velocity: signed interpolation plus quantization-aware gameplay.
 cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -Isrc src/fluid_advection.c src/fluid_dye_fixed.c src/fluid_velocity_fixed.c tests/velocity_test.c -lm -o build/velocity-test
 ./build/velocity-test

@@ -15,7 +15,7 @@ static void velocity_cases(void) {
     static FluidVelocity source,actual,floating;
     static struct { _Alignas(16) unsigned char before[16]; FluidVelocityFixed value; unsigned char after[16]; } packed,output;
     static FluidVelocityFixed expected,saved;
-    static _Alignas(16) FluidDyeTrace traces[FN],saved_traces[FN];
+    static _Alignas(16) FluidDyeTrace traces[FLUID_TRACE_BATCHES],saved_traces[FLUID_TRACE_BATCHES];
     uint32_t seed=8191;
     float max_error=0,max_game_error=0;
     for(int trial=0;trial<64;trial++) {
@@ -34,7 +34,7 @@ static void velocity_cases(void) {
         memset(&packed,0xa5,sizeof(packed)); memset(&output,0x5a,sizeof(output));
         fluid_velocity_pack(&packed.value,traces,&source,dt/CELL);
         saved=packed.value; memcpy(saved_traces,traces,sizeof(traces));
-        for(int k=0;k<FN;k++) assert(traces[k].offset/2+FW+1<FN);
+        for(int k=0;k<FN;k++) assert(traces[k/8].offset[k%8]/2+FW+1<FN);
         unsigned d=fluid_dye_decay(decay),rounding=(trial*40503u)&65535u;
         if(trial==59) d=0,decay=0;
         fluid_velocity_fixed_reference(&expected,&packed.value,traces,d,rounding);

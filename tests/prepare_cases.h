@@ -3,8 +3,8 @@
 #include "../src/fluid_velocity_fixed.h"
 static void prepare_cases(void) {
     static Fluid f,saved;
-    static struct { _Alignas(16) uint8_t before[16]; FluidDyeTrace value[FN]; uint8_t after[16]; } actual;
-    static _Alignas(16) FluidDyeTrace expected[FN];
+    static struct { _Alignas(16) uint8_t before[16]; FluidDyeTrace value[FLUID_TRACE_BATCHES]; uint8_t after[16]; } actual;
+    static _Alignas(16) FluidDyeTrace expected[FLUID_TRACE_BATCHES];
     static struct { _Alignas(16) uint32_t before[4],value[64*FH],after[4]; } pixels;
     static struct { _Alignas(16) uint32_t before[4]; int32_t value[FN]; uint32_t after[4]; } divergence;
     static uint32_t expected_pixels[64*FH];
@@ -50,9 +50,9 @@ static void prepare_cases(void) {
         data_cache_hit_writeback_invalidate(&actual,sizeof(actual));
         fluid_velocity_trace_rsp(actual.value,v,dt);
         data_cache_hit_invalidate(&actual,sizeof(actual));
-        for(unsigned k=0;k<FN;k++) {
+        for(unsigned k=0;k<FLUID_TRACE_BATCHES;k++) {
             if(memcmp(&expected[k],&actual.value[k],sizeof(expected[k]))) {
-                debugf("Trace mismatch trial %u cell %u: %u/%u %u/%u %u/%u\n",trial,k,expected[k].offset,actual.value[k].offset,expected[k].tx,actual.value[k].tx,expected[k].ty,actual.value[k].ty);
+                debugf("Trace mismatch trial %u vector %u\n",trial,k);
                 assert(0);
             }
         }

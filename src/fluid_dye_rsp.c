@@ -6,9 +6,9 @@
 #endif
 DEFINE_RSP_UCODE(rsp_dye);
 static uint32_t overlay_id;
-_Static_assert(FW==48 && FH==33 && FN%24==0,"RSP dye grid/chunk layout");
+_Static_assert(FW==48 && FH==33 && FN%48==0,"RSP dye grid/chunk layout");
 _Static_assert(DYE_SCALE==8192 && DYE_WEIGHT_SCALE==32768,"RSP dye Q13/Q15 layout");
-_Static_assert(sizeof(FluidDyeFixed)%16==0 && FN*sizeof(FluidDyeTrace)%16==0,
+_Static_assert(sizeof(FluidDyeFixed)%16==0 && FLUID_TRACE_BATCHES*sizeof(FluidDyeTrace)%16==0,
         "DMA buffers must own complete cache lines");
 
 void fluid_channels_rsp(int16_t *next,const int16_t *source,const FluidDyeTrace *trace,
@@ -24,7 +24,7 @@ void fluid_channels_rsp(int16_t *next,const int16_t *source,const FluidDyeTrace 
     /* CPU traces may be dirty. RSP-generated traces were invalidated before
        enqueueing, so this cannot overwrite their pending DMA output. The final
        syncpoint also completes any trace command queued by our caller. */
-    data_cache_hit_writeback(trace,FN*sizeof(*trace));
+    data_cache_hit_writeback(trace,FLUID_TRACE_BATCHES*sizeof(*trace));
     data_cache_hit_invalidate(next,bytes);
     for(unsigned c=0;c<channels;c++) {
         assert(decays[c]<=DYE_WEIGHT_SCALE);
@@ -43,7 +43,7 @@ void fluid_dye_fixed_rsp(FluidDyeFixed *next,const FluidDyeFixed *ink,
 }
 void fluid_advect_ink_rsp(FluidDyeFixed *next,const FluidDyeFixed *ink,
         const FluidFlow *velocity,float grid_dt,float decay,float gold_decay,unsigned rounding) {
-    static _Alignas(16) FluidDyeTrace trace[FN];
+    static _Alignas(16) FluidDyeTrace trace[FLUID_TRACE_BATCHES];
 #ifdef PLASMAPONG_VELOCITY_FIXED
 #ifdef PLASMAPONG_PREPARE_RSP
 #ifdef PLASMAPONG_ADVECTION_CHAIN

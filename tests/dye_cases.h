@@ -14,7 +14,7 @@
 #endif
 
 typedef struct { uint8_t before[16]; FluidDyeFixed value; uint8_t after[16]; } DyeGuarded;
-typedef struct { _Alignas(16) uint8_t before[16]; FluidDyeTrace value[FN]; uint8_t after[16]; } TraceGuarded;
+typedef struct { _Alignas(16) uint8_t before[16]; FluidDyeTrace value[FLUID_TRACE_BATCHES]; uint8_t after[16]; } TraceGuarded;
 static uint32_t dye_hash(const void *data,size_t n) {
     const unsigned char *p=data;
     uint32_t h=2166136261u;
@@ -117,7 +117,7 @@ static void dye_long_run(void) {
     static FluidDye fixed[2],reference[2];
     static FluidVelocity velocity;
     static FluidDyeFixed packed,result;
-    static _Alignas(16) FluidDyeTrace trace[FN];
+    static _Alignas(16) FluidDyeTrace trace[FLUID_TRACE_BATCHES];
     uint32_t seed=78314;
     const float dt=1.0f/30,decay=1-.22f*dt,gold_decay=1-1.1f*dt;
     float max_error=0;

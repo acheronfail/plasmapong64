@@ -219,26 +219,36 @@ static void flow_background(const Game *g,float x,float y,float w,float h) {
     const bool cropped=game_square(g) && g->phase!=MENU && g->phase!=OPTIONS && g->phase!=SCORES;
     const float clip_left=cropped?x+game_left(g)*sx:x;
     const float clip_right=cropped?x+game_right(g)*sx:x+w;
+    /* Points are integer pixels: ceil gives exactly the original float clip
+       comparisons without converting every point back to float. */
+    const int left=(int)ceilf(clip_left),right=(int)ceilf(clip_right);
+    const int top=(int)ceilf(y),bottom=(int)ceilf(y+h);
     /* Prepare every dot for one tracer while its history is in cache. Keep
        the existing back-to-front, color-grouped draw order in compact batches. */
     static DrawPoint points[5][4][FLOW_TRACERS];
     unsigned counts[5][4]={{0}};
     int layers=g->flow_effect==FLOW_TAILS?4:0;
+    /* Tail offsets are capped at 24 world units. A one-unit guard covers
+       float rounding: beyond this halo every dot is hidden by the side mask. */
+    const float halo=layers?25:1;
+    const float hidden_left=game_left(g)-halo,hidden_right=game_right(g)+halo;
     const FluidInk *ink=fluid_dye(&g->fluid);
     const FluidInkValue minimum=fluid_ink_encode(.04f);
     for(unsigned i=0;i<FLOW_TRACERS;i++) {
         const FlowTracer *t=&g->tracers[i]; if(!t->life) continue;
-        float hx=t->x[head],hy=t->y[head];
+        float hx=g->tracer_history[head][i].x,hy=g->tracer_history[head][i].y;
+        if(cropped && (hx<hidden_left || hx>hidden_right)) continue;
         int k=(int)(hy/CELL)*FW+(int)(hx/CELL);
         FluidInkValue r=ink->red[k],b=ink->blue[k],gold=ink->gold[k];
         unsigned tint=0;
         if(b>minimum && b>r+r/2 && b>gold+gold/2) tint=1;
         else if(r>minimum && r>b+b/2 && r>gold+gold/2) tint=2;
         else if(gold>minimum && gold>r+r/2 && gold>b+b/2) tint=3;
-        float dx[5]={0},dy[5]={0},length[5]={0};
+        float dx[5],dy[5],length[5];
+        dx[0]=dy[0]=0;
         float extent=0;
         for(int j=1;j<=layers;j++) {
-            dx[j]=t->x[history[j]]-hx; dy[j]=t->y[history[j]]-hy;
+            dx[j]=g->tracer_history[history[j]][i].x-hx; dy[j]=g->tracer_history[history[j]][i].y-hy;
             length[j]=maxf(fabsf(dx[j]),fabsf(dy[j]));
             extent=maxf(extent,length[j]);
         }
@@ -249,7 +259,7 @@ static void flow_background(const Game *g,float x,float y,float w,float h) {
                screen domain. Integer truncation is therefore floor. */
             int px=(int)(x+(hx+dx[j]*scale)*sx);
             int py=(int)(y+(hy+dy[j]*scale)*sy);
-            if(px>=clip_left && py>=y && px<clip_right && py<y+h)
+            if(px>=left && py>=top && px<right && py<bottom)
                 points[j][tint][counts[j][tint]++]=(DrawPoint){px,py};
         }
     }

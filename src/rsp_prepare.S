@@ -138,13 +138,10 @@ trace_batch:
     addu t3,t3,s6
     sll t3,t3,1
     addiu t3,t3,%lo(result)
-    .set lane,0
-    .rept 8
-    ssv $v08,lane*2,lane*6,t3
-    ssv $v09,lane*2,lane*6+2,t3
-    ssv $v11,lane*2,lane*6+4,t3
-    .set lane,lane+1
-    .endr
+    /* Planar eight-cell trace blocks avoid scalar interleaving. */
+    sqv $v08,0,t3
+    sqv $v09,16,t3
+    sqv $v11,32,t3
     vadd $v24,$v24,$v23.e3
     addiu s6,s6,8
     slti t3,s6,48

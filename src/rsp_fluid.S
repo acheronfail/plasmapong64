@@ -1,158 +1,202 @@
-/* Bit-exact Q12 pressure passes. Three rotating pressure rows and two
- * divergence rows fit in DMEM. Prefetch the next divergence row while solving.
- * The serial Gauss-Seidel left dependency stays
- * scalar; this first overlay deliberately makes no precision/solver changes.
- * Each command is one pass so RSPQ can service other overlays between passes.
+/* Exact eight-pass Q12 Gauss-Seidel solve. Pass p processes row y-p:
+ * its below row is ready from pass p-1 this tick, its current row from
+ * pass p-1 last tick, and its above row from pass p last tick. Nine pressure
+ * rows and eight divergence rows keep that dependency wavefront in DMEM.
+ * Only divergence input and final pressure output cross RDRAM.
  */
 #include <rsp_queue.inc>
     .set noreorder
     .set at
 #define ROW_BYTES 192
-#define LAST_ROW 31
-
     .data
 RSPQ_BeginOverlayHeader
-    RSPQ_DefineCommand PressurePass,12
+    RSPQ_DefineCommand PressureSolve,12
 RSPQ_EndOverlayHeader
 RSPQ_EmptySavedState
-    /* The pinned embed rule aligns blobs to 8 bytes. Pad the trailing saved
-       state so a subsequent overlay's CPU registration cannot cache its DMA
-       output line by reading the next blob's first instructions. */
     .quad 0
     .bss
     .align 4
-rows: .ds.b ROW_BYTES*3
-divrow: .ds.b ROW_BYTES*2
+rows: .ds.b ROW_BYTES*9
+rows_end:
+divrows: .ds.b ROW_BYTES*8
+divrows_end:
     .text
-
-/* a0=pressure physical address, a1=divergence address, a2=pass (0..7).
- * gp belongs to RSPQ. DMAExec clobbers at/t2 and adjusts s4; all transfers
- * here are aligned and synchronous. Other registers survive DMAExec.
- */
-PressurePass:
-    move s1,a0                 /* pressure base */
-    move s2,a1                 /* divergence cursor */
-    move s3,a2                 /* pass */
-    li s5,%lo(rows)            /* above */
-    li s6,%lo(rows)+ROW_BYTES  /* current */
-    li s7,%lo(rows)+ROW_BYTES*2 /* below */
-    li t0,ROW_BYTES-1
-    li t1,ROW_BYTES
-    li fp,1                    /* row y */
-    addiu s2,s2,ROW_BYTES
-    li v0,%lo(divrow)
-    li v1,%lo(divrow)+ROW_BYTES
-    move s0,s2
-    move s4,v0
-    jal DMAExec
-    li t2,DMA_IN
-    bnez s3,load_initial
-    addiu k0,s1,ROW_BYTES      /* pressure cursor */
-    /* First pass starts at zero regardless of old pressure/scratch contents. */
-    move t3,s5
-    addiu t4,s5,ROW_BYTES
-zero_above:
+/* a0=pressure, a1=divergence, a2=unused. DMAExec clobbers s0/s4/t0/t1/t2.
+ * s1=output cursor, s2=input cursor, s3=tick, s5=pass, s6/s7=current buffers,
+ * fp/k0=outer ring cursors, v0=row, v1=half-row loop count. */
+PressureSolve:
+    addiu s1,a0,ROW_BYTES
+    addiu s2,a1,ROW_BYTES
+    li s3,1
+    li fp,%lo(rows)+ROW_BYTES
+    li k0,%lo(divrows)+ROW_BYTES
+    /* First-pass pressure starts at zero regardless of previous commands. */
+    li t3,%lo(rows)
+    li t4,%lo(rows_end)
+zero_rows:
     sw zero,0(t3)
     addiu t3,t3,4
-    bne t3,t4,zero_above
+    bne t3,t4,zero_rows
     nop
-    b row_loop
+wave_tick:
+    slti t3,s3,32
+    beqz t3,wave_loaded
     nop
-load_initial:
-    move s0,s1
-    move s4,s5
+    move s0,s2
+    move s4,k0
+    li t0,ROW_BYTES-1
+    li t1,ROW_BYTES
     jal DMAExec
     li t2,DMA_IN
-    move s0,k0
-    move s4,s6
-    jal DMAExec
-    li t2,DMA_IN
-row_loop:
-    beqz s3,load_divergence
+    addiu s2,s2,ROW_BYTES
+wave_loaded:
+    move s5,zero
+    move s6,fp
+    move s7,k0
+wave_pass:
+    subu v0,s3,s5
+    blez v0,wave_next_tick
     nop
-    addiu s0,k0,ROW_BYTES
-    move s4,s7
-    jal DMAExec
-    li t2,DMA_IN
-load_divergence:
-    /* The current row was loaded at entry or prefetched by the prior row.
-       That row's synchronous output DMA also completed the earlier prefetch. */
-    li t3,LAST_ROW
-    beq fp,t3,div_ready
-    addiu s0,s2,ROW_BYTES
-    move s4,v1
-    jal DMAExec
-    li t2,DMA_IN_ASYNC
-div_ready:
-    move s4,v0
-    li t3,4                    /* x byte offset */
-    beqz s3,first_cells
-    move t4,zero               /* zero initial left on first pass */
+    slti t3,v0,32
+    beqz t3,wave_next_pass
+    nop
+    addiu k1,s6,-ROW_BYTES
+    li t3,%lo(rows)
+    sltu t4,k1,t3
+    beqz t4,above_ready
+    nop
+    li k1,%lo(rows_end)-ROW_BYTES
+above_ready:
+    addiu a2,s6,ROW_BYTES
+    li t3,%lo(rows_end)
+    bne a2,t3,below_ready
+    nop
+    li a2,%lo(rows)
+below_ready:
+    /* Neumann top/bottom copy equals this row's prior-pass value. Each
+       current[x] is read before being overwritten, exactly like that copy. */
+    li t3,1
+    bne v0,t3,not_top
+    nop
+    move k1,s6
+not_top:
+    li t3,31
+    bne v0,t3,not_bottom
+    nop
+    move a2,s6
+not_bottom:
+    addiu a0,s6,4
+    addiu a1,s7,4
+    addiu k1,k1,4
+    addiu a2,a2,4
+    li v1,2
+    beqz s5,first_half
+    move t4,zero
     lw t4,0(s6)
-    /* A whole row is small enough to unroll in IMEM. Constant offsets avoid
-       four address additions and loop bookkeeping for every pressure cell. */
-    .set cell,4
-    .rept 46
-    lw t5,cell(s4)
-    lw t6,cell(s5)
-    lw t7,cell+4(s6)
-    lw t8,cell(s7)
+normal_half:
+    .set cell,0
+    .rept 23
+    lw t5,cell(a1)
+    lw t6,cell(k1)
+    lw t7,cell+4(a0)
+    lw t8,cell(a2)
     addu t5,t5,t6
     addu t7,t7,t8
     addu t5,t5,t7
     addu t4,t4,t5
     sra t4,t4,2
-    sw t4,cell(s6)
+    sw t4,cell(a0)
     .set cell,cell+4
     .endr
+    addiu a0,a0,92
+    addiu a1,a1,92
+    addiu k1,k1,92
+    addiu v1,v1,-1
+    bnez v1,normal_half
+    addiu a2,a2,92
     b row_done
     nop
-first_cells:
-    /* As on later passes, constant offsets remove scalar address arithmetic.
-       The initial pressure is zero, so only divergence, above and left enter. */
-    .set cell,4
-    .rept 46
-    lw t5,cell(s4)
-    lw t6,cell(s5)
+first_half:
+    /* Initial current/below pressure is zero, including the left edge. */
+    .set cell,0
+    .rept 23
+    lw t5,cell(a1)
+    lw t6,cell(k1)
     addu t5,t5,t6
     addu t4,t4,t5
     sra t4,t4,2
-    sw t4,cell(s6)
+    sw t4,cell(a0)
     .set cell,cell+4
     .endr
+    addiu a0,a0,92
+    addiu a1,a1,92
+    addiu v1,v1,-1
+    bnez v1,first_half
+    addiu k1,k1,92
 row_done:
-    /* Edge copies can happen now: later rows use only interior neighbours. */
     lw t5,4(s6)
     sw t4,ROW_BYTES-4(s6)
     sw t5,0(s6)
-    move s0,k0
+    li t3,7
+    bne s5,t3,wave_next_pass
+    nop
+    move s0,s1
     move s4,s6
+    li t0,ROW_BYTES-1
+    li t1,ROW_BYTES
     jal DMAExec
     li t2,DMA_OUT
     li t3,1
-    bne fp,t3,not_top
+    bne v0,t3,store_bottom
     nop
-    move s0,s1
+    addiu s0,s1,-ROW_BYTES
     jal DMAExec
     li t2,DMA_OUT
-not_top:
-    li t3,LAST_ROW
-    bne fp,t3,next_row
+store_bottom:
+    li t3,31
+    bne v0,t3,store_done
     nop
-    addiu s0,k0,ROW_BYTES
+    addiu s0,s1,ROW_BYTES
     jal DMAExec
     li t2,DMA_OUT
+store_done:
+    addiu s1,s1,ROW_BYTES
+wave_next_pass:
+    addiu s5,s5,1
+    li t3,8
+    beq s5,t3,wave_next_tick
+    nop
+    addiu s6,s6,-ROW_BYTES
+    li t3,%lo(rows)
+    sltu t4,s6,t3
+    beqz t4,current_ready
+    nop
+    li s6,%lo(rows_end)-ROW_BYTES
+current_ready:
+    addiu s7,s7,-ROW_BYTES
+    li t3,%lo(divrows)
+    sltu t4,s7,t3
+    beqz t4,wave_pass
+    nop
+    b wave_pass
+    li s7,%lo(divrows_end)-ROW_BYTES
+wave_next_tick:
+    addiu s3,s3,1
+    li t3,39
+    beq s3,t3,done
+    nop
+    addiu fp,fp,ROW_BYTES
+    li t3,%lo(rows_end)
+    bne fp,t3,pressure_cursor_ready
+    nop
+    li fp,%lo(rows)
+pressure_cursor_ready:
+    addiu k0,k0,ROW_BYTES
+    li t3,%lo(divrows_end)
+    bne k0,t3,wave_tick
+    nop
+    b wave_tick
+    li k0,%lo(divrows)
+done:
     j RSPQ_Loop
     nop
-next_row:
-    move t3,v0
-    move v0,v1
-    move v1,t3
-    move t3,s5
-    move s5,s6
-    move s6,s7
-    move s7,t3
-    addiu fp,fp,1
-    addiu k0,k0,ROW_BYTES
-    b row_loop
-    addiu s2,s2,ROW_BYTES

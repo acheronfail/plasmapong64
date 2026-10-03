@@ -44,12 +44,16 @@ typedef enum { FLOW_NONE, FLOW_PARTICLES, FLOW_TAILS, FLOW_SPEED, FLOW_COUNT } F
 #define FLOW_SAMPLE_TICKS (GAME_HZ/15)
 #define FLOW_HISTORY (4*FLOW_SAMPLE_TICKS+1)
 /* Circular history preserves the 267ms trail without copying every sample. */
-typedef struct { float x[FLOW_HISTORY],y[FLOW_HISTORY]; unsigned life; } FlowTracer;
+/* Paired coordinates keep both components in one cache line. History is
+   time-major so simulation and rendering stream adjacent tracers. */
+typedef struct { float x,y; } FlowPosition;
+typedef struct { unsigned life; } FlowTracer;
 typedef struct { float x,y,u,v; } MenuCurrent;
 typedef struct {
     Fluid fluid;
     FlowEffect flow_effect;
     FlowTracer tracers[FLOW_TRACERS];
+    _Alignas(16) FlowPosition tracer_history[FLOW_HISTORY][FLOW_TRACERS];
     uint32_t tracer_rng;
     unsigned tracer_head;
     MenuCurrent menu_current[3];

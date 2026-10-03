@@ -53,6 +53,14 @@ with args.log.open('w') as log:
                         match = re.search(r'Fluid profile: (\w+) (\d+) us', line)
                     if match:
                         measurements.setdefault(match[1], []).append(int(match[2]))
+                    draw = re.search(r'Draw profile: pixels (\d+) us, texture (\d+) us, wait (\d+) us, other (\d+) us/frame', line)
+                    if draw:
+                        for name, value in zip(('draw_pixels', 'draw_texture', 'draw_wait', 'draw_other'), draw.groups()):
+                            measurements.setdefault(name, []).append(int(value))
+                    flow = re.search(r'Flow draw: prepare (\d+) us, emit (\d+) us/frame', line)
+                    if flow:
+                        for name, value in zip(('flow_prepare', 'flow_emit'), flow.groups()):
+                            measurements.setdefault(name, []).append(int(value))
                     shown = re.search(r'Presentation: (\d+) new / (\d+) VI, (\d+) repeats, longest (\d+) VI gap', line)
                     if shown:
                         presentation.append(dict(zip(('frames', 'refreshes', 'repeats', 'longest_gap_vi'), map(int, shown.groups()))))
@@ -68,6 +76,7 @@ with args.log.open('w') as log:
                 required.append('simulation average')
             if 'velocity_advection' in measurements and not args.draw_only:
                 required.append('sample')
+                required.append('flow_emit')
             if (all(len(measurements.get(k, [])) >= args.windows for k in required)
                     and (not presentation or len(presentation) >= args.windows)):
                 break

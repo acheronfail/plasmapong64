@@ -1,8 +1,11 @@
 #ifndef FLUID_DYE_FIXED_H
 #define FLUID_DYE_FIXED_H
 #include "fluid.h"
-/* Big-endian halfwords on N64; source byte offset, then Q15 fractions. */
-typedef struct { uint16_t offset,tx,ty; } FluidDyeTrace;
+/* Eight-cell blocks match RSP vector loads/stores. Source byte offsets and
+   Q15 fractions retain the same values; only their memory order changes. */
+enum { FLUID_TRACE_LANES=8, FLUID_TRACE_BATCHES=FN/FLUID_TRACE_LANES };
+typedef struct { uint16_t offset[8],tx[8],ty[8]; } FluidDyeTrace;
+_Static_assert(FN%FLUID_TRACE_LANES==0,"complete trace vectors");
 /* Finite dye in [0,3], finite velocities, non-overlapping buffers. */
 void fluid_dye_pack(FluidDyeFixed *restrict packed,FluidDyeTrace *restrict trace,
         const FluidDye *restrict ink,const FluidVelocity *restrict velocity,float grid_dt);

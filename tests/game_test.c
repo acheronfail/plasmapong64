@@ -60,33 +60,35 @@ static void flow_tests(void) {
     assert(!memcmp(&a.fluid,&b.fluid,sizeof(Fluid)) && a.bx==b.bx && a.by==b.by);
     assert(a.menu_rng==b.menu_rng && a.arcade.rng==b.arcade.rng);
     a.phase=PAUSED; FlowTracer saved[FLOW_TRACERS]; memcpy(saved,a.tracers,sizeof(saved));
+    FlowPosition saved_history[FLOW_HISTORY][FLOW_TRACERS]; memcpy(saved_history,a.tracer_history,sizeof(saved_history));
     game_step(&a,input); assert(!memcmp(saved,a.tracers,sizeof(saved)));
+    assert(!memcmp(saved_history,a.tracer_history,sizeof(saved_history)));
     game_init(&a); a.flow_effect=FLOW_TAILS; game_flow_step(&a);
     for(int i=0;i<FN;i++) fluid_velocity(&a.fluid)->u[i]=fluid_flow_encode(30);
-    a.tracers[0].x[a.tracer_head]=100; a.tracers[0].y[a.tracer_head]=100;
-    game_flow_step(&a); assert(fabsf(a.tracers[0].x[a.tracer_head]-(100+30*STEP))<.001f && a.tracers[0].x[(a.tracer_head+1)%FLOW_HISTORY]==100);
+    a.tracer_history[a.tracer_head][0].x=100; a.tracer_history[a.tracer_head][0].y=100;
+    game_flow_step(&a); assert(fabsf(a.tracer_history[a.tracer_head][0].x-(100+30*STEP))<.001f && a.tracer_history[(a.tracer_head+1)%FLOW_HISTORY][0].x==100);
     for(int i=1;i<FLOW_HISTORY-1;i++) game_flow_step(&a);
-    assert(fabsf(a.tracers[0].x[a.tracer_head]-(100+(FLOW_HISTORY-1)*30*STEP))<.001f && a.tracers[0].x[(a.tracer_head+FLOW_HISTORY-1)%FLOW_HISTORY]==100);
+    assert(fabsf(a.tracer_history[a.tracer_head][0].x-(100+(FLOW_HISTORY-1)*30*STEP))<.001f && a.tracer_history[(a.tracer_head+FLOW_HISTORY-1)%FLOW_HISTORY][0].x==100);
     a.tracers[0].life=0; game_flow_step(&a);
     for(int i=1;i<FLOW_HISTORY;i++) {
-        assert(a.tracers[0].x[i]==a.tracers[0].x[0] && a.tracers[0].y[i]==a.tracers[0].y[0]);
+        assert(a.tracer_history[i][0].x==a.tracer_history[0][0].x && a.tracer_history[i][0].y==a.tracer_history[0][0].y);
     }
     /* Every ring slot must retain its age across several cursor wraps. */
-    for(int j=0;j<FLOW_HISTORY;j++) a.tracers[0].x[j]=a.tracers[0].y[j]=100;
+    for(int j=0;j<FLOW_HISTORY;j++) a.tracer_history[j][0].x=a.tracer_history[j][0].y=100;
     a.tracers[0].life=4*FLOW_HISTORY;
     for(int step=1;step<=3*FLOW_HISTORY;step++) {
         game_flow_step(&a);
         for(int age=0;age<FLOW_HISTORY;age++) {
             unsigned slot=(a.tracer_head+age)%FLOW_HISTORY;
             float expected=100+(step>age?step-age:0)*30*STEP;
-            assert(fabsf(a.tracers[0].x[slot]-expected)<.001f);
-            assert(a.tracers[0].y[slot]==100);
+            assert(fabsf(a.tracer_history[slot][0].x-expected)<.001f);
+            assert(a.tracer_history[slot][0].y==100);
         }
     }
     for(int i=0;i<400;i++) game_flow_step(&a);
     for(int i=0;i<FLOW_TRACERS;i++) if(a.tracers[i].life) {
-        assert(a.tracers[i].x[a.tracer_head]>=0 && a.tracers[i].x[a.tracer_head]<ARENA_W);
-        assert(a.tracers[i].y[a.tracer_head]>=0 && a.tracers[i].y[a.tracer_head]<ARENA_H);
+        assert(a.tracer_history[a.tracer_head][i].x>=0 && a.tracer_history[a.tracer_head][i].x<ARENA_W);
+        assert(a.tracer_history[a.tracer_head][i].y>=0 && a.tracer_history[a.tracer_head][i].y<ARENA_H);
     }
     fluid_init(&a.fluid); uint32_t dark=fluid_color(&a.fluid,0);
     assert(fluid_speed_color(&a.fluid,0)==dark);

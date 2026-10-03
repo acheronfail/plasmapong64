@@ -18,8 +18,8 @@ void fluid_pressure_rsp(int32_t *pressure,const int32_t *divergence) {
        These buffers own complete cache lines and cannot overlap. */
     data_cache_hit_writeback(divergence,FN*sizeof(*divergence));
     data_cache_hit_invalidate(pressure,FN*sizeof(*pressure));
-    for(unsigned pass=0;pass<8;pass++)
-        rspq_write(overlay_id,0,PhysicalAddr(pressure),PhysicalAddr(divergence),pass);
+    /* All eight dependency-preserving passes stay inside one DMEM wavefront. */
+    rspq_write(overlay_id,0,PhysicalAddr(pressure),PhysicalAddr(divergence),0);
     rspq_syncpoint_t done=rspq_syncpoint_new();
     rspq_flush();
     rspq_syncpoint_wait(done);

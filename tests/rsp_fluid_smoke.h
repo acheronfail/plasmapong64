@@ -5,7 +5,7 @@ static void rsp_fluid_smoke(void) {
     uint32_t seed=0x12345678;
     const int32_t limit=32760*4096,guard=0x12345678;
     uint64_t cpu_ticks=0,rsp_ticks=0;
-    for(unsigned trial=0;trial<64;trial++) {
+    for(unsigned trial=0;trial<128;trial++) {
         for(unsigned k=0;k<FN+8;k++) input[k]=output[k]=guard;
         for(unsigned k=0;k<FN;k++) {
             seed=seed*1664525u+1013904223u;
@@ -16,6 +16,12 @@ static void rsp_fluid_smoke(void) {
             if(trial==3) d=(k%2)?limit:-limit;
             if(trial>=4 && trial<8) d=(k==(trial-4)*FW+1)?limit:0;
             if(trial>=8 && trial<32) d/=128;
+            /* Impulses at both interior side edges of every row exercise
+               wavefront wraparound and the top/bottom copied boundaries. */
+            if(trial>=64) {
+                unsigned row=1+(trial-64)%31, column=(trial&1)?1:FW-2;
+                d=k==row*FW+column?((trial&2)?limit:-limit):0;
+            }
             input[k+4]=d;
             expected[k]=guard;
         }
@@ -47,7 +53,7 @@ static void rsp_fluid_smoke(void) {
             assert(output[k]==guard && output[FN+4+k]==guard);
         }
     }
-    debugf("RSP pressure PASS: 64 bit-exact fields, DMA guards, overlay switches; CPU %llu us, RSP %llu us per solve\n",
-        (unsigned long long)(TIMER_MICROS_LL(cpu_ticks)/64),
-        (unsigned long long)(TIMER_MICROS_LL(rsp_ticks)/64));
+    debugf("RSP pressure PASS: 128 bit-exact fields, DMA guards, overlay switches; CPU %llu us, RSP %llu us per solve\n",
+        (unsigned long long)(TIMER_MICROS_LL(cpu_ticks)/128),
+        (unsigned long long)(TIMER_MICROS_LL(rsp_ticks)/128));
 }

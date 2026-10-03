@@ -1,14 +1,15 @@
 /* Signed halfword channels (Q13 dye or Q4 velocity), Q15 fractions.
  * Sample differences must fit signed 16-bit lanes. One channel per command.
- * A complete 3168-byte source grid fits beside 24 traces and 24 outputs.
+ * A complete 3168-byte source grid fits beside 48 traces; their consumed
+ * storage is reused for the 48 outputs.
  * Scratch is reloaded on every command, including after overlay switches.
  */
 #include <rsp_queue.inc>
     .set noreorder
     .set at
 #define GRID_BYTES (48*33*2)
-#define TRACE_BYTES (24*6)
-#define OUT_BYTES (24*2)
+#define TRACE_BYTES (48*6)
+#define OUT_BYTES (48*2)
     .data
 RSPQ_BeginOverlayHeader
     RSPQ_DefineCommand DyeChannel,16
@@ -22,7 +23,9 @@ RSPQ_EmptySavedState
     .align 4
 grid: .ds.b GRID_BYTES
 traces: .ds.b TRACE_BYTES
-output: .ds.b OUT_BYTES
+    /* Each eight-lane batch consumes 48 trace bytes before writing 16 output
+       bytes at the front. Output never reaches an unread trace. */
+    .set output,traces
     .text
 /* a0=source, a1=trace, a2=output, a3=rounding<<16 | decay Q15.
  * DMAExec uses s0/s4/t0/t1/t2; gp is reserved by RSPQ. */
@@ -30,7 +33,7 @@ DyeChannel:
     move s1,a1
     move s2,a2
     andi s3,a3,65535
-    li s5,66                  /* 1584 / 24 chunks */
+    li s5,33                  /* 1584 / 48 chunks */
     sll t3,s3,1               /* unsigned Q16 decay; unity bypasses multiply */
     mtc2 t3,$v07.e0
     srl t3,a3,16
@@ -52,21 +55,21 @@ chunk:
     li t2,DMA_IN
     li s6,%lo(traces)
     li s7,%lo(output)
-    li fp,3                   /* three vectors per DMA chunk */
+    li fp,6                   /* six vectors per DMA chunk */
 batch:
     /* Arbitrary gathers stay scalar-addressed; interpolation is eight-wide. */
     .set lane,0
     .rept 8
-    lhu t3,lane*6(s6)
+    lhu t3,lane*2(s6)
     addiu t3,t3,%lo(grid)
     lsv $v01,lane*2,0,t3
     lsv $v02,lane*2,2,t3
     lsv $v03,lane*2,96,t3
     lsv $v04,lane*2,98,t3
-    lsv $v05,lane*2,lane*6+2,s6
-    lsv $v06,lane*2,lane*6+4,s6
     .set lane,lane+1
     .endr
+    lqv $v05,16,s6
+    lqv $v06,32,s6
     vsub $v02,$v02,$v01
     vsub $v04,$v04,$v03
     vmulf $v02,$v02,$v05

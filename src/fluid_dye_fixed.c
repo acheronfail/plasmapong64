@@ -7,7 +7,7 @@
 #include <string.h>
 _Static_assert(sizeof(float)==sizeof(uint32_t) && FLT_RADIX==2 && FLT_MANT_DIG==24 && FLT_MAX_EXP==128,
         "trace coordinates use IEEE binary32");
-_Static_assert(sizeof(FluidDyeTrace)==6,"RSP trace stride");
+_Static_assert(sizeof(FluidDyeTrace)==48,"RSP trace stride");
 _Static_assert((-1>>1)==-1,"fixed-point reference requires arithmetic shifts");
 static inline float trace_coord(float value,float upper) {
     uint32_t bits,limit;
@@ -25,8 +25,9 @@ void fluid_dye_trace(FluidDyeTrace *restrict trace,const FluidVelocity *restrict
             float px=trace_coord(fx-grid_dt*velocity->u[k],FW-1.001f);
             float py=trace_coord(fy-grid_dt*velocity->v[k],FH-1.001f);
             int ix=(int)px,iy=(int)py;
-            trace[k]=(FluidDyeTrace){(iy*FW+ix)*2,
-                (uint16_t)((px-ix)*DYE_WEIGHT_SCALE),(uint16_t)((py-iy)*DYE_WEIGHT_SCALE)};
+            trace[k/8].offset[k%8]=(iy*FW+ix)*2;
+            trace[k/8].tx[k%8]=(uint16_t)((px-ix)*DYE_WEIGHT_SCALE);
+            trace[k/8].ty[k%8]=(uint16_t)((py-iy)*DYE_WEIGHT_SCALE);
         }
     }
 }
@@ -56,10 +57,10 @@ static int lerp(int a,int b,unsigned weight) {
 static void channel(int16_t *restrict next,const int16_t *restrict ink,
         const FluidDyeTrace *restrict trace,unsigned decay,unsigned rounding) {
     for(int k=0;k<FN;k++) {
-        int j=trace[k].offset/2;
-        int top=lerp(ink[j],ink[j+1],trace[k].tx);
-        int bottom=lerp(ink[j+FW],ink[j+FW+1],trace[k].tx);
-        int value=lerp(top,bottom,trace[k].ty);
+        int j=trace[k/8].offset[k%8]/2;
+        int top=lerp(ink[j],ink[j+1],trace[k/8].tx[k%8]);
+        int bottom=lerp(ink[j+FW],ink[j+FW+1],trace[k/8].tx[k%8]);
+        int value=lerp(top,bottom,trace[k/8].ty[k%8]);
         /* A rotating rounding threshold avoids both permanent faint residues
            and the downward bias of truncating every frame. Product fits int32. */
         next[k]=(int16_t)((value*(int)decay*2+(int)rounding)>>16);
@@ -74,7 +75,7 @@ void fluid_dye_fixed_reference(FluidDyeFixed *restrict next,const FluidDyeFixed 
 }
 void fluid_advect_ink_reference(FluidDyeFixed *next,const FluidDyeFixed *ink,
         const FluidFlow *velocity,float grid_dt,float decay,float gold_decay,unsigned rounding) {
-    static _Alignas(16) FluidDyeTrace trace[FN];
+    static _Alignas(16) FluidDyeTrace trace[FLUID_TRACE_BATCHES];
 #ifdef PLASMAPONG_VELOCITY_FIXED
     fluid_velocity_trace(trace,velocity,grid_dt);
 #else

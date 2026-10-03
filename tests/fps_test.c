@@ -28,11 +28,11 @@ int main(void) {
         assert(!g.bat[0].cooldown_ticks && g.bat[0].release_required);
         ready((FrameRate)fps); g.flow_effect=FLOW_TAILS;
         for(int i=0;i<FN;i++) fluid_velocity(&g.fluid)->u[i]=fluid_flow_encode(30);
-        for(int j=0;j<FLOW_HISTORY;j++) g.tracers[0].x[j]=g.tracers[0].y[j]=100;
+        for(int j=0;j<FLOW_HISTORY;j++) g.tracer_history[j][0].x=g.tracer_history[j][0].y=100;
         g.tracers[0].life=1000;
         for(int i=0;i<fps*4/15;i++) game_flow_step(&g);
-        assert(fabsf(g.tracers[0].x[g.tracer_head]-108)<.001f);
-        assert(g.tracers[0].x[(g.tracer_head+FLOW_HISTORY-1)%FLOW_HISTORY]==100);
+        assert(fabsf(g.tracer_history[g.tracer_head][0].x-108)<.001f);
+        assert(g.tracer_history[(g.tracer_head+FLOW_HISTORY-1)%FLOW_HISTORY][0].x==100);
         assert(g.tracers[0].life==984);
     }
     ready(FPS_60); g.phase=OPTIONS;

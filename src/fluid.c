@@ -173,19 +173,48 @@ static void player_ink(FluidInk *ink,int k,float amount,int player) {
         ink_add(&ink->red[k],amount*.65f,3);
     } else ink_add(player?&ink->red[k]:&ink->blue[k],amount,3);
 }
+/* Work in storage units on the fixed backend. Power-of-two scaling keeps
+   the original float operations and nearest rounding exactly equivalent,
+   while avoiding decode/encode and the redundant wider storage clamp. */
+static inline void force_add(FluidFlowValue *cell,float delta) {
+#ifdef PLASMAPONG_VELOCITY_FIXED
+    float value=*cell+delta;
+    if(value>420*VELOCITY_SCALE) *cell=420*VELOCITY_SCALE;
+    else if(value<-420*VELOCITY_SCALE) *cell=-420*VELOCITY_SCALE;
+    else *cell=(int16_t)(value+(value<0?-.5f:.5f));
+#else
+    *cell=clampf(*cell+delta,-420,420);
+#endif
+}
 void fluid_splat(Fluid *f,float x,float y,float radius,float u,float v,float dye,int player) {
     FluidFlow *velocity=fluid_velocity(f);
     FluidInk *ink_grid=fluid_dye(f);
     PROFILE_BEGIN();
     const float inv_radius2=1/(radius*radius);
+#ifdef PLASMAPONG_VELOCITY_FIXED
+    u*=VELOCITY_SCALE; v*=VELOCITY_SCALE;
+#endif
     int x0=(int)clampf((x-radius)/CELL,0,FW-1),x1=(int)clampf((x+radius)/CELL,0,FW-1);
     int y0=(int)clampf((y-radius)/CELL,0,FH-1),y1=(int)clampf((y+radius)/CELL,0,FH-1);
     for(int iy=y0;iy<=y1;iy++) for(int ix=x0;ix<=x1;ix++) {
         float dx=(ix+.5f)*CELL-x,dy=(iy+.5f)*CELL-y;
         float w=maxf(0,1-(dx*dx+dy*dy)*inv_radius2); w*=w;
         int k=iy*FW+ix;
-        velocity->u[k]=fluid_flow_encode(clampf(fluid_flow_decode(velocity->u[k])+u*w,-420,420));
-        velocity->v[k]=fluid_flow_encode(clampf(fluid_flow_decode(velocity->v[k])+v*w,-420,420));
+#ifdef PLASMAPONG_VELOCITY_FIXED
+        if(w==0) {
+            /* The bounding square extends outside the circular footprint.
+               Retain the original velocity and pigment clamps there, but
+               avoid converting an unchanged fixed-point value to float. */
+            const int limit=420*VELOCITY_SCALE;
+            int a=velocity->u[k],b=velocity->v[k];
+            velocity->u[k]=a<-limit?-limit:a>limit?limit:a;
+            velocity->v[k]=b<-limit?-limit:b>limit?limit:b;
+            player_ink(ink_grid,k,0,player);
+            continue;
+        }
+#endif
+        force_add(&velocity->u[k],u*w);
+        force_add(&velocity->v[k],v*w);
         player_ink(ink_grid,k,dye*w,player);
     }
     PROFILE_END(PROFILE_SPLAT);
