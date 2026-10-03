@@ -100,3 +100,11 @@ benchmark-confinement:
 # Cycle all four flow effects during scripted play with RDP validation.
 smoke-flow:
     ./tools/build-rom.sh -j4 SMOKE_FLOW=1 RDP_VALIDATE=1 ROM=plasmapong-flow-smoke BUILD_DIR=build/flow_smoke
+
+# Exact preparation/pressure/advection/confinement fixtures, then stage timings.
+benchmark-prepare:
+    ./tools/build-rom.sh -j4 SMOKE=1 FLUID_PROFILE=1 VELOCITY_TEST=1 DYE_TEST=1 RSP_TEST=1 CONFINEMENT_TEST=1 ROM=plasmapong-prepare-benchmark BUILD_DIR=build/prepare_benchmark
+
+# Include the final RSP/RDP completion wait in the drawing timer (diagnostic only).
+benchmark-complete:
+    ./tools/build-rom.sh -j4 SMOKE=1 DRAW_SYNC_PROFILE=1 ROM=plasmapong-complete-benchmark BUILD_DIR=build/complete_benchmark

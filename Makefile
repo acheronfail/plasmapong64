@@ -1,3 +1,4 @@
+PREPARE_RSP ?= 1
 FLUID_RSP ?= 1
 DYE_RSP ?= 1
 DYE_FIXED ?= $(DYE_RSP)
@@ -79,6 +80,11 @@ src += src/fluid_confinement_rsp.c
 rsp_obj += $(BUILD_DIR)/src/rsp_confinement.o
 N64_CFLAGS += -DPLASMAPONG_CONFINEMENT_RSP
 endif
+ifeq ($(PREPARE_RSP)$(VELOCITY_RSP),11)
+src += src/fluid_prepare_rsp.c
+rsp_obj += $(BUILD_DIR)/src/rsp_prepare.o
+N64_CFLAGS += -DPLASMAPONG_PREPARE_RSP
+endif
 ifeq ($(CONFINEMENT_TEST),1)
 ifneq ($(CONFINEMENT_FIXED),1)
 $(error CONFINEMENT_TEST=1 requires CONFINEMENT_FIXED=1)
@@ -109,6 +115,9 @@ ifneq ($(DYE_RSP),1)
 $(error DYE_TEST=1 requires DYE_RSP=1)
 endif
 N64_CFLAGS += -DPLASMAPONG_DYE_TEST
+endif
+ifeq ($(DRAW_SYNC_PROFILE),1)
+N64_CFLAGS += -DPLASMAPONG_DRAW_SYNC_PROFILE
 endif
 ifeq ($(FLUID_PROFILE),1)
 N64_CFLAGS += -DPLASMAPONG_FLUID_PROFILE

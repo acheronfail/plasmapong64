@@ -50,24 +50,36 @@ void sound_update(Sound *s,const Game *g) {
     if(g->sound_events&SOUND_WIN) trigger(s,pcm_win,COUNT(pcm_win),135,0);
 }
 void sound_render(Sound *s,int16_t *stereo,size_t frames) {
-    for(size_t frame=0;frame<frames;frame++) {
-        int left=0,right=0;
+    /* Mix a small cache-resident block voice-first. Inactive voices are tested
+       once per block rather than once per sample. Keep integer truncation,
+       gain ramps, loop positions and final saturation exactly unchanged. */
+    while(frames) {
+        size_t count=frames<64?frames:64;
+        int mix[64][2]={{0}};
         for(int i=0;i<SOUND_VOICES;i++) {
-            SoundVoice *v=&s->voice[i]; if(!v->pcm) continue;
-            if(v->gain<v->target) { v->gain+=12; if(v->gain>v->target) v->gain=v->target; }
-            if(v->gain>v->target) { v->gain-=12; if(v->gain<v->target) v->gain=v->target; }
-            if(!v->gain && !v->target) { if(!v->loop) v->pcm=NULL; continue; }
-            unsigned pos=v->position>>16;
-            int value=v->pcm[pos]*(v->gain>>8)/256;
-            left+=value*v->left/256; right+=value*v->right/256;
-            v->position+=s->step;
-            if((v->position>>16)>=v->length) {
-                if(v->loop) v->position-=(v->length-v->loop_start)<<16;
-                else v->pcm=NULL;
+            SoundVoice *v=&s->voice[i];
+            if(!v->pcm || (!v->gain && !v->target && v->loop)) continue;
+            for(size_t frame=0;frame<count && v->pcm;frame++) {
+                if(v->gain<v->target) { v->gain+=12; if(v->gain>v->target) v->gain=v->target; }
+                if(v->gain>v->target) { v->gain-=12; if(v->gain<v->target) v->gain=v->target; }
+                if(!v->gain && !v->target) { if(!v->loop) v->pcm=NULL; continue; }
+                unsigned pos=v->position>>16;
+                int value=v->pcm[pos]*(v->gain>>8)/256;
+                mix[frame][0]+=value*v->left/256;
+                mix[frame][1]+=value*v->right/256;
+                v->position+=s->step;
+                if((v->position>>16)>=v->length) {
+                    if(v->loop) v->position-=(v->length-v->loop_start)<<16;
+                    else v->pcm=NULL;
+                }
             }
         }
-        /* Saturating output; modest loop gains leave headroom for impacts. */
-        stereo[frame*2]=(int16_t)(left<-32767?-32767:left>32767?32767:left);
-        stereo[frame*2+1]=(int16_t)(right<-32767?-32767:right>32767?32767:right);
+        for(size_t frame=0;frame<count;frame++) {
+            int left=mix[frame][0],right=mix[frame][1];
+            stereo[frame*2]=(int16_t)(left<-32767?-32767:left>32767?32767:left);
+            stereo[frame*2+1]=(int16_t)(right<-32767?-32767:right>32767?32767:right);
+        }
+        stereo+=count*2;
+        frames-=count;
     }
 }

@@ -7,11 +7,17 @@
 #include "sound.h"
 #include "save.h"
 #include "fluid_profile.h"
+#ifdef PLASMAPONG_PREPARE_RSP
+#include "fluid_velocity_fixed.h"
+#endif
 #ifdef PLASMAPONG_CONFINEMENT_TEST
 #include "../tests/confinement_cases.h"
 #endif
 #ifdef PLASMAPONG_VELOCITY_TEST
 #include "../tests/velocity_cases.h"
+#ifdef PLASMAPONG_PREPARE_RSP
+#include "../tests/prepare_cases.h"
+#endif
 #endif
 #ifdef PLASMAPONG_DYE_TEST
 #include "../tests/dye_cases.h"
@@ -32,6 +38,7 @@ static Game game;
 static Sound sound;
 #ifdef PLASMAPONG_FLUID_PROFILE
 static uint64_t audio_ticks;
+static uint64_t pixel_ticks, texture_ticks, wait_draw_ticks;
 static unsigned audio_frames;
 #endif
 static void fill_audio(short *buffer,size_t frames) {
@@ -48,12 +55,25 @@ static rspq_block_t *ink_blit;
 static float ink_x,ink_y,ink_w,ink_h;
 static bool fill_mode;
 static uint32_t fill_color;
+/* Bounded text command cache. Entries used this frame cannot be evicted;
+   frame-start rspq_wait guarantees older entries are no longer in flight. */
+static struct {
+    rspq_block_t *block;
+    float x,y;
+    int style;
+    unsigned frame;
+    char text[64];
+} text_cache[32];
+static unsigned render_frame=1;
+static bool recording_static;
 static rspq_block_t *static_draw[DRAW_STATIC_COUNT];
 void draw_static(unsigned id,void (*draw)(void)) {
     assert(id<DRAW_STATIC_COUNT);
     fill_mode=false;
     if(!static_draw[id]) {
+        recording_static=true;
         rspq_block_begin(); draw(); static_draw[id]=rspq_block_end();
+        recording_static=false;
     }
     rspq_block_run(static_draw[id]);
     fill_mode=false;
@@ -71,7 +91,32 @@ void label(float x,float y,int style,const char *s) {
     /* The built-in bitmap font has integer advances. Centering can put its
        origin on a half pixel, where RDP coverage/point sampling clips strokes.
        Snap every text origin, including shadows and edge-aligned labels. */
-    rdpq_text_print(&(rdpq_textparms_t){.style_id=style},1,roundf(x),roundf(y),s);
+    x=roundf(x); y=roundf(y);
+    if(!recording_static && strlen(s)<sizeof(text_cache[0].text)) {
+        int oldest=-1;
+        for(unsigned i=0;i<sizeof(text_cache)/sizeof(text_cache[0]);i++) {
+            if(text_cache[i].block && text_cache[i].x==x && text_cache[i].y==y &&
+                    text_cache[i].style==style && !strcmp(text_cache[i].text,s)) {
+                text_cache[i].frame=render_frame;
+                rspq_block_run(text_cache[i].block);
+                return;
+            }
+            if(text_cache[i].frame!=render_frame &&
+                    (oldest<0 || text_cache[i].frame<text_cache[oldest].frame)) oldest=(int)i;
+        }
+        if(oldest>=0) {
+            if(text_cache[oldest].block) rspq_block_free(text_cache[oldest].block);
+            text_cache[oldest].x=x; text_cache[oldest].y=y;
+            text_cache[oldest].style=style; text_cache[oldest].frame=render_frame;
+            strcpy(text_cache[oldest].text,s);
+            rspq_block_begin();
+            rdpq_text_print(&(rdpq_textparms_t){.style_id=style},1,x,y,s);
+            text_cache[oldest].block=rspq_block_end();
+            rspq_block_run(text_cache[oldest].block);
+            return;
+        }
+    }
+    rdpq_text_print(&(rdpq_textparms_t){.style_id=style},1,x,y,s);
 }
 void label_edge(float x,float y,int style,const char *s,bool right) {
     const rdpq_font_t *font=rdpq_text_get_font(1);
@@ -101,11 +146,27 @@ void draw_fluid(const Fluid *f,float x,float y,float width,float height,bool spe
     fill_mode=false;
     /* Generate all pixels together so bank selection and call overhead stay
        outside the cell loop. Preserve the padded RGBA32 upload layout. */
+#ifdef PLASMAPONG_FLUID_PROFILE
+    uint64_t pixel_begin=get_ticks();
+#endif
     if(speed) {
-        fluid_speed_pixels(f,ink.buffer,ink.stride/sizeof(uint32_t));
+        /* CPU writers use cached stores, then expose complete rows to RDP. */
+        void *pixels=CachedAddr(ink.buffer);
+        fluid_speed_pixels(f,pixels,ink.stride/sizeof(uint32_t));
+        data_cache_hit_writeback(pixels,ink.stride*FH);
     } else {
-        fluid_pixels(f,ink.buffer,ink.stride/sizeof(uint32_t));
+#ifdef PLASMAPONG_PREPARE_RSP
+        fluid_pixels_rsp(f,ink.buffer,ink.stride/sizeof(uint32_t));
+#else
+        void *pixels=CachedAddr(ink.buffer);
+        fluid_pixels(f,pixels,ink.stride/sizeof(uint32_t));
+        data_cache_hit_writeback(pixels,ink.stride*FH);
+#endif
     }
+#ifdef PLASMAPONG_FLUID_PROFILE
+    pixel_ticks+=get_ticks()-pixel_begin;
+    uint64_t texture_begin=get_ticks();
+#endif
     /* Geometry and texture address are constant until switching menu/court.
        Record upload/tiling commands once; pixel contents remain dynamic. The
        frame-start wait also makes freeing the previous block safe. */
@@ -119,6 +180,9 @@ void draw_fluid(const Fluid *f,float x,float y,float width,float height,bool spe
         ink_blit=rspq_block_end();
     }
     rspq_block_run(ink_blit);
+#ifdef PLASMAPONG_FLUID_PROFILE
+    texture_ticks+=get_ticks()-texture_begin;
+#endif
 }
 int main(void) {
     debug_init_isviewer(); debug_init_emulog(); timer_init(); joypad_init();
@@ -143,6 +207,9 @@ int main(void) {
 #endif
 #ifdef PLASMAPONG_VELOCITY_TEST
     velocity_cases();
+#ifdef PLASMAPONG_PREPARE_RSP
+    prepare_cases();
+#endif
 #endif
 #ifdef PLASMAPONG_CONFINEMENT_TEST
     confinement_cases();
@@ -236,10 +303,18 @@ int main(void) {
         /* Finish the previous frame before overwriting its shared texture or
            freeing a blit block. The simulation above can run alongside RDP. */
         rspq_wait();
+#ifdef PLASMAPONG_FLUID_PROFILE
+        wait_draw_ticks+=get_ticks()-draw_begin;
+#endif
+        render_frame++;
         fill_mode=false;
         rdpq_attach(frame,NULL);
         ui_draw(&game);
         rdpq_detach_show();
+#ifdef PLASMAPONG_DRAW_SYNC_PROFILE
+        /* Diagnostic only: include RSP/RDP completion, not just submission. */
+        rspq_wait();
+#endif
         draw_ticks+=get_ticks()-draw_begin;
         if(++draw_frames==150) {
             debugf("Plasma Pong 64: draw average %llu us/frame\n",
@@ -250,6 +325,12 @@ int main(void) {
                 frame_steps,draw_frames);
             frame_window=window_end; frame_steps=0;
 #ifdef PLASMAPONG_FLUID_PROFILE
+            debugf("Draw profile: pixels %llu us, texture %llu us, wait %llu us, other %llu us/frame\n",
+                (unsigned long long)TIMER_MICROS_LL(pixel_ticks)/draw_frames,
+                (unsigned long long)TIMER_MICROS_LL(texture_ticks)/draw_frames,
+                (unsigned long long)TIMER_MICROS_LL(wait_draw_ticks)/draw_frames,
+                (unsigned long long)TIMER_MICROS_LL(draw_ticks-pixel_ticks-texture_ticks-wait_draw_ticks)/draw_frames);
+            pixel_ticks=texture_ticks=wait_draw_ticks=0;
             disable_interrupts();
             uint64_t audio_time=audio_ticks; unsigned samples=audio_frames;
             audio_ticks=0; audio_frames=0;

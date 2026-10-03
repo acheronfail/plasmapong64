@@ -52,7 +52,11 @@ void fluid_velocity_fixed_reference(FluidVelocityFixed *next,const FluidVelocity
 void fluid_advect_velocity_fixed(FluidVelocityFixed *next,const FluidVelocityFixed *velocity,
         float grid_dt,float decay,unsigned rounding) {
     static _Alignas(16) FluidDyeTrace trace[FN];
+#ifdef PLASMAPONG_PREPARE_RSP
+    fluid_velocity_trace_rsp(trace,velocity,grid_dt);
+#else
     fluid_velocity_trace(trace,velocity,grid_dt);
+#endif
     unsigned d=fluid_dye_decay(decay);
 #ifdef PLASMAPONG_VELOCITY_RSP
     unsigned decays[2]={d,d};

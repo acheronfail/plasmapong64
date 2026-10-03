@@ -948,3 +948,100 @@ cost measured about 3.6 ms/frame in Ares with RDP validation enabled, versus abo
 13.4 ms with contours. The 68-second validation run maintained approximately
 33.3 ms frame intervals with no RDP validation errors; hardware timing is untested.
 The log is `build/flow-effects/spectrum-emulator.log`.
+
+### Further RSP and renderer optimization (2026-10-03)
+
+The default still updates and submits frames at **30 Hz**. Grid resolution,
+pressure iterations, numerical formats, physics, audio samples and visual effects
+are unchanged. `PREPARE_RSP=1` adds a fourth overlay when RSP velocity is enabled;
+`PREPARE_RSP=0` retains CPU preparation for comparison. Use distinct build
+directories when changing flags.
+
+- Eight-lane RSP backtraces preserve the CPU's integer arithmetic exactly,
+  including the final-cell fractional clamp. The initial scalar RSP prototype
+  saved almost no simulation time and was replaced by this vector version.
+- RSP divergence produces the same interior Q12 words. RSP dye-to-RGBA32
+  conversion preserves every output color and leaves row padding untouched.
+  Each public operation includes cache maintenance, DMA and a completion wait.
+- The first pressure pass now uses constant-offset unrolled cells, as subsequent
+  passes already did. The eight-pass lexicographic solve remains bit-exact.
+- A bounded 32-entry text command cache avoids repeatedly parsing unchanged HUD
+  labels. Only entries from completed frames can be evicted; static block
+  recording and cache overflow use the original text path. Three/four-player
+  corner masks also reuse a static command block; alive/dead wall colors remain
+  dynamic. Their host SVG output is byte-identical to the original.
+- Audio mixes in 64-sample blocks, skipping inactive voices once per block.
+  PCM, gain ramps, looping, panning and saturation match the old mixer exactly.
+  CPU texture generation (including SPEED) now writes through the data cache
+  and writes back before RDP upload.
+
+Reproduce measurements and validation with:
+
+```sh
+just benchmark-prepare
+python3 tools/benchmark-ares.py plasmapong-prepare-benchmark.z64 build/prepare.log
+just benchmark-complete
+python3 tools/benchmark-ares.py plasmapong-complete-benchmark.z64 build/complete.log
+```
+
+The runner uses a private copy of the local ares settings, permits emulation
+while unfocused, runs until ten complete 150-step/frame windows exist, and writes
+raw logs plus JSON means/ranges. Run benchmarks sequentially. `FLUID_PROFILE=1`
+also separates pixel conversion, texture submission, previous-frame wait and
+other draw work. Audio interrupt time is included in elapsed stage measurements;
+the separate audio total must not be added to those measurements again.
+`DRAW_SYNC_PROFILE=1` adds a final RSP/RDP wait inside the drawing timer to measure
+completed drawing; this wait is absent from normal builds.
+
+Validation covers 80 exact trace/color/divergence fields, full supported timestep
+range, saturation and edge cases, source integrity, padded rows and DMA guards;
+the existing 64-field pressure, velocity, dye and confinement suites also pass.
+The blocked mixer matches the original PCM and complete voice state across
+1,200 variable-sized callbacks and passes address/undefined sanitizers. Portable
+physics, arcade, save, multiplayer, sound and numerical tests pass.
+
+Measurements use the pinned libdragon toolchain, ares `5f2f7dc0d`, paraLLEl-RDP,
+audio enabled, and the same scripted inputs against baseline `fae1860`.
+Two-player comparisons use ten complete windows; four-player comparisons use
+six. These are emulated elapsed times, not hardware measurements or worst-case
+individual-frame bounds.
+
+| Completed-frame measurement | Baseline | Optimized | Reduction |
+| --- | ---: | ---: | ---: |
+| 2P simulation | 13.851 ms | 10.993 ms | 20.6% |
+| 2P drawing, including RSP/RDP completion | 2.790 ms | 1.322 ms | 52.6% |
+| 2P simulation + completed drawing | 16.641 ms | 12.315 ms | 26.0% |
+| 4P simulation | 15.233 ms | 12.455 ms | 18.2% |
+| 4P drawing, including RSP/RDP completion | 3.904 ms | 1.931 ms | 50.6% |
+| 4P simulation + completed drawing | 19.137 ms | 14.386 ms | 24.8% |
+
+The ordinary asynchronous two-player build measures **10.997 ms simulation +
+1.027 ms draw submission**, versus **13.862 + 2.386 ms** before. Completed-frame
+measurements above include the remaining drawing tail and an explicit diagnostic
+fence. Submission intervals remain about **33.34 ms** in both builds.
+
+The largest remaining profiled stages are **pressure solving (2.855 ms)**,
+**dye advection (2.507 ms)**, **velocity advection (1.904 ms)** and the **CPU pressure
+gradient (1.525 ms)**. Backtraces are included in the advection stages. Previously,
+velocity/dye advection took 2.988/3.510 ms, divergence 0.786 ms (now 0.433), and
+pressure solving 3.180 ms. The gradient is the next substantial CPU candidate for
+RSP work, but requires preserving its signed 32-bit differences and exact rounded
+division. Pressure is already on RSP; its serial left-neighbor dependency limits
+simple vectorization without changing the solver.
+
+Outside the simulation, profiled pixel conversion fell from about **1.581 to
+0.573 ms**, and other drawing work from **0.749 to 0.439 ms**. The baseline detail
+run has four windows; these are supporting diagnostics, not the main ten-window
+comparison. Audio elapsed time per output sample fell from about **3.61 to
+2.39 microseconds**. Particle tails still add dynamic draw commands and tracer
+sampling; four-player effects should be budgeted separately from plain two-player
+play. RDP validation adds substantial overhead and is not used for the performance
+table.
+
+Logs, frozen baseline sources, exact-fixture results, screenshots, intermediate
+iterations and numeric summaries are retained in `build/perf_iteration/`.
+
+A final 70-second/fourteen-window four-player run cycled NONE, PARTICLES,
+PARTICLE TAILS and SPEED with RDP validation enabled, maintained roughly 33.34 ms
+submission intervals, and reported no RDP/DMA errors. Emulator screenshots of
+two-player dye rendering and four-player SPEED were visually checked.

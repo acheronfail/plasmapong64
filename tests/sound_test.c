@@ -2,6 +2,8 @@
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include "sound_reference.h"
 static Sound s;
 static Game g;
 static int16_t pcm[SOUND_RATE*2];
@@ -31,7 +33,30 @@ static void preview(void) {
     }
     fclose(f);
 }
+static void exact_mixer(void) {
+    Sound a,b;
+    Game game={.phase=PLAY,.players=4,.lives={3,3,3,3}};
+    int16_t out[1024*2],reference[1024*2];
+    uint32_t rng=91;
+    sound_init(&a,16001); b=a;
+    for(unsigned n=0;n<1200;n++) {
+        rng=rng*1664525u+1013904223u;
+        game.phase=n%97<80?PLAY:PAUSED;
+        game.sound_events=rng&0x7ff;
+        for(unsigned p=0;p<MAX_PLAYERS;p++) {
+            game.bat[p].sucking=(rng>>(p+12))&1;
+            game.previous[p].z=(rng>>(p+16))&1;
+        }
+        sound_update(&a,&game); sound_update(&b,&game);
+        unsigned count=n%1025;
+        sound_render(&a,out,count); sound_render_reference(&b,reference,count);
+        assert(!memcmp(out,reference,count*2*sizeof(*out)));
+        assert(!memcmp(&a,&b,sizeof(a)));
+    }
+    puts("PASS: blocked mixer matches original PCM and voice state over 1200 variable-size callbacks");
+}
 int main(void) {
+    exact_mixer();
     sound_init(&s,SOUND_RATE); second(); assert(energy(0)==0 && energy(1)==0);
     g=(Game){.phase=PLAY,.sound_events=SOUND_BAT1}; sound_update(&s,&g); second();
     int hit_peak=peak(); long long hit=energy(0); assert(hit>0 && hit>energy(1)*2);

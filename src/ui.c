@@ -137,8 +137,8 @@ static void court(void) {
     for(int y=OY+5;y<OY+ARENA_H-3;y+=12) rect(OX+ARENA_W*.5f-1,y,1,4,0x23374e);
     rect(OX-3,OY,2,ARENA_H,0x24566c); rect(OX+ARENA_W+1,OY,2,ARENA_H,0x71334c);
 }
-static void square_court(const Game *g) {
-    float left=OX+game_left(g),right=OX+game_right(g);
+static void square_mask(void) {
+    const float left=OX+(ARENA_W-ARENA_H)*.5f,right=left+ARENA_H;
     /* Crop the full fluid field without stretching paddles, ball or currents. */
     rect(0,OY-2,left,ARENA_H+5,0x070c17);
     rect(right,OY-2,320-right,ARENA_H+5,0x070c17);
@@ -154,6 +154,10 @@ static void square_court(const Game *g) {
         rect(left+width-1,OY+ARENA_H-row-1,2,1,0x737d8a);
         rect(right-width-1,OY+ARENA_H-row-1,2,1,0x737d8a);
     }
+}
+static void square_court(const Game *g) {
+    float left=OX+game_left(g),right=OX+game_right(g);
+    draw_static(DRAW_SQUARE_MASK,square_mask);
     rect(left-2,OY+CORNER_SIZE,2,ARENA_H-2*CORNER_SIZE,game_alive(g,0)?CYAN:0x737d8a);
     rect(right,OY+CORNER_SIZE,2,ARENA_H-2*CORNER_SIZE,game_alive(g,1)?CORAL:0x737d8a);
     rect(left+CORNER_SIZE,OY+ARENA_H,right-left-2*CORNER_SIZE,2,game_alive(g,2)?MINT:0x737d8a);

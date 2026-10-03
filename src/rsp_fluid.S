@@ -95,19 +95,18 @@ load_divergence:
     b row_done
     nop
 first_cells:
-    addu a0,s4,t3
-    addu a1,s5,t3
-    addu a2,s6,t3
-    lw t5,0(a0)
-    lw t6,0(a1)
+    /* As on later passes, constant offsets remove scalar address arithmetic.
+       The initial pressure is zero, so only divergence, above and left enter. */
+    .set cell,4
+    .rept 46
+    lw t5,cell(s4)
+    lw t6,cell(s5)
+    addu t5,t5,t6
     addu t4,t4,t5
-    addu t4,t4,t6
     sra t4,t4,2
-    sw t4,0(a2)
-    addiu t3,t3,4
-    slti t9,t3,ROW_BYTES-4
-    bnez t9,first_cells
-    nop
+    sw t4,cell(s6)
+    .set cell,cell+4
+    .endr
 row_done:
     /* Edge copies can happen now: later rows use only interior neighbours. */
     lw t5,4(s6)

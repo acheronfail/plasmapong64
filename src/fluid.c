@@ -118,6 +118,9 @@ void fluid_project(Fluid *f) {
     FluidFlow *velocity=fluid_velocity(f);
     PROFILE_BEGIN();
     walls(f);
+#ifdef PLASMAPONG_PREPARE_RSP
+    fluid_divergence_rsp(f->divergence,velocity);
+#else
     /* Only interior divergence is consumed by the Neumann pressure solve. */
     for(int y=1;y<FH-1;y++) for(int x=1;x<FW-1;x++) {
         int k=y*FW+x;
@@ -128,6 +131,7 @@ void fluid_project(Fluid *f) {
         f->divergence[k]=(int32_t)(clampf(divergence,-32760,32760)*PRESSURE_SCALE);
 #endif
     }
+#endif
     PROFILE_END(PROFILE_DIVERGENCE);
 #ifdef PLASMAPONG_FLUID_RSP
     fluid_pressure_rsp(f->pressure,f->divergence);

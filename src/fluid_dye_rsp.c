@@ -42,7 +42,11 @@ void fluid_advect_ink_rsp(FluidDyeFixed *next,const FluidDyeFixed *ink,
         const FluidFlow *velocity,float grid_dt,float decay,float gold_decay,unsigned rounding) {
     static _Alignas(16) FluidDyeTrace trace[FN];
 #ifdef PLASMAPONG_VELOCITY_FIXED
+#ifdef PLASMAPONG_PREPARE_RSP
+    fluid_velocity_trace_rsp(trace,velocity,grid_dt);
+#else
     fluid_velocity_trace(trace,velocity,grid_dt);
+#endif
 #else
     fluid_dye_trace(trace,velocity,grid_dt);
 #endif

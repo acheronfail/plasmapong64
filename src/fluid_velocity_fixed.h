@@ -11,4 +11,13 @@ void fluid_velocity_fixed_reference(FluidVelocityFixed *next,const FluidVelocity
 void fluid_velocity_trace(FluidDyeTrace *trace,const FluidVelocityFixed *velocity,float grid_dt);
 void fluid_advect_velocity_fixed(FluidVelocityFixed *next,const FluidVelocityFixed *velocity,
     float grid_dt,float decay,unsigned rounding);
+#ifdef PLASMAPONG_PREPARE_RSP
+/* Synchronous, main-thread-only DMA APIs. Inputs/outputs own full cache lines.
+   Trace preserves the CPU Q20 coefficient, Q12 clamp and Q15 fractions.
+   Pixels require a 16-byte-aligned buffer with stride divisible by four.
+   Divergence replaces interior rows (unused side columns become zero). */
+void fluid_velocity_trace_rsp(FluidDyeTrace *trace,const FluidVelocityFixed *velocity,float grid_dt);
+void fluid_divergence_rsp(int32_t *divergence,const FluidVelocityFixed *velocity);
+void fluid_pixels_rsp(const Fluid *f,uint32_t *pixels,unsigned stride);
+#endif
 #endif
