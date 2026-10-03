@@ -16,6 +16,7 @@ parser.add_argument('--ares', default='../ares/build/rundir/bin/ares')
 parser.add_argument('--windows', type=int, default=10)
 parser.add_argument('--timeout', type=float, default=240)
 parser.add_argument('--draw-only', action='store_true', help='measure menus without waiting for PLAY simulation logs')
+parser.add_argument('--memory-mib', type=int, choices=(4, 8), help='test with or without the Expansion Pak; changes only this run')
 args = parser.parse_args()
 if args.windows < 1 or args.timeout <= 0:
     parser.error('windows and timeout must be positive')
@@ -28,6 +29,8 @@ if not settings.exists() and user_settings.exists():
     shutil.copyfile(user_settings, settings)
 command = [args.ares, '--settings-file', str(settings.resolve()), '--setting', 'Developer/HomebrewMode=true', '--setting', 'Input/Defocus=Block', '--system',
            'Nintendo 64', '--no-file-prompt', str(args.rom.resolve())]
+if args.memory_mib is not None:
+    command[1:1] = ['--setting', f'Nintendo64/ExpansionPak={"true" if args.memory_mib == 8 else "false"}']
 measurements = {}
 presentation = []
 start = time.monotonic()
@@ -69,6 +72,10 @@ with args.log.open('w') as log:
                             presentation[-1].update(misses=int(target[1]), target_fps=int(target[2]))
                     if 'PASS:' in line:
                         print(line, flush=True)
+                    work = re.search(r'Frame work: average (\d+) us, p50 <= (\d+) us, p95 <= (\d+) us, p99 <= (\d+) us, max (\d+) us', line)
+                    if work:
+                        for name, value in zip(('work_average', 'work_p50_bound', 'work_p95_bound', 'work_p99_bound', 'work_max'), work.groups()):
+                            measurements.setdefault(name, []).append(int(value))
                     if re.search(r'assertion failed|mismatch trial|RDPQ.*(?:ERROR|WARNING)|missing cache (?:invalidation|writeback)|DMA.*(?:cached|dirty)', line, re.I):
                         raise RuntimeError(line)
             required = ['draw average', 'frame interval']
@@ -77,6 +84,8 @@ with args.log.open('w') as log:
             if 'velocity_advection' in measurements and not args.draw_only:
                 required.append('sample')
                 required.append('flow_emit')
+            if 'work_average' in measurements:
+                required.append('work_average')
             if (all(len(measurements.get(k, [])) >= args.windows for k in required)
                     and (not presentation or len(presentation) >= args.windows)):
                 break

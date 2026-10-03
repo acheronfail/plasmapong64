@@ -111,6 +111,38 @@ static struct {
     char text[64];
 } text_cache[32];
 static unsigned render_frame=1;
+#ifdef PLASMAPONG_FRAME_WORK_PROFILE
+static void profile_frame_work(uint64_t begin,Phase phase) {
+    /* Include simulation, interrupts, buffer acquisition and completed RDP
+       drawing, excluding deliberate rate-limiter sleep. Quantiles are upper
+       bounds in 250-us buckets; maximum and average retain exact microseconds. */
+    static unsigned bins[256],frames,maximum;
+    static uint64_t total;
+    static Phase measured_phase;
+    if(phase!=measured_phase) {
+        memset(bins,0,sizeof(bins)); frames=maximum=0; total=0;
+        measured_phase=phase;
+    }
+    unsigned us=TIMER_MICROS_LL(get_ticks()-begin);
+    unsigned bucket=(us+249)/250;
+    bins[bucket<256?bucket:255]++; frames++; total+=us;
+    if(us>maximum) maximum=us;
+    if(frames==150) {
+        unsigned count=0,p50=0,p95=0,p99=0;
+        for(unsigned i=0;i<256;i++) {
+            count+=bins[i];
+            unsigned bound=i==255?maximum:i*250;
+            if(!p50 && count>=75) p50=bound;
+            if(!p95 && count>=143) p95=bound;
+            if(!p99 && count>=149) p99=bound;
+        }
+        static const char *names[]={"MENU","LOBBY","PLAY","PAUSED","FINISHED","SCORES","OPTIONS"};
+        debugf("Frame work: average %u us, p50 <= %u us, p95 <= %u us, p99 <= %u us, max %u us (150 %s frames)\n",
+            (unsigned)(total/frames),p50,p95,p99,maximum,names[phase]);
+        memset(bins,0,sizeof(bins)); frames=maximum=0; total=0;
+    }
+}
+#endif
 static bool recording_static;
 static rspq_block_t *static_draw[DRAW_STATIC_COUNT];
 void draw_static(unsigned id,void (*draw)(void)) {
@@ -343,7 +375,7 @@ int main(void) {
     FrameRate perf_rate=game.frame_rate;
     bool perf_l=false,perf_r=false;
     perf_reset();
-    debugf("Plasma Pong 64: ready, %u-byte game state\n",(unsigned)sizeof(game));
+    debugf("Plasma Pong 64: ready, %u-byte game state, %u MiB RDRAM\n",(unsigned)sizeof(game),(unsigned)get_memory_size()/(1024*1024));
     while(1) {
         const float frame_step=game_dt(&game);
         uint64_t now=get_ticks();
@@ -359,6 +391,9 @@ int main(void) {
             wait_ticks(TICKS_FROM_US(1+(uint32_t)((frame_step-accumulator)*1000000.0f)));
             continue;
         }
+#ifdef PLASMAPONG_FRAME_WORK_PROFILE
+        uint64_t work_begin=get_ticks();
+#endif
         joypad_poll(); Input input[MAX_PLAYERS]={0};
         for(int p=0;p<MAX_PLAYERS;p++) {
             joypad_inputs_t in=joypad_get_inputs((joypad_port_t)p);
@@ -453,11 +488,14 @@ int main(void) {
             label(18,39,0,perf_text); label(18,51,0,perf_gap);
         }
         rdpq_detach_show();
-#ifdef PLASMAPONG_DRAW_SYNC_PROFILE
+#if defined(PLASMAPONG_DRAW_SYNC_PROFILE) || defined(PLASMAPONG_FRAME_WORK_PROFILE)
         /* Diagnostic only: include RSP/RDP completion, not just submission. */
         rspq_wait();
 #endif
         draw_ticks+=get_ticks()-draw_begin;
+#ifdef PLASMAPONG_FRAME_WORK_PROFILE
+        profile_frame_work(work_begin,game.phase);
+#endif
         if(++draw_frames==150) {
             debugf("Plasma Pong 64: draw average %llu us/frame\n",
                 (unsigned long long)(TIMER_MICROS_LL(draw_ticks)/draw_frames));

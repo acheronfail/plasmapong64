@@ -118,6 +118,11 @@ void fluid_project(Fluid *f) {
     FluidFlow *velocity=fluid_velocity(f);
     PROFILE_BEGIN();
     walls(f);
+#ifdef PLASMAPONG_PROJECTION_CHAIN
+    fluid_projection_rsp(velocity,f->divergence,f->pressure);
+    /* Attribute the complete chained operation to projection's solve stage. */
+    PROFILE_END(PROFILE_PRESSURE);
+#else
 #ifdef PLASMAPONG_PREPARE_RSP
     fluid_divergence_rsp(f->divergence,velocity);
 #else
@@ -162,6 +167,7 @@ void fluid_project(Fluid *f) {
     walls(f);
 #endif
     PROFILE_END(PROFILE_GRADIENT);
+#endif
 }
 /* Blend existing pigment channels to keep all four jets in the plasma palette. */
 static void player_ink(FluidInk *ink,int k,float amount,int player) {
@@ -173,6 +179,21 @@ static void player_ink(FluidInk *ink,int k,float amount,int player) {
         ink_add(&ink->red[k],amount*.65f,3);
     } else ink_add(player?&ink->red[k]:&ink->blue[k],amount,3);
 }
+#if defined(PLASMAPONG_SPLAT_PLAN) && defined(PLASMAPONG_DYE_FIXED)
+typedef struct {
+    int16_t *a,*b;
+    float wa,wb;
+    int ca,cb;
+} SplatInk;
+static inline void splat_ink_add(const SplatInk *p,int k,float amount) {
+    int a=p->a[k]+(int)(amount*p->wa*DYE_SCALE+.5f);
+    p->a[k]=a>p->ca?p->ca:a<0?0:a;
+    if(p->b) {
+        int b=p->b[k]+(int)(amount*p->wb*DYE_SCALE+.5f);
+        p->b[k]=b>p->cb?p->cb:b<0?0:b;
+    }
+}
+#endif
 /* Work in storage units on the fixed backend. Power-of-two scaling keeps
    the original float operations and nearest rounding exactly equivalent,
    while avoiding decode/encode and the redundant wider storage clamp. */
@@ -190,6 +211,11 @@ void fluid_splat(Fluid *f,float x,float y,float radius,float u,float v,float dye
     FluidFlow *velocity=fluid_velocity(f);
     FluidInk *ink_grid=fluid_dye(f);
     PROFILE_BEGIN();
+#if defined(PLASMAPONG_SPLAT_PLAN) && defined(PLASMAPONG_DYE_FIXED)
+    SplatInk ink=player==2?(SplatInk){ink_grid->blue,ink_grid->gold,.65f,.35f,3*DYE_SCALE,(int)(.65f*DYE_SCALE+.5f)}:
+        player==3?(SplatInk){ink_grid->blue,ink_grid->red,.55f,.65f,3*DYE_SCALE,3*DYE_SCALE}:
+        (SplatInk){player?ink_grid->red:ink_grid->blue,NULL,1,0,3*DYE_SCALE,0};
+#endif
     const float inv_radius2=1/(radius*radius);
 #ifdef PLASMAPONG_VELOCITY_FIXED
     u*=VELOCITY_SCALE; v*=VELOCITY_SCALE;
@@ -209,13 +235,21 @@ void fluid_splat(Fluid *f,float x,float y,float radius,float u,float v,float dye
             int a=velocity->u[k],b=velocity->v[k];
             velocity->u[k]=a<-limit?-limit:a>limit?limit:a;
             velocity->v[k]=b<-limit?-limit:b>limit?limit:b;
+#if defined(PLASMAPONG_SPLAT_PLAN) && defined(PLASMAPONG_DYE_FIXED)
+            splat_ink_add(&ink,k,0);
+#else
             player_ink(ink_grid,k,0,player);
+#endif
             continue;
         }
 #endif
         force_add(&velocity->u[k],u*w);
         force_add(&velocity->v[k],v*w);
+#if defined(PLASMAPONG_SPLAT_PLAN) && defined(PLASMAPONG_DYE_FIXED)
+        splat_ink_add(&ink,k,dye*w);
+#else
         player_ink(ink_grid,k,dye*w,player);
+#endif
     }
     PROFILE_END(PROFILE_SPLAT);
 }
@@ -264,6 +298,12 @@ void fluid_velocity_step(Fluid *f,float dt) {
     f->velocity_bank^=1; velocity=next;
     PROFILE_END(PROFILE_VELOCITY_SWAP);
 #ifdef PLASMAPONG_CONFINEMENT_FIXED
+#ifdef PLASMAPONG_CONFINEMENT_CHAIN
+    fluid_curl_confinement_rsp(velocity,f->curl_fixed,fluid_confinement_strength(dt));
+    /* Chained stages are attributed together: their intermediate output is
+       consumed by RSP before the CPU regains ownership. */
+    PROFILE_END(PROFILE_CONFINEMENT);
+#else
 #ifdef PLASMAPONG_CONFINEMENT_RSP
     fluid_curl_rsp(f->curl_fixed,velocity);
 #else
@@ -276,6 +316,7 @@ void fluid_velocity_step(Fluid *f,float dt) {
     fluid_confinement_fixed(velocity,f->curl_fixed,fluid_confinement_strength(dt));
 #endif
     PROFILE_END(PROFILE_CONFINEMENT);
+#endif
 #else
     const float confinement=CELL*FLUID_CONFINEMENT*dt;
     /* Curl confinement returns small vortices lost to coarse-grid advection. */

@@ -101,8 +101,23 @@ static void confinement_cases(void) {
             assert(actual.pre[i]==0x5a && actual.post[i]==0x5a);
             assert(curls.pre[i]==0x3c && curls.post[i]==0x3c);
         }
+#ifdef PLASMAPONG_CONFINEMENT_CHAIN
+        actual.value=saved;
+        memset(&curls,0x3c,sizeof(curls));
+        rdpq_set_fill_color(RGBA32(0,0,trial,255));
+        fluid_curl_confinement_rsp(&actual.value,curls.value,strength);
+        assert(!memcmp(&actual.value,&expected,sizeof(expected)));
+        assert(!memcmp(curls.value,expected_curl,sizeof(expected_curl)));
+        for(int i=0;i<16;i++) {
+            assert(actual.pre[i]==0x5a && actual.post[i]==0x5a);
+            assert(curls.pre[i]==0x3c && curls.post[i]==0x3c);
+        }
+#endif
     }
     CONF_LOG("Confinement PASS: 64 fixed-reference fields, boundaries, input integrity and DMA guards; max float delta %.6f px/s (normal dt %.6f)\n",(double)maximum,(double)normal_max);
     assert(maximum<=8 && normal_max<=2);
+#ifdef PLASMAPONG_CONFINEMENT_CHAIN
+    debugf("Confinement chain PASS: 64 exact fields and dirty-cache DMA guards\n");
+#endif
 }
 #endif

@@ -1,4 +1,10 @@
 ADVECTION_CHAIN ?= 1
+CONFINEMENT_CHAIN ?= 1
+PROJECTION_CHAIN ?= 1
+HIRES_FONT_FORMAT ?= RGBA16
+SPLAT_PLAN ?= 1
+SOUND_STEADY ?= 1
+EXPANSION_BANKS ?= 0
 SPEED_RSP ?= 1
 GRADIENT_RSP ?= 1
 PREPARE_RSP ?= 1
@@ -25,6 +31,10 @@ $(error N64_INST is unset. Use ./tools/build-rom.sh or install libdragon)
 endif
 include $(N64_INST)/include/n64.mk
 src := src/main.c src/game.c src/arcade.c src/fluid.c src/fluid_advection.c src/ui.c src/sound.c src/save.c src/save_n64.c
+ifeq ($(EXPANSION_BANKS),1)
+src += src/expansion_n64.c
+N64_LDFLAGS += --wrap malloc_uncached_aligned
+endif
 ifeq ($(FLUID_RSP),1)
 # This pinned n64.mk does not sanitize hyphens in embedded ucode symbols.
 ifneq ($(findstring -,$(BUILD_DIR)),)
@@ -82,11 +92,17 @@ endif
 src += src/fluid_confinement_rsp.c
 rsp_obj += $(BUILD_DIR)/src/rsp_confinement.o
 N64_CFLAGS += -DPLASMAPONG_CONFINEMENT_RSP
+ifeq ($(CONFINEMENT_CHAIN),1)
+N64_CFLAGS += -DPLASMAPONG_CONFINEMENT_CHAIN
+endif
 endif
 ifeq ($(PREPARE_RSP)$(VELOCITY_RSP),11)
 src += src/fluid_prepare_rsp.c
 rsp_obj += $(BUILD_DIR)/src/rsp_prepare.o
 N64_CFLAGS += -DPLASMAPONG_PREPARE_RSP
+ifeq ($(PROJECTION_CHAIN)$(FLUID_RSP)$(GRADIENT_RSP),111)
+N64_CFLAGS += -DPLASMAPONG_PROJECTION_CHAIN
+endif
 ifeq ($(ADVECTION_CHAIN),1)
 N64_CFLAGS += -DPLASMAPONG_ADVECTION_CHAIN
 endif
@@ -116,6 +132,13 @@ endif
 N64_CFLAGS += -DPLASMAPONG_RSP_TEST
 endif
 N64_CFLAGS += -Wall -Wextra -Werror
+ifeq ($(SPLAT_PLAN),1)
+N64_CFLAGS += -DPLASMAPONG_SPLAT_PLAN
+endif
+ifeq ($(SOUND_STEADY),1)
+N64_CFLAGS += -DPLASMAPONG_SOUND_STEADY
+$(BUILD_DIR)/src/sound.o: CFLAGS += -O3
+endif
 ifeq ($(RDP_VALIDATE),1)
 N64_CFLAGS += -DPLASMAPONG_RDP_VALIDATE
 endif
@@ -130,6 +153,9 @@ N64_CFLAGS += -DPLASMAPONG_DYE_TEST
 endif
 ifeq ($(DRAW_SYNC_PROFILE),1)
 N64_CFLAGS += -DPLASMAPONG_DRAW_SYNC_PROFILE
+endif
+ifeq ($(FRAME_WORK_PROFILE),1)
+N64_CFLAGS += -DPLASMAPONG_FRAME_WORK_PROFILE
 endif
 ifeq ($(FLUID_PROFILE),1)
 N64_CFLAGS += -DPLASMAPONG_FLUID_PROFILE
@@ -163,7 +189,7 @@ endif
 all: $(ROM).z64
 $(BUILD_DIR)/filesystem/at01-2x.font64: assets/fonts/at01-2x.fnt assets/fonts/at01-2x.png
 	mkdir -p $(BUILD_DIR)/filesystem
-	$(N64_MKFONT) --format RGBA16 -o $(BUILD_DIR)/filesystem $<
+	$(N64_MKFONT) --format $(HIRES_FONT_FORMAT) -o $(BUILD_DIR)/filesystem $<
 $(BUILD_DIR)/$(ROM).dfs: $(BUILD_DIR)/filesystem/at01-2x.font64
 	$(N64_MKDFS) $@ $(BUILD_DIR)/filesystem
 $(BUILD_DIR)/$(ROM).elf: $(src:%.c=$(BUILD_DIR)/%.o) $(rsp_obj)

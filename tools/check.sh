@@ -22,47 +22,47 @@ for state in menu menu-4p menu-options options play lobby paused finished arcade
     ./build/preview "$state" > "build/preview-$state.svg"
 done
 
-cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic -Isrc src/sound.c tests/sound_test.c -o build/sound-test
+cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic -DPLASMAPONG_SOUND_STEADY -Isrc src/sound.c tests/sound_test.c -o build/sound-test
 ./build/sound-test
 
 # Exercise persistent fixed-point storage with the portable integer oracle.
-cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -DPLASMAPONG_DYE_FIXED -Isrc src/fluid.c src/fluid_advection.c src/fluid_dye_fixed.c tests/fluid_reference.c tests/fluid_test.c -lm -o build/fluid-fixed-test
+cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -DPLASMAPONG_SPLAT_PLAN -DPLASMAPONG_DYE_FIXED -Isrc src/fluid.c src/fluid_advection.c src/fluid_dye_fixed.c tests/fluid_reference.c tests/fluid_test.c -lm -o build/fluid-fixed-test
 ./build/fluid-fixed-test
-cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -DPLASMAPONG_DYE_FIXED -Isrc src/game.c src/arcade.c src/fluid.c src/fluid_advection.c src/fluid_dye_fixed.c tests/game_test.c -lm -o build/game-fixed-test
+cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -DPLASMAPONG_SPLAT_PLAN -DPLASMAPONG_DYE_FIXED -Isrc src/game.c src/arcade.c src/fluid.c src/fluid_advection.c src/fluid_dye_fixed.c tests/game_test.c -lm -o build/game-fixed-test
 ./build/game-fixed-test > build/game-fixed-check.log
 cat build/game-fixed-check.log
 test "$(sed -n '/^Physics trace hash:/p' build/game-check.log)" = "$(sed -n '/^Physics trace hash:/p' build/game-fixed-check.log)"
 echo "PASS: float and fixed dye produce identical 120-second physics traces"
-cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -DPLASMAPONG_DYE_FIXED -Isrc src/game.c src/arcade.c src/fluid.c src/fluid_advection.c src/fluid_dye_fixed.c tests/arcade_test.c -lm -o build/arcade-fixed-test
+cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -DPLASMAPONG_SPLAT_PLAN -DPLASMAPONG_DYE_FIXED -Isrc src/game.c src/arcade.c src/fluid.c src/fluid_advection.c src/fluid_dye_fixed.c tests/arcade_test.c -lm -o build/arcade-fixed-test
 ./build/arcade-fixed-test
 
 # Exact fixed-storage force regression, including out-of-footprint clamps.
-cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -DPLASMAPONG_DYE_FIXED -DPLASMAPONG_VELOCITY_FIXED -Isrc src/fluid.c src/fluid_advection.c src/fluid_dye_fixed.c src/fluid_velocity_fixed.c tests/force_test.c -lm -o build/force-test
+cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -DPLASMAPONG_SPLAT_PLAN -DPLASMAPONG_DYE_FIXED -DPLASMAPONG_VELOCITY_FIXED -Isrc src/fluid.c src/fluid_advection.c src/fluid_dye_fixed.c src/fluid_velocity_fixed.c tests/force_test.c -lm -o build/force-test
 ./build/force-test
 
 # Experimental velocity: signed interpolation plus quantization-aware gameplay.
 cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -Isrc src/fluid_advection.c src/fluid_dye_fixed.c src/fluid_velocity_fixed.c tests/velocity_test.c -lm -o build/velocity-test
 ./build/velocity-test
-cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -DPLASMAPONG_DYE_FIXED -DPLASMAPONG_VELOCITY_FIXED -Isrc src/game.c src/arcade.c src/fluid.c src/fluid_advection.c src/fluid_dye_fixed.c src/fluid_velocity_fixed.c tests/game_test.c -lm -o build/game-velocity-test
+cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -DPLASMAPONG_SPLAT_PLAN -DPLASMAPONG_DYE_FIXED -DPLASMAPONG_VELOCITY_FIXED -Isrc src/game.c src/arcade.c src/fluid.c src/fluid_advection.c src/fluid_dye_fixed.c src/fluid_velocity_fixed.c tests/game_test.c -lm -o build/game-velocity-test
 ./build/game-velocity-test
-cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -DPLASMAPONG_DYE_FIXED -DPLASMAPONG_VELOCITY_FIXED -Isrc src/game.c src/arcade.c src/fluid.c src/fluid_advection.c src/fluid_dye_fixed.c src/fluid_velocity_fixed.c tests/arcade_test.c -lm -o build/arcade-velocity-test
+cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -DPLASMAPONG_SPLAT_PLAN -DPLASMAPONG_DYE_FIXED -DPLASMAPONG_VELOCITY_FIXED -Isrc src/game.c src/arcade.c src/fluid.c src/fluid_advection.c src/fluid_dye_fixed.c src/fluid_velocity_fixed.c tests/arcade_test.c -lm -o build/arcade-velocity-test
 ./build/arcade-velocity-test
 
 # Curl/confinement approximation and its complete gameplay integration.
 cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -Isrc src/fluid_confinement.c tests/confinement_test.c -lm -o build/confinement-test
 ./build/confinement-test
-cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -DPLASMAPONG_DYE_FIXED -DPLASMAPONG_VELOCITY_FIXED -DPLASMAPONG_CONFINEMENT_FIXED -Isrc src/game.c src/arcade.c src/fluid.c src/fluid_advection.c src/fluid_dye_fixed.c src/fluid_velocity_fixed.c src/fluid_confinement.c tests/game_test.c -lm -o build/game-confinement-test
+cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -DPLASMAPONG_SPLAT_PLAN -DPLASMAPONG_DYE_FIXED -DPLASMAPONG_VELOCITY_FIXED -DPLASMAPONG_CONFINEMENT_FIXED -Isrc src/game.c src/arcade.c src/fluid.c src/fluid_advection.c src/fluid_dye_fixed.c src/fluid_velocity_fixed.c src/fluid_confinement.c tests/game_test.c -lm -o build/game-confinement-test
 ./build/game-confinement-test
-cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -DPLASMAPONG_DYE_FIXED -DPLASMAPONG_VELOCITY_FIXED -DPLASMAPONG_CONFINEMENT_FIXED -Isrc src/game.c src/arcade.c src/fluid.c src/fluid_advection.c src/fluid_dye_fixed.c src/fluid_velocity_fixed.c src/fluid_confinement.c tests/arcade_test.c -lm -o build/arcade-confinement-test
+cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -DPLASMAPONG_SPLAT_PLAN -DPLASMAPONG_DYE_FIXED -DPLASMAPONG_VELOCITY_FIXED -DPLASMAPONG_CONFINEMENT_FIXED -Isrc src/game.c src/arcade.c src/fluid.c src/fluid_advection.c src/fluid_dye_fixed.c src/fluid_velocity_fixed.c src/fluid_confinement.c tests/arcade_test.c -lm -o build/arcade-confinement-test
 ./build/arcade-confinement-test
 
 # Multiplayer geometry and elimination across every portable storage backend.
 for backend in float dye velocity confinement; do
     case "$backend" in
         float) flags=""; sources="" ;;
-        dye) flags="-DPLASMAPONG_DYE_FIXED"; sources="src/fluid_dye_fixed.c" ;;
-        velocity) flags="-DPLASMAPONG_DYE_FIXED -DPLASMAPONG_VELOCITY_FIXED"; sources="src/fluid_dye_fixed.c src/fluid_velocity_fixed.c" ;;
-        confinement) flags="-DPLASMAPONG_DYE_FIXED -DPLASMAPONG_VELOCITY_FIXED -DPLASMAPONG_CONFINEMENT_FIXED"; sources="src/fluid_dye_fixed.c src/fluid_velocity_fixed.c src/fluid_confinement.c" ;;
+        dye) flags="-DPLASMAPONG_SPLAT_PLAN -DPLASMAPONG_DYE_FIXED"; sources="src/fluid_dye_fixed.c" ;;
+        velocity) flags="-DPLASMAPONG_SPLAT_PLAN -DPLASMAPONG_DYE_FIXED -DPLASMAPONG_VELOCITY_FIXED"; sources="src/fluid_dye_fixed.c src/fluid_velocity_fixed.c" ;;
+        confinement) flags="-DPLASMAPONG_SPLAT_PLAN -DPLASMAPONG_DYE_FIXED -DPLASMAPONG_VELOCITY_FIXED -DPLASMAPONG_CONFINEMENT_FIXED"; sources="src/fluid_dye_fixed.c src/fluid_velocity_fixed.c src/fluid_confinement.c" ;;
     esac
     cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic $flags -Isrc src/game.c src/arcade.c src/fluid.c src/fluid_advection.c $sources tests/multiplayer_test.c -lm -o "build/multiplayer-$backend-test"
     "./build/multiplayer-$backend-test"

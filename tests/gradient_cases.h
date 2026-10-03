@@ -1,6 +1,7 @@
 #ifndef GRADIENT_CASES_H
 #define GRADIENT_CASES_H
 #include "../src/fluid_velocity_fixed.h"
+#include "../src/fluid_pressure.h"
 static int16_t gradient_expected(int16_t velocity,int32_t a,int32_t b) {
     int64_t d=(int64_t)a-b;
     int64_t change=d>=0?(d+1536)/3072:-((-d+1536)/3072);
@@ -66,5 +67,45 @@ static void gradient_cases(void) {
         for(int k=0;k<16;k++) assert(output.before[k]==0xa5 && output.after[k]==0xa5);
     }
     debugf("Gradient PASS: %u exact signed pressure fields, rounded division thresholds, saturation, all walls, source integrity and DMA guards\n",(unsigned)TRIALS);
+#ifdef PLASMAPONG_PROJECTION_CHAIN
+    static struct { _Alignas(16) uint8_t before[16]; int32_t value[FN]; uint8_t after[16]; } div;
+    static _Alignas(16) int32_t expected_pressure[FN],expected_div[FN];
+    for(unsigned trial=0;trial<64;trial++) {
+        memset(&output,0xa5,sizeof(output)); memset(&pressure,0x5a,sizeof(pressure)); memset(&div,0x3c,sizeof(div));
+        memset(expected_div,0x3c,sizeof(expected_div));
+        for(int k=0;k<FN;k++) {
+            rng=rng*1664525u+1013904223u;
+            output.value.u[k]=(int)(rng%32767)-16383;
+            rng=rng*1664525u+1013904223u;
+            output.value.v[k]=(int)(rng%32767)-16383;
+            if(trial<4) output.value.u[k]=output.value.v[k]=trial&1?16383:-16383;
+        }
+        for(int y=0;y<FH;y++) output.value.u[y*FW]=output.value.u[y*FW+FW-1]=0;
+        for(int x=0;x<FW;x++) output.value.v[x]=output.value.v[(FH-1)*FW+x]=0;
+        expected=output.value;
+        for(int y=1;y<FH-1;y++) for(int x=0;x<FW;x++) {
+            int k=y*FW+x;
+            expected_div[k]=x==0 || x==FW-1?0:-768*(expected.u[k+1]-expected.u[k-1]+expected.v[k+FW]-expected.v[k-FW]);
+        }
+        fluid_pressure_cpu(expected_pressure,expected_div);
+        for(int y=0;y<FH;y++) for(int x=0;x<FW;x++) {
+            int k=y*FW+x;
+            expected.u[k]=x==0 || x==FW-1?0:gradient_expected(expected.u[k],expected_pressure[k+1],expected_pressure[k-1]);
+            expected.v[k]=y==0 || y==FH-1?0:gradient_expected(expected.v[k],expected_pressure[k+FW],expected_pressure[k-FW]);
+        }
+        /* Dirty intermediate arrays must be discarded before producer DMA. */
+        rdpq_set_fill_color(RGBA32(trial,trial,0,255));
+        fluid_projection_rsp(&output.value,div.value,pressure.value);
+        assert(!memcmp(&expected,&output.value,sizeof(expected)));
+        assert(!memcmp(expected_div,div.value,sizeof(expected_div)));
+        assert(!memcmp(expected_pressure,pressure.value,sizeof(expected_pressure)));
+        for(int i=0;i<16;i++) {
+            assert(output.before[i]==0xa5 && output.after[i]==0xa5);
+            assert(pressure.before[i]==0x5a && pressure.after[i]==0x5a);
+            assert(div.before[i]==0x3c && div.after[i]==0x3c);
+        }
+    }
+    debugf("Projection chain PASS: 64 CPU-reference fields, walls, dirty caches, overlay switches and DMA guards\n");
+#endif
 }
 #endif

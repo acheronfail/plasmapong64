@@ -59,6 +59,30 @@ void sound_render(Sound *s,int16_t *stereo,size_t frames) {
         for(int i=0;i<SOUND_VOICES;i++) {
             SoundVoice *v=&s->voice[i];
             if(!v->pcm || (!v->gain && !v->target && v->loop)) continue;
+#ifdef PLASMAPONG_SOUND_STEADY
+            if(v->gain>0 && v->gain==v->target) {
+                /* Long-lived jets and already-started effects spend most of
+                   their time at steady gain. Keep their cursor in a register
+                   and omit sample-by-sample ramp tests and structure stores. */
+                const int16_t *pcm=v->pcm;
+                uint32_t position=v->position,step=s->step;
+                unsigned length=v->length;
+                uint32_t wrap=(v->length-v->loop_start)<<16;
+                int gain=v->gain>>8,left=v->left,right=v->right;
+                for(size_t frame=0;frame<count;frame++) {
+                    int value=pcm[position>>16]*gain/256;
+                    mix[frame][0]+=left==256?value:value*left/256;
+                    mix[frame][1]+=right==256?value:value*right/256;
+                    position+=step;
+                    if((position>>16)>=length) {
+                        if(v->loop) position-=wrap;
+                        else { v->pcm=NULL; break; }
+                    }
+                }
+                v->position=position;
+                continue;
+            }
+#endif
             for(size_t frame=0;frame<count && v->pcm;frame++) {
                 if(v->gain<v->target) { v->gain+=12; if(v->gain>v->target) v->gain=v->target; }
                 if(v->gain>v->target) { v->gain-=12; if(v->gain<v->target) v->gain=v->target; }

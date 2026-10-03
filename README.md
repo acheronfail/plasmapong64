@@ -1522,3 +1522,121 @@ presentation snapshot counted 892 new frames over 1,784 fields, with 18 fields
 beyond the allowed two-field gap and a longest gap of three fields. This supports
 the 30 FPS target but does not establish a perfectly paced or hardware-verified
 frame rate. Final measurements are in `build/hires-final.{log,json}`.
+
+### High-resolution work budget and Expansion Pak investigation (2026-10-03)
+
+The high-resolution workload is comfortably below its 33.333 ms work budget in
+Ares. The retained changes reduce average completed-frame work by **3.6%** and
+the largest observed frame by **7.5%**, while preserving simulation results,
+visual effect density and exact audio samples. The normal build enables them;
+the Expansion Pak experiment remains opt-in.
+
+Matched twelve-window four-player TAILS runs use the same 30 Hz replay on a
+**4 MiB configuration**, audio/HUD enabled, without fluid profiling or RDP
+validation. `FRAME_WORK_PROFILE=1` measures from input polling through simulation,
+buffer acquisition and RSP/RDP completion, excluding intentional rate-limiter
+sleep. Percentiles are conservative upper bounds from 250-us buckets. The
+reported bounds below are the largest bounds across the twelve windows, not
+averages of percentiles. The runs contain 1,800 measured PLAY frames each.
+
+| Completed frame work | Before | After |
+| --- | ---: | ---: |
+| Average | 13.858 ms | **13.359 ms** |
+| Largest window's p95 upper bound | 17.250 ms | **15.500 ms** |
+| Largest window's p99 upper bound | 17.500 ms | **15.750 ms** |
+| Largest observed individual frame | 17.616 ms | **16.299 ms** |
+
+The final animated-menu run on 4 MiB averaged **13.827 ms** per frame. Its first
+measurement window reached **19.284 ms**; later windows stayed below 14.3 ms.
+A separate eight-window low-res
+four-player TAILS replay retains 60 FPS presentation with no repeated refreshes
+in its reported windows. Frame work and field pacing are different measurements:
+occasional three-field gaps remain at 30 FPS because updates are clock-scheduled
+rather than locked to alternate VI fields. More CPU headroom alone does not
+establish perfect field pacing. Emulator RDP completion is also not a calibrated
+measurement of real-console RDRAM contention.
+
+The initial eight-window high-res diagnostic profile identified these costs:
+
+| Work | Mean time |
+| --- | ---: |
+| Divergence + eight-pass pressure solve + gradient | 3.938 ms/step |
+| Velocity + three-channel dye advection | 3.684 ms/step |
+| CPU splats | 1.143 ms/step |
+| Tail point preparation + command emission | 1.413 ms/frame |
+| Dye-to-texture pixel generation | 0.632 ms/frame |
+| Complete drawing, including the above drawing stages | 3.077 ms/frame |
+
+Stage measurements include audio interrupts and must not be added to separate
+audio costs. In matched profiled audio runs, mixing falls from 64.506 to
+39.343 ms of CPU time per audio second, a **39.0% reduction**.
+
+Retained changes:
+
+- Queue curl and confinement together; queue divergence, pressure and gradient
+  together. Intermediate DMA results stay under RSP ownership until their final
+  consumer completes, avoiding redundant syncpoints and cache transfers.
+- Select pigment destinations, weights and limits once per splat, keeping the
+  original float operation order, rounding and zero-weight clamps.
+- Use a steady-gain audio path with a register-held playback cursor and omit
+  redundant ramp tests; centered channels avoid identity gain multiplications.
+  The ramp path, truncation, loop endpoints, voice state and PCM output remain
+  identical. This file also uses `-O3` in the ROM.
+- Add opt-in completed-frame distribution probes and an explicit
+  `--memory-mib 4|8` benchmark setting, without changing global Ares settings.
+
+The full portable suite passes with the retained paths, including 2,000 golden
+splats, unchanged physics trace hashes and 1,200 variable-size audio callbacks
+compared with the frozen mixer. All RSP numerical fixtures pass. New chain tests
+cover 64 exact projection fields and 64 exact curl/confinement fields with dirty
+caches, boundary cells, overlay switches and DMA guards. A 4 MiB high-res replay
+cycles all four effects under RDP validation without errors. The normal ROM and
+CPU fallback both build.
+
+An indexed CI4 high-res font was discarded: it increased completed drawing from
+about 3.09 ms to 3.88 ms in the matched six-window diagnostic comparison, with
+similar results on 4 and 8 MiB. RGBA16 remains the font default.
+
+#### Expansion Pak
+
+The Expansion Pak adds capacity, from 4 to 8 MiB. It does not change the CPU,
+RSP's 4 KiB working memory, or the shared RDRAM channel's clock/bandwidth.
+Nintendo documents independent active-page registers for 1 MiB banks and
+recommends separating busy buffers to reduce page misses. See the
+[RDRAM hardware description](https://ultra64.ca/files/documentation/online-manuals/man/kantan/step1/2-4.html),
+[buffer-placement guidance](https://ultra64.ca/files/documentation/online-manuals/man/pro-man/pro04/04-03.html),
+and [memory-detection requirements](https://ultra64.ca/files/documentation/online-manuals/man-v5-1/caution/caution/index12.htm).
+
+`EXPANSION_BANKS=1` is a small optional experiment, disabled in the playable build.
+When libdragon detects an Expansion Pak, a linker allocation wrapper aligns each
+640 × 480 16-bit framebuffer to 1 MiB. Each 614,400-byte buffer then occupies one
+distinct bank, keeping scanned and rendered buffers separate. The observed
+addresses were 0x00100000, 0x00200000 and 0x00300000: this uses the extra memory
+headroom for alignment rather than requiring the framebuffers themselves to be
+above 4 MiB. Missing expansion memory or a failed aligned allocation falls back
+to normal allocation. Framebuffer freeing and libdragon's swap logic are intact.
+
+The same optional ROM succeeds with 4 MiB (fallback) and 8 MiB (aligned buffers).
+An 8 MiB Options replay also switches high/low/high repeatedly under RDP
+validation, confirming that aligned buffers can be freed and recreated safely.
+Matched eight-window completed-work means are **13.450 ms and 13.456 ms**,
+respectively: no meaningful emulator gain. Ares' RDRAM array implementation does
+not model these bank/page penalties, so only a hardware A/B comparison can judge
+this experiment. It is not enabled automatically in production. More buffering
+could increase latency, and larger fluid grids would increase the main compute
+cost; neither is justified as a performance improvement by these results.
+
+Reproduction (use distinct build directories when changing flags):
+
+```sh
+just benchmark-hires
+python3 tools/benchmark-ares.py plasmapong-hires-work.z64 build/hires-work.log --windows 12 --memory-mib 4
+just benchmark-expansion
+python3 tools/benchmark-ares.py plasmapong-expansion-work.z64 build/expansion-work.log --windows 8 --memory-mib 8
+```
+
+For the before comparison, set `CONFINEMENT_CHAIN=0 PROJECTION_CHAIN=0
+SPLAT_PLAN=0 SOUND_STEADY=0` in a separate build. Raw profiles, comparisons and
+source hashes are retained in `build/hires-opt/`; `results.json` contains the
+matched results. This is emulator evidence; console work-budget, bank-placement
+benefit and field pacing still need hardware confirmation.

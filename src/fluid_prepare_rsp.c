@@ -1,6 +1,7 @@
 #include <libdragon.h>
 #include <assert.h>
 #include "fluid_velocity_fixed.h"
+#include "fluid_pressure.h"
 DEFINE_RSP_UCODE(rsp_prepare);
 static uint32_t overlay_id;
 _Static_assert(FW==48 && FH==33 && sizeof(FluidDyeTrace)==48,"RSP preparation grid/trace layout");
@@ -42,13 +43,16 @@ void fluid_pixels_rsp(const Fluid *f,uint32_t *pixels,unsigned stride) {
     data_cache_hit_invalidate(CachedAddr(pixels),stride*FH*sizeof(*pixels));
 }
 
-void fluid_divergence_rsp(int32_t *divergence,const FluidVelocityFixed *velocity) {
+void fluid_divergence_rsp_begin(int32_t *divergence,const FluidVelocityFixed *velocity) {
     assert(((uintptr_t)divergence&15)==0 && ((uintptr_t)velocity&15)==0);
     prepare_init();
     data_cache_hit_writeback(velocity,sizeof(*velocity));
     /* Only complete interior rows are replaced. */
     data_cache_hit_invalidate(divergence+FW,(FH-2)*FW*sizeof(*divergence));
     rspq_write(overlay_id,2,PhysicalAddr(velocity->u),PhysicalAddr(velocity->v),PhysicalAddr(divergence));
+}
+void fluid_divergence_rsp(int32_t *divergence,const FluidVelocityFixed *velocity) {
+    fluid_divergence_rsp_begin(divergence,velocity);
     prepare_wait();
     data_cache_hit_invalidate(divergence+FW,(FH-2)*FW*sizeof(*divergence));
 }
@@ -62,6 +66,17 @@ void fluid_gradient_rsp(FluidVelocityFixed *velocity,const int32_t *pressure) {
     prepare_wait();
     data_cache_hit_invalidate(velocity,sizeof(*velocity));
 }
+#ifdef PLASMAPONG_FLUID_RSP
+void fluid_projection_rsp(FluidVelocityFixed *velocity,int32_t *divergence,int32_t *pressure) {
+    /* Begin calls invalidate the intermediate outputs before their producer
+       commands. Later consumer writebacks find no dirty CPU cache lines. */
+    fluid_divergence_rsp_begin(divergence,velocity);
+    fluid_pressure_rsp_begin(pressure,divergence);
+    fluid_gradient_rsp(velocity,pressure);
+    data_cache_hit_invalidate(divergence+FW,(FH-2)*FW*sizeof(*divergence));
+    data_cache_hit_invalidate(pressure,FN*sizeof(*pressure));
+}
+#endif
 
 void fluid_speed_pixels_rsp(const Fluid *f,uint32_t *pixels,unsigned stride) {
     static _Alignas(16) uint32_t palette[FLUID_SPEED_PALETTE_SIZE];

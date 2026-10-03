@@ -105,6 +105,14 @@ smoke-flow:
 smoke-video:
     ./tools/build-rom.sh -j4 SMOKE_VIDEO=1 RDP_VALIDATE=1 ROM=plasmapong-video-smoke BUILD_DIR=build/video_smoke
 
+# Complete per-frame work, excluding intentional rate-limiter sleep.
+benchmark-hires:
+    ./tools/build-rom.sh -j4 SMOKE=1 SMOKE_PLAYERS=4 SMOKE_FPS=30 SMOKE_EFFECT=2 FRAME_WORK_PROFILE=1 ROM=plasmapong-hires-work BUILD_DIR=build/hires_work
+
+# Optional framebuffer bank placement; requires hardware timing comparison.
+benchmark-expansion:
+    ./tools/build-rom.sh -j4 EXPANSION_BANKS=1 SMOKE=1 SMOKE_PLAYERS=4 SMOKE_FPS=30 SMOKE_EFFECT=2 FRAME_WORK_PROFILE=1 ROM=plasmapong-expansion-work BUILD_DIR=build/expansion_work
+
 # Exact preparation/pressure/advection/confinement fixtures, then stage timings.
 benchmark-prepare:
     ./tools/build-rom.sh -j4 SMOKE=1 FLUID_PROFILE=1 VELOCITY_TEST=1 DYE_TEST=1 RSP_TEST=1 CONFINEMENT_TEST=1 ROM=plasmapong-prepare-benchmark BUILD_DIR=build/prepare_benchmark
