@@ -4,6 +4,43 @@
 #endif
 static void smoke_input(Game *g,Input in[MAX_PLAYERS]) {
     static unsigned steps;
+#ifdef PLASMAPONG_SMOKE_VIDEO
+    /* Use real menu inputs to switch both ways while rendering, save the
+       choice, then return to ordinary scripted gameplay in high res. */
+    static unsigned video_stage,video_wait,video_pulse;
+    if(video_stage<7) {
+        memset(in,0,sizeof(Input)*MAX_PLAYERS);
+        in[0].connected=in[1].connected=true;
+        bool pulse=(video_pulse++%2)==0;
+        switch(video_stage) {
+        case 0:
+            if(g->menu_selection!=3) in[0].y=pulse?-1:0;
+            else { in[0].start=pulse; if(g->phase==OPTIONS) video_stage++; }
+            break;
+        case 1:
+            if(g->options_selection!=1) in[0].y=pulse?-1:0;
+            else { video_stage++; video_wait=0; }
+            break;
+        case 2: case 4:
+            if(g->frame_rate!=FPS_30) in[0].x=pulse?1:0;
+            else if(++video_wait==150) { video_stage++; video_wait=0; }
+            break;
+        case 3:
+            if(g->frame_rate!=FPS_60) in[0].x=pulse?1:0;
+            else if(++video_wait==150) { video_stage++; video_wait=0; }
+            break;
+        case 5:
+            if(g->phase==OPTIONS) in[0].b=pulse;
+            else video_stage++;
+            break;
+        case 6:
+            debugf("VIDEO SMOKE PASS: low/high/low/high via Options, returned to menu\n");
+            video_stage++;
+            break;
+        }
+        return;
+    }
+#endif
     /* Keep the same input/effect timeline in seconds as the 30 Hz replay. */
     unsigned tick=steps*30/GAME_HZ;
 #ifdef PLASMAPONG_SMOKE_EFFECT

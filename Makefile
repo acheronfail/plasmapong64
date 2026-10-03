@@ -140,6 +140,9 @@ $(BUILD_DIR)/src/game.o $(BUILD_DIR)/src/ui.o: CFLAGS += -O3
 ifeq ($(SMOKE_FLOW),1)
 N64_CFLAGS += -DPLASMAPONG_SMOKE -DPLASMAPONG_SMOKE_FLOW
 endif
+ifeq ($(SMOKE_VIDEO),1)
+N64_CFLAGS += -DPLASMAPONG_SMOKE -DPLASMAPONG_SMOKE_VIDEO
+endif
 ifneq ($(SMOKE_EFFECT),)
 N64_CFLAGS += -DPLASMAPONG_SMOKE_EFFECT=$(SMOKE_EFFECT)
 endif
@@ -158,7 +161,13 @@ ifeq ($(SMOKE_SAVE),1)
 N64_CFLAGS += -DPLASMAPONG_SAVE_SMOKE
 endif
 all: $(ROM).z64
+$(BUILD_DIR)/filesystem/at01-2x.font64: assets/fonts/at01-2x.fnt assets/fonts/at01-2x.png
+	mkdir -p $(BUILD_DIR)/filesystem
+	$(N64_MKFONT) --format RGBA16 -o $(BUILD_DIR)/filesystem $<
+$(BUILD_DIR)/$(ROM).dfs: $(BUILD_DIR)/filesystem/at01-2x.font64
+	$(N64_MKDFS) $@ $(BUILD_DIR)/filesystem
 $(BUILD_DIR)/$(ROM).elf: $(src:%.c=$(BUILD_DIR)/%.o) $(rsp_obj)
+$(ROM).z64: $(BUILD_DIR)/$(ROM).dfs
 $(ROM).z64: N64_ROM_SAVETYPE=eeprom4k
 $(ROM).z64: N64_ROM_TITLE="Plasma Pong 64"
 clean:

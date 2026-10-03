@@ -2,7 +2,12 @@
 #define PERF_H
 #include <stdbool.h>
 #include <stdint.h>
-/* Sample the displayed framebuffer once per non-interlaced VI refresh. */
+/* Normalize the one-row offset used by libdragon's even interlaced field.
+   Refreshes still count fields; frames count distinct framebuffer bases. */
+static inline uint32_t presentation_origin(uint32_t origin,bool interlaced,bool odd_field,uint32_t stride) {
+    return interlaced && !odd_field && origin>=stride?origin-stride:origin;
+}
+/* Sample the displayed framebuffer once per VI refresh/field. */
 typedef struct {
     uint32_t origin, refreshes, frames, repeats, gap, longest_gap;
     uint32_t allowed_gap, misses;

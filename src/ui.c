@@ -284,7 +284,7 @@ void ui_draw(const Game *g) {
         const char *effects[]={"NONE","PARTICLES","PARTICLE TAILS","SPEED"};
         char setting[64]; snprintf(setting,sizeof(setting),"< FLOW EFFECT: %s >",effects[g->flow_effect]);
         menu_label(113,g->options_selection==0?2:1,setting);
-        snprintf(setting,sizeof(setting),"< FRAME RATE: %u FPS >",(unsigned)g->frame_rate);
+        snprintf(setting,sizeof(setting),"< RESOLUTION: %s >",g->frame_rate==FPS_60?"LOW RES":"HIGH RES");
         menu_label(139,g->options_selection==1?2:1,setting);
         if(!g->save_available || g->save_failed)
             menu_label(169,1,!g->save_available?"NO SAVE STORAGE - SESSION ONLY":"SAVE FAILED - SESSION ONLY");

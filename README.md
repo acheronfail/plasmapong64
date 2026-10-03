@@ -8,10 +8,13 @@ with left/right on the multiplayer menu row. Multiplayer is greyed out with fewe
 than two controllers, and larger matches are available only when enough pads are
 connected. Players are assigned connected N64 controllers in port order.
 
-Choose **OPTIONS → FRAME RATE** to switch between **30 FPS** and **60 FPS**
-(default). Up/down selects a row; left/right changes its value. Each change saves
+Choose **OPTIONS → RESOLUTION** to switch between **LOW RES** (320 × 240,
+60 FPS, default) and **HIGH RES** (640 × 480 interlaced, 30 FPS).
+Up/down selects a row; left/right changes its value immediately. Each change saves
 automatically to cartridge EEPROM alongside flow effects and high scores. Older
-save records retain their scores/effect and default to 60 FPS. The setting changes
+save records retain their scores/effect and default to low res. Existing records
+with the former 30 FPS setting select high res; 60 FPS selects low res.
+The setting changes
 both physics and rendering frequency; movement, charge and cooldown retain their
 real-world durations, though fluid trajectories can differ with the timestep.
 
@@ -182,7 +185,12 @@ badges. Arcade requires one emulated N64 pad in port 1; multiplayer requires two
   velocity-field coupling, conditional catches, launch, scoring, and match state.
   Bats stay in their own end of the court. Time accumulation supports PAL and
   NTSC; catch-up is capped after long stalls.
-- `src/main.c`: libdragon input and 320 × 240 RDP rendering. Dye is uploaded as a
+- `src/main.c`: libdragon input and selectable 320 × 240 / 640 × 480 RDP rendering.
+  High res doubles drawing coordinates, bitmap font pixels and particle dots,
+  while retaining the same fluid grid and gameplay coordinates. Video switches
+  drain queued drawing, discard cached commands and replace the framebuffers.
+  Presentation counting removes interlaced field offsets before detecting swaps.
+  Dye is uploaded as a
   small RGBA32 texture and enlarged with bilinear filtering. Keeping eight bits
   per colour channel until filtering reduces gradient quantization compared with
   the former RGBA16 upload; the framebuffer remains 16-bit. Padded texture rows
@@ -926,9 +934,9 @@ emulation. Logs, ROMs, per-frame CSVs and numeric summaries are retained in
 ### Flow display options
 
 Choose **OPTIONS** from the main menu. Up/down selects **FLOW EFFECT** or
-**FRAME RATE**; left/right changes the selected value. Flow effects are **NONE**,
-**PARTICLES**, **PARTICLE TAILS**, and **SPEED**; frame rates are **30 FPS** and
-**60 FPS**. B returns to the main menu. The animated background
+**RESOLUTION**; left/right changes the selected value. Flow effects are **NONE**,
+**PARTICLES**, **PARTICLE TAILS**, and **SPEED**. **LOW RES** uses 320 × 240 at
+60 FPS; **HIGH RES** uses 640 × 480 interlaced at 30 FPS. B returns to the main menu. The animated background
 previews the selected effect. Each change automatically saves to cartridge EEPROM;
 missing storage or a failed write is shown in the options screen. Successful
 saves are silent, without confirmation text in the options or high-score screens.
@@ -1492,3 +1500,25 @@ worst-case bound. Hardware confirmation is still needed before claiming a locked
 ./tools/build-rom.sh -j4 SMOKE=1 SMOKE_PLAYERS=4 SMOKE_FPS=60 SMOKE_EFFECT=2 ROM=opt2_final4 BUILD_DIR=build/optimise2/final4
 python3 tools/benchmark-ares.py opt2_final4.z64 build/optimise2/final4.log --windows 24 --timeout 360
 ```
+
+### Low/high resolution selection (2026-10-03)
+
+Options now selects **LOW RES** (320 × 240 progressive at 60 FPS) or
+**HIGH RES** (640 × 480 interlaced at 30 FPS), replacing the frame-rate row.
+The existing EEPROM values retain their format: 60 selects low res and 30
+selects high res. The default is low res. Fonts, particles and geometry double
+in high res; the 48 × 33 fluid grid and gameplay coordinates stay unchanged.
+Three 16-bit high-res framebuffers occupy 1,843,200 bytes (1.76 MiB).
+
+The portable suite passes. `just smoke-video` exercises real Options inputs,
+switches both ways under RDP validation, writes EEPROM and returns to gameplay.
+The replay also restored a saved high-res choice on its next boot. The corrected
+font and high-res Options layout were visually checked in Ares. Logs and a screen
+capture are retained in `build/video-switch.log` and `build/hires-options.png`.
+
+A six-window ordinary four-player TAILS replay in high res averaged **11.107 ms
+simulation**, **2.812 ms draw submission**, and **33.349 ms per frame**. Its last
+presentation snapshot counted 892 new frames over 1,784 fields, with 18 fields
+beyond the allowed two-field gap and a longest gap of three fields. This supports
+the 30 FPS target but does not establish a perfectly paced or hardware-verified
+frame rate. Final measurements are in `build/hires-final.{log,json}`.

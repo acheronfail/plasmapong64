@@ -21,5 +21,22 @@ int main(void) {
     assert(s.frames==30 && s.repeats==30 && s.misses==0 && s.longest_gap==2);
     presentation_sample(&s,100,6100); presentation_sample(&s,100,6200);
     assert(s.misses==1 && s.longest_gap==3);
-    puts("PASS: presentation counts swaps, repeated refreshes, longest gaps and reset");
+    /* 480i alternates base and base+stride on the same framebuffer. Count
+       actual swaps, including consecutive fields from different buffers. */
+    s=(PresentationStats){.allowed_gap=2};
+    const uint32_t stride=1280;
+    for(unsigned i=0;i<=60;i++) {
+        uint32_t base=0x100000+((i/2)%3)*0x96000;
+        bool odd=(i&1)!=0;
+        presentation_sample(&s,presentation_origin(base+(odd?0:stride),true,odd,stride),i*100);
+    }
+    assert(s.frames==30 && s.refreshes==60 && s.repeats==30 && !s.misses && s.longest_gap==2);
+    assert(presentation_origin(0,false,false,stride)==0);
+    assert(presentation_origin(0x100000,false,false,stride)==0x100000);
+    uint32_t base=0x200000;
+    presentation_sample(&s,presentation_origin(base,true,true,stride),6100);
+    assert(s.frames==31);
+    presentation_sample(&s,presentation_origin(base+stride,true,false,stride),6200);
+    assert(s.frames==31 && s.repeats==31 && !s.misses);
+    puts("PASS: presentation counts swaps, repeated fields/refreshes, interlaced origins, longest gaps and reset");
 }

@@ -38,16 +38,21 @@
 #endif
 static Game game;
 static Sound sound;
+static unsigned draw_scale=1;
+static uint8_t draw_font=1;
+static FrameRate video_rate;
 static volatile PresentationStats presentation;
 static bool perf_visible=true;
 static char perf_text[64]="FPS -- / --", perf_gap[64]="MISS 0  GAP 1 VI";
 static PresentationStats perf_window;
 static void perf_vi(void) {
-    /* VI_ORIGIN identifies the actual scanned-out surface. We use 240p, so
-       alternating interlaced field offsets cannot masquerade as new frames.
+    /* VI_ORIGIN identifies the actual scanned-out surface. Normalize the
+       alternating one-row offset in 480i before counting framebuffer swaps.
        Register before display_init: pinned libdragon prepends handlers, so
        its framebuffer swap runs before this sampler. No work is fenced here. */
-    presentation_sample(&presentation,*(volatile uint32_t *)0xA4400004,get_ticks());
+    uint32_t origin=*(volatile uint32_t *)0xA4400004;
+    bool odd_field=(*(volatile uint32_t *)0xA4400010)&1;
+    presentation_sample(&presentation,presentation_origin(origin,draw_scale==2,odd_field,640*2),get_ticks());
 }
 static PresentationStats perf_snapshot(void) {
     disable_interrupts();
@@ -125,7 +130,7 @@ void rect(float x,float y,float w,float h,uint32_t c) {
     if(!fill_mode || fill_color!=c) {
         rdpq_set_mode_fill(color(c)); fill_color=c; fill_mode=true;
     }
-    rdpq_fill_rectangle(x,y,x+w,y+h);
+    rdpq_fill_rectangle(x*draw_scale,y*draw_scale,(x+w)*draw_scale,(y+h)*draw_scale);
 }
 void draw_points(const DrawPoint *points,unsigned count,uint32_t c) {
     if(!count) return;
@@ -138,9 +143,12 @@ void draw_points(const DrawPoint *points,unsigned count,uint32_t c) {
     *commands++=0xF700000000000000ull|((uint64_t)pixel<<16)|pixel;
     for(unsigned i=0;i<count;i++) {
         assert(points[i].x<320 && points[i].y<240);
-        uint32_t xy=((uint32_t)points[i].x<<14)|((uint32_t)points[i].y<<2);
-        /* Fill-cycle lower-right is inclusive: equal corners cover one pixel. */
-        commands[i]=((uint64_t)(0xF6000000u|xy)<<32)|xy;
+        uint32_t x=points[i].x*draw_scale,y=points[i].y*draw_scale;
+        uint32_t xy=(x<<14)|(y<<2);
+        /* Fill-cycle lower-right is inclusive. One logical pixel becomes a
+           2x2 square in high res, preserving particle brightness and size. */
+        uint32_t end=((x+draw_scale-1)<<14)|((y+draw_scale-1)<<2);
+        commands[i]=((uint64_t)(0xF6000000u|end)<<32)|xy;
     }
     point_commands_used+=count+2;
 }
@@ -176,13 +184,13 @@ void label(float x,float y,int style,const char *s) {
             text_cache[oldest].style=style; text_cache[oldest].frame=render_frame;
             strcpy(text_cache[oldest].text,s);
             rspq_block_begin();
-            rdpq_text_print(&(rdpq_textparms_t){.style_id=style},1,x,y,s);
+            rdpq_text_print(&(rdpq_textparms_t){.style_id=style},draw_font,x*draw_scale,y*draw_scale,s);
             text_cache[oldest].block=rspq_block_end();
             rspq_block_run(text_cache[oldest].block);
             return;
         }
     }
-    rdpq_text_print(&(rdpq_textparms_t){.style_id=style},1,x,y,s);
+    rdpq_text_print(&(rdpq_textparms_t){.style_id=style},draw_font,x*draw_scale,y*draw_scale,s);
 }
 void label_edge(float x,float y,int style,const char *s,bool right) {
     const rdpq_font_t *font=rdpq_text_get_font(1);
@@ -245,8 +253,8 @@ void draw_fluid(const Fluid *f,float x,float y,float width,float height,bool spe
         ink_x=x; ink_y=y; ink_w=width; ink_h=height;
         rspq_block_begin();
         rdpq_set_mode_standard(); rdpq_mode_filter(FILTER_BILINEAR);
-        rdpq_tex_blit(&ink,x,y,&(rdpq_blitparms_t){
-            .width=FW,.height=FH,.scale_x=width/FW,.scale_y=height/FH,.filtering=true});
+        rdpq_tex_blit(&ink,x*draw_scale,y*draw_scale,&(rdpq_blitparms_t){
+            .width=FW,.height=FH,.scale_x=width*draw_scale/FW,.scale_y=height*draw_scale/FH,.filtering=true});
         ink_blit=rspq_block_end();
     }
     rspq_block_run(ink_blit);
@@ -254,10 +262,33 @@ void draw_fluid(const Fluid *f,float x,float y,float width,float height,bool spe
     texture_ticks+=get_ticks()-texture_begin;
 #endif
 }
+static void video_configure(FrameRate rate) {
+    /* All cached commands contain physical coordinates and font/texture
+       state. Finish queued work before replacing them or the framebuffers. */
+    rspq_wait();
+    for(unsigned i=0;i<DRAW_STATIC_COUNT;i++) {
+        if(static_draw[i]) rspq_block_free(static_draw[i]);
+        static_draw[i]=NULL;
+    }
+    for(unsigned i=0;i<sizeof(text_cache)/sizeof(*text_cache);i++) {
+        if(text_cache[i].block) rspq_block_free(text_cache[i].block);
+        text_cache[i].block=NULL;
+    }
+    if(ink_blit) rspq_block_free(ink_blit);
+    ink_blit=NULL;
+    if(video_rate) display_close();
+    draw_scale=rate==FPS_30?2:1;
+    draw_font=draw_scale==2?2:1;
+    display_init(draw_scale==2?RESOLUTION_640x480:RESOLUTION_320x240,
+        DEPTH_16_BPP,3,GAMMA_NONE,FILTERS_RESAMPLE);
+    video_rate=rate;
+    perf_reset();
+    debugf("Plasma Pong 64: video %ux%u%s, %u FPS\n",320*draw_scale,240*draw_scale,
+        draw_scale==2?" interlaced":" progressive",(unsigned)rate);
+}
 int main(void) {
     debug_init_isviewer(); debug_init_emulog(); timer_init(); joypad_init();
     register_VI_handler(perf_vi);
-    display_init(RESOLUTION_320x240,DEPTH_16_BPP,3,GAMMA_NONE,FILTERS_RESAMPLE);
     audio_init(SOUND_RATE,4); sound_init(&sound,audio_get_frequency());
     audio_set_buffer_callback(fill_audio); audio_write_silence();
     /* Pad rows so partial-width uploads use LoadTile. The pinned libdragon's
@@ -286,9 +317,15 @@ int main(void) {
 #ifdef PLASMAPONG_CONFINEMENT_TEST
     confinement_cases();
 #endif
+    dfs_init(DFS_DEFAULT_LOCATION);
     rdpq_font_t *font=rdpq_font_load_builtin(FONT_BUILTIN_DEBUG_VAR);
+    rdpq_font_t *hi_font=rdpq_font_load("rom:/at01-2x.font64");
     const uint32_t colors[]={0xeaf6ff,0xa0b3c9,0x48dcff,0xff637e,0xffffff,0x02040a,0x737d8a,0x70ffd0,0xc28aff,MENU_GOLD};
-    for(unsigned i=0;i<sizeof(colors)/sizeof(colors[0]);i++) rdpq_font_style(font,i,&(rdpq_fontstyle_t){.color=color(colors[i])});
+    for(unsigned i=0;i<sizeof(colors)/sizeof(colors[0]);i++) {
+        rdpq_font_style(font,i,&(rdpq_fontstyle_t){.color=color(colors[i])});
+        rdpq_font_style(hi_font,i,&(rdpq_fontstyle_t){.color=color(colors[i])});
+    }
+    rdpq_text_register_font(2,hi_font);
     rdpq_text_register_font(1,font); game_init(&game); scores_load(&game); game.menu_rng=(uint32_t)get_ticks();
 #ifdef PLASMAPONG_SMOKE_FPS
     _Static_assert(PLASMAPONG_SMOKE_FPS==30 || PLASMAPONG_SMOKE_FPS==60,"valid benchmark frame rate");
@@ -297,6 +334,7 @@ int main(void) {
 #ifdef PLASMAPONG_SAVE_SMOKE
     save_smoke(&game);
 #endif
+    video_configure(game.frame_rate);
     uint64_t previous=get_ticks(); float accumulator=0;
     uint64_t sim_ticks=0; unsigned sim_steps=0;
     uint64_t draw_ticks=0; unsigned draw_frames=0;
@@ -384,6 +422,13 @@ int main(void) {
                     sim_ticks=0; sim_steps=0;
                 }
             }
+        }
+        if(video_rate!=game.frame_rate) {
+            video_configure(game.frame_rate);
+            /* Switching VI modes and EEPROM writes are outside play timing. */
+            previous=get_ticks(); accumulator=0;
+            frame_window=previous; frame_steps=0;
+            draw_ticks=0; draw_frames=0; sim_ticks=0; sim_steps=0;
         }
         surface_t *frame=display_get();
         uint64_t draw_begin=get_ticks();

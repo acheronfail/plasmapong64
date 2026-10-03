@@ -101,6 +101,10 @@ benchmark-confinement:
 smoke-flow:
     ./tools/build-rom.sh -j4 SMOKE_FLOW=1 RDP_VALIDATE=1 ROM=plasmapong-flow-smoke BUILD_DIR=build/flow_smoke
 
+# Change video modes through Options, then run scripted gameplay in high res.
+smoke-video:
+    ./tools/build-rom.sh -j4 SMOKE_VIDEO=1 RDP_VALIDATE=1 ROM=plasmapong-video-smoke BUILD_DIR=build/video_smoke
+
 # Exact preparation/pressure/advection/confinement fixtures, then stage timings.
 benchmark-prepare:
     ./tools/build-rom.sh -j4 SMOKE=1 FLUID_PROFILE=1 VELOCITY_TEST=1 DYE_TEST=1 RSP_TEST=1 CONFINEMENT_TEST=1 ROM=plasmapong-prepare-benchmark BUILD_DIR=build/prepare_benchmark

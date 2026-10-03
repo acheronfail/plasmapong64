@@ -53,5 +53,5 @@ int main(void) {
     assert(g.phase==PLAY && g.frame_rate==FPS_30 && g.highs[0].points==42);
     g.phase=FINISHED; in[0].start=false; game_step(&g,in); in[0].start=true; game_step(&g,in);
     assert(g.phase==PLAY && g.frame_rate==FPS_30 && g.highs[0].points==42);
-    puts("PASS: 30/60 FPS options, held-input debounce, restart retention, movement, charge/grace/cooldown seconds and tracer history");
+    puts("PASS: low/high resolution timing, held-input debounce, restart retention, movement, charge/grace/cooldown seconds and tracer history");
 }

@@ -74,6 +74,8 @@ typedef struct {
     int score_entry;
     Arcade arcade;
     HighScore highs[HIGH_SCORE_COUNT];
+    /* Saved video mode: FPS_60 = 320x240 low res, FPS_30 = 640x480 high res.
+       Retain the serialized values for compatibility with existing EEPROMs. */
     FrameRate frame_rate;
     unsigned options_selection;
 } Game;
