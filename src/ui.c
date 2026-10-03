@@ -366,7 +366,7 @@ void ui_draw(const Game *g) {
     }
     /* An eight-pixel filled circle, snapped so its strips share pixel edges. */
     float ball_x=roundf(bx),ball_y=roundf(by);
-    uint32_t ball_color=hot?0xff3030:WHITE;
+    uint32_t ball_color=hot?0xff3030:GOLD;
     rect(ball_x-2,ball_y-4,4,1,ball_color);
     rect(ball_x-3,ball_y-3,6,1,ball_color);
     rect(ball_x-4,ball_y-2,8,4,ball_color);
