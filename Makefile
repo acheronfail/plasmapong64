@@ -1,9 +1,12 @@
 ADVECTION_CHAIN ?= 1
 CONFINEMENT_CHAIN ?= 1
 PROJECTION_CHAIN ?= 1
+PIXELS_CHAIN ?= 1
 HIRES_FONT_FORMAT ?= RGBA16
 SPLAT_PLAN ?= 1
 SOUND_STEADY ?= 1
+PRESSURE_VECTOR_SUM ?= 1
+AUDIO_STREAM ?= 1
 EXPANSION_BANKS ?= 0
 SPEED_RSP ?= 1
 GRADIENT_RSP ?= 1
@@ -30,6 +33,9 @@ ifeq ($(N64_INST),)
 $(error N64_INST is unset. Use ./tools/build-rom.sh or install libdragon)
 endif
 include $(N64_INST)/include/n64.mk
+ifeq ($(PIXELS_CHAIN),1)
+N64_CFLAGS += -DPLASMAPONG_PIXELS_CHAIN
+endif
 src := src/main.c src/game.c src/arcade.c src/fluid.c src/fluid_advection.c src/ui.c src/sound.c src/save.c src/save_n64.c
 ifeq ($(EXPANSION_BANKS),1)
 src += src/expansion_n64.c
@@ -132,6 +138,12 @@ endif
 N64_CFLAGS += -DPLASMAPONG_RSP_TEST
 endif
 N64_CFLAGS += -Wall -Wextra -Werror
+ifeq ($(AUDIO_STREAM),1)
+N64_CFLAGS += -DPLASMAPONG_AUDIO_STREAM
+endif
+ifeq ($(PRESSURE_VECTOR_SUM),1)
+N64_RSPASFLAGS += -DPLASMAPONG_PRESSURE_VECTOR_SUM
+endif
 ifeq ($(SPLAT_PLAN),1)
 N64_CFLAGS += -DPLASMAPONG_SPLAT_PLAN
 endif
@@ -163,6 +175,7 @@ endif
 # Inline the fluid sampling loops without expanding the rest of the ROM.
 $(BUILD_DIR)/src/fluid.o $(BUILD_DIR)/src/fluid_advection.o $(BUILD_DIR)/src/fluid_dye_fixed.o $(BUILD_DIR)/src/fluid_velocity_fixed.o $(BUILD_DIR)/src/fluid_confinement.o: CFLAGS += -O3
 $(BUILD_DIR)/src/game.o $(BUILD_DIR)/src/ui.o: CFLAGS += -O3
+$(BUILD_DIR)/src/main.o: CFLAGS += -O3
 ifeq ($(SMOKE_FLOW),1)
 N64_CFLAGS += -DPLASMAPONG_SMOKE -DPLASMAPONG_SMOKE_FLOW
 endif
@@ -173,11 +186,18 @@ ifneq ($(SMOKE_EFFECT),)
 N64_CFLAGS += -DPLASMAPONG_SMOKE_EFFECT=$(SMOKE_EFFECT)
 endif
 ifneq ($(SMOKE_FPS),)
+# Legacy benchmark selector: 30 means high res, 60 means low res.
 N64_CFLAGS += -DPLASMAPONG_SMOKE_FPS=$(SMOKE_FPS)
+endif
+ifeq ($(SMOKE_HIGH_RES),1)
+N64_CFLAGS += -DPLASMAPONG_SMOKE_HIGH_RES
 endif
 ifeq ($(SMOKE),1)
 SMOKE_PLAYERS ?= 2
 N64_CFLAGS += -DPLASMAPONG_SMOKE -DPLASMAPONG_SMOKE_PLAYERS=$(SMOKE_PLAYERS)
+endif
+ifeq ($(SMOKE_STRESS),1)
+N64_CFLAGS += -DPLASMAPONG_SMOKE_STRESS
 endif
 ifeq ($(SMOKE_ARCADE),1)
 SMOKE_LEVEL ?= 1

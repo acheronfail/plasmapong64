@@ -107,11 +107,19 @@ smoke-video:
 
 # Complete per-frame work, excluding intentional rate-limiter sleep.
 benchmark-hires:
-    ./tools/build-rom.sh -j4 SMOKE=1 SMOKE_PLAYERS=4 SMOKE_FPS=30 SMOKE_EFFECT=2 FRAME_WORK_PROFILE=1 ROM=plasmapong-hires-work BUILD_DIR=build/hires_work
+    ./tools/build-rom.sh -j4 SMOKE=1 SMOKE_PLAYERS=4 SMOKE_HIGH_RES=1 SMOKE_EFFECT=2 FRAME_WORK_PROFILE=1 ROM=plasmapong-hires-work BUILD_DIR=build/hires_work
+
+# Test-only continuous powers, keeping every player alive and bypassing cooldowns.
+benchmark-hires-stress:
+    ./tools/build-rom.sh -j4 SMOKE=1 SMOKE_PLAYERS=4 SMOKE_HIGH_RES=1 SMOKE_EFFECT=2 SMOKE_STRESS=1 FRAME_WORK_PROFILE=1 ROM=plasmapong-hires-stress BUILD_DIR=build/hires_stress
+
+# Continuous powers while cycling every flow display option.
+benchmark-hires-effects:
+    ./tools/build-rom.sh -j4 SMOKE=1 SMOKE_PLAYERS=4 SMOKE_HIGH_RES=1 SMOKE_FLOW=1 SMOKE_STRESS=1 FRAME_WORK_PROFILE=1 ROM=plasmapong-hires-effects BUILD_DIR=build/hires_effects
 
 # Optional framebuffer bank placement; requires hardware timing comparison.
 benchmark-expansion:
-    ./tools/build-rom.sh -j4 EXPANSION_BANKS=1 SMOKE=1 SMOKE_PLAYERS=4 SMOKE_FPS=30 SMOKE_EFFECT=2 FRAME_WORK_PROFILE=1 ROM=plasmapong-expansion-work BUILD_DIR=build/expansion_work
+    ./tools/build-rom.sh -j4 EXPANSION_BANKS=1 SMOKE=1 SMOKE_PLAYERS=4 SMOKE_HIGH_RES=1 SMOKE_EFFECT=2 FRAME_WORK_PROFILE=1 ROM=plasmapong-expansion-work BUILD_DIR=build/expansion_work
 
 # Exact preparation/pressure/advection/confinement fixtures, then stage timings.
 benchmark-prepare:

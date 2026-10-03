@@ -29,5 +29,9 @@ void fluid_divergence_rsp_begin(int32_t *divergence,const FluidVelocityFixed *ve
 void fluid_projection_rsp(FluidVelocityFixed *velocity,int32_t *divergence,int32_t *pressure);
 void fluid_speed_pixels_rsp(const Fluid *f,uint32_t *pixels,unsigned stride);
 void fluid_pixels_rsp(const Fluid *f,uint32_t *pixels,unsigned stride);
+/* Queue-only texture producers. Subsequent RDP uploads must use the same
+   RSPQ queue; finish it before CPU access or reusing the destination. */
+void fluid_pixels_rsp_begin(const Fluid *f,uint32_t *pixels,unsigned stride);
+void fluid_speed_pixels_rsp_begin(const Fluid *f,uint32_t *pixels,unsigned stride);
 #endif
 #endif

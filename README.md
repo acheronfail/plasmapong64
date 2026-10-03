@@ -9,24 +9,23 @@ than two controllers, and larger matches are available only when enough pads are
 connected. Players are assigned connected N64 controllers in port order.
 
 Choose **OPTIONS → RESOLUTION** to switch between **LOW RES** (320 × 240,
-60 FPS, default) and **HIGH RES** (640 × 480 interlaced, 30 FPS).
+60 FPS, default) and **HIGH RES** (640 × 480 interlaced, 60 updates per second).
 Up/down selects a row; left/right changes its value immediately. Each change saves
 automatically to cartridge EEPROM alongside flow effects and high scores. Older
 save records retain their scores/effect and default to low res. Existing records
 with the former 30 FPS setting select high res; 60 FPS selects low res.
-The setting changes
-both physics and rendering frequency; movement, charge and cooldown retain their
-real-world durations, though fluid trajectories can differ with the timestep.
+Both resolutions use the same 60 Hz physics, emission and timer settings.
+On NTSC, high res presents a new framebuffer each field: roughly 60 fields,
+or 30 complete interlaced scans, per second.
 
 A console performance overlay is enabled for testing: **L** on controller port 1
 shows/hides it; **R** resets its counters. `FPS` shows newly presented frames per
 second followed by measured video refresh rate. `MISS` counts repeated refreshes
-beyond the selected mode's allowance: one refresh per frame at 60 FPS, two at
-30 FPS. `GAP` is the longest interval in refreshes (1 is ideal at 60 FPS; 2 at
-30 FPS). Counters restart on scene or frame-rate changes. After entering gameplay,
+beyond one refresh per frame. `GAP` is the longest interval in refreshes
+(1 is ideal). Counters restart on scene or resolution changes. After entering gameplay,
 press R and exercise four-player jets, suction, and all flow effects for several
 minutes. NTSC is roughly 60 Hz; PAL's native video mode remains roughly 50 Hz,
-with physics running at the selected frequency. The overlay updates its cached
+with physics running at 60 Hz. The overlay updates its cached
 text twice a second; hiding it removes its drawing cost while sampling continues.
 
 Three- and four-player matches use a square court: P1 (cyan) on the left, P2
@@ -181,7 +180,7 @@ badges. Arcade requires one emulated N64 pad in port 1; multiplayer requires two
   rewards, lives, arena-current patterns, and ranked scores with saturating points.
 - `src/save.c` and `src/save_n64.c`: portable score serialization/checksums and a
   two-slot EEPROM backend. ROM metadata requests 4K EEPROM.
-- `src/game.c`: selectable 30/60 Hz simulation, four ball collision substeps per tick,
+- `src/game.c`: fixed 60 Hz simulation, four ball collision substeps per tick,
   velocity-field coupling, conditional catches, launch, scoring, and match state.
   Bats stay in their own end of the court. Time accumulation supports PAL and
   NTSC; catch-up is capped after long stalls.
@@ -936,7 +935,7 @@ emulation. Logs, ROMs, per-frame CSVs and numeric summaries are retained in
 Choose **OPTIONS** from the main menu. Up/down selects **FLOW EFFECT** or
 **RESOLUTION**; left/right changes the selected value. Flow effects are **NONE**,
 **PARTICLES**, **PARTICLE TAILS**, and **SPEED**. **LOW RES** uses 320 × 240 at
-60 FPS; **HIGH RES** uses 640 × 480 interlaced at 30 FPS. B returns to the main menu. The animated background
+60 FPS; **HIGH RES** uses 640 × 480 interlaced with 60 updates per second. B returns to the main menu. The animated background
 previews the selected effect. Each change automatically saves to cartridge EEPROM;
 missing storage or a failed write is shown in the options screen. Successful
 saves are silent, without confirmation text in the options or high-score screens.
@@ -1640,3 +1639,111 @@ SPLAT_PLAN=0 SOUND_STEADY=0` in a separate build. Raw profiles, comparisons and
 source hashes are retained in `build/hires-opt/`; `results.json` contains the
 matched results. This is emulator evidence; console work-budget, bank-placement
 benefit and field pacing still need hardware confirmation.
+
+### 60 Hz high-res optimisation (2026-10-04)
+
+Both resolution options now use the same nominal 60 Hz physics, input, emission,
+timers and tracer history. The saved value `30` still selects high resolution
+for compatibility; it no longer selects a simulation rate. On NTSC, 640 × 480
+remains interlaced: approximately 60 new fields per second, or 30 complete scans.
+The scheduler starts one update after each actual VI field (about 59.94 Hz)
+while each physics step remains 1/60 second. Direct field pacing avoids both
+the periodic double-step spikes from a 60.000 Hz clock and the occasional
+display repeat observed with an estimated VI period. PAL presentation has not been benchmarked.
+
+The optimisation target is **at most 14 ms per update**, leaving about 2.67 ms
+inside the nominal 16.67 ms budget. The first completed-work measurements in
+Ares with 4 MiB, before the new pressure/audio paths, were:
+
+| Replay | Updates measured | Mean active work | Worst active work |
+| --- | ---: | ---: | ---: |
+| High res, four players, tails | 1,800 | 12.685 ms | 16.086 ms |
+| High res, animated menu | 1,200 | 12.796 ms | 13.999 ms |
+| High res, continuous four-player powers | 1,800 | 14.729 ms | 19.332 ms |
+| Low res, four players, tails | 1,800 | 12.774 ms | 16.255 ms |
+
+Active work includes input, simulation, audio interrupts and completed RSP/RDP
+drawing, but subtracts framebuffer acquisition waits and excludes intentional
+limiter sleep. Buffer acquisition averaged about 7–8 us. All four replays
+reported no repeated VI fields or presentation misses. Buffering absorbs short
+spikes; that does not establish that each update meets the work budget. The
+stress replay deliberately bypasses cooldowns and keeps all players alive.
+It exposes remaining overload rather than representing ordinary gameplay.
+The low-res comparison preceded the final startup clock adjustment. Later
+measurements below include the additional pressure and audio optimisations.
+
+With the final direct-field scheduler and both default optimisations enabled:
+
+| High-res replay | Updates measured | Mean active work | Worst active work |
+| --- | ---: | ---: | ---: |
+| Ordinary four-player gameplay, tails | 1,800 | 11.660 ms | 12.645 ms |
+| Animated menu | 1,200 | 12.124 ms | 13.403 ms |
+| Continuous four-player powers, cycling all four effects | 7,200 | 12.083 ms | 13.736 ms |
+| Arcade replay, starting at level 8 | 1,200 | 11.060 ms | 11.981 ms |
+
+The worst observed update meets the 14 ms target and leaves **2.931 ms (17.6%)**
+inside the nominal 16.667 ms budget. These final runs report no repeated fields,
+presentation misses or audio underrun observations. The all-effects replay
+runs for about two emulated minutes, including repeated effect transitions.
+An earlier estimated-period scheduler produced one repeated field after about
+72 seconds despite work fitting the budget; direct VI pacing removes that
+failure in the longer replay. Reconfiguration, EEPROM writes and initial scene
+setup remain outside the steady gameplay budget.
+
+Retained improvements load RSP neighbour windows with vector loads, overlap
+pixel generation with CPU drawing preparation, specialise tracer drawing loops,
+precompute ring directions and share per-frame suction radius calculation.
+Pump force and pigment preparation avoid redundant fixed-point conversions.
+`PRESSURE_VECTOR_SUM=1` sums independent neighbours in the RSP accumulator,
+while preserving the scalar left-neighbour recurrence and all eight passes.
+Paired vector/scalar instructions and early scratch loads hide execution/load
+latency. The isolated pressure fixtures improved from 2.443 ms to 1.863 ms per
+solve, with every result still bit-exact.
+
+`AUDIO_STREAM=1` generates bounded batches of at most 128 stereo samples on
+the main thread. The batch allowance follows elapsed time and the actual AI
+frequency, with at most 384 samples generated per update. Mixing overlaps
+queued RSP projection; AI interrupts only submit completed buffers. Partial
+buffers remain private until `audio_write_end`, and the original mixer and PCM
+assets are unchanged. Playback starts after loading/first render, and mode
+changes refill spare buffers around the deliberate reconfiguration stall.
+EEPROM writes and verification reads service quiet buffers between pages,
+preserving the intentional save mute and the journal's commit order. The arcade
+replay covers a high-score save and resumes with no AI starvation observations.
+Both optimisations are enabled by default and can be disabled independently
+for comparisons. The first visible scene's command setup happens during startup,
+outside the steady update budget. The 48 × 33 simulation grid, pressure passes, 96 tracers
+and five tail layers are unchanged.
+
+The original principal costs were pressure/projection (about 3.8 ms), advection
+(about 3.6 ms combined), sustained pumps and audio interrupt bursts. An exact
+speculative audio cache was discarded because it increased total work under
+stress. Precomputed loop gain/pan tables saved audio arithmetic but also
+increased total frame work; cached PCM output stores did not improve the
+matched stress replay. These experiments are absent from the playable build.
+
+The portable suite passes, including unchanged physics traces, exact audio
+callbacks, partitioned-buffer PCM/voice-state comparisons and 2,000 golden pump
+cases. RSP numerical fixtures pass, including
+queued pixel production, overlay transitions and buffer guards. A validated
+4 MiB replay switches low/high/low/high through Options and cycles all four
+effects without RDP errors. A dedicated EEPROM test poisons the in-memory
+scores/settings and recovers both journal slots and both resolution choices
+from fresh chip reads. Thirty host drawing command streams also match the
+pre-optimisation UI exactly. The normal playable ROM builds successfully.
+These are emulator and host results; console timing remains unverified.
+
+Build and run ordinary/stress benchmarks separately:
+
+```sh
+just benchmark-hires
+python3 tools/benchmark-ares.py plasmapong-hires-work.z64 build/hires-work.log --windows 12 --memory-mib 4
+just benchmark-hires-stress
+python3 tools/benchmark-ares.py plasmapong-hires-stress.z64 build/hires-stress.log --windows 12 --memory-mib 4
+just benchmark-hires-effects
+python3 tools/benchmark-ares.py plasmapong-hires-effects.z64 build/hires-effects.log --windows 48 --memory-mib 4 --timeout 480
+```
+
+Raw logs, distributions, source hashes and a comparison manifest are retained
+locally in `build/hires60/`. Percentiles are 250 us histogram upper bounds per
+150-update window; averages and maxima retain microsecond precision.

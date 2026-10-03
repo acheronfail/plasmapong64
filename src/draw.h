@@ -20,5 +20,6 @@ enum { DRAW_MENU_TITLE, DRAW_COURT, DRAW_SQUARE_MASK, DRAW_STATIC_COUNT };
 /* Callbacks must contain only immutable drawing commands. */
 void draw_static(unsigned id,void (*draw)(void));
 void ui_measure_menu(Game *g);
+void ui_init(void);
 void ui_draw(const Game *g);
 #endif

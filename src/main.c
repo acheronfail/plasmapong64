@@ -41,7 +41,12 @@ static Sound sound;
 static unsigned draw_scale=1;
 static uint8_t draw_font=1;
 static FrameRate video_rate;
+#ifdef PLASMAPONG_PIXELS_CHAIN
+static rspq_syncpoint_t pixel_done;
+static bool pixel_pending;
+#endif
 static volatile PresentationStats presentation;
+static volatile uint32_t vi_count;
 static bool perf_visible=true;
 static char perf_text[64]="FPS -- / --", perf_gap[64]="MISS 0  GAP 1 VI";
 static PresentationStats perf_window;
@@ -52,7 +57,9 @@ static void perf_vi(void) {
        its framebuffer swap runs before this sampler. No work is fenced here. */
     uint32_t origin=*(volatile uint32_t *)0xA4400004;
     bool odd_field=(*(volatile uint32_t *)0xA4400010)&1;
-    presentation_sample(&presentation,presentation_origin(origin,draw_scale==2,odd_field,640*2),get_ticks());
+    uint64_t now=get_ticks();
+    vi_count++;
+    presentation_sample(&presentation,presentation_origin(origin,draw_scale==2,odd_field,640*2),now);
 }
 static PresentationStats perf_snapshot(void) {
     disable_interrupts();
@@ -94,6 +101,59 @@ static void fill_audio(short *buffer,size_t frames) {
     audio_ticks+=get_ticks()-begin; audio_frames+=frames;
 #endif
 }
+#ifdef PLASMAPONG_AUDIO_STREAM
+static short *audio_buffer;
+static unsigned audio_cursor,audio_quota;
+static uint64_t audio_debt,audio_clock;
+static unsigned audio_generated,audio_underruns;
+/* Main-thread producer. AI interrupts only submit completed buffers. A buffer
+   remains private until every sample has been generated and write_end is called. */
+void audio_background(void) {
+    while(audio_quota) {
+        if(!audio_buffer) {
+            if(!audio_can_write()) return;
+            audio_buffer=audio_write_begin(); audio_cursor=0;
+        }
+        unsigned remaining=audio_get_buffer_length()-audio_cursor;
+        unsigned count=audio_quota<remaining?audio_quota:remaining;
+        if(count>128) count=128;
+        fill_audio(audio_buffer+audio_cursor*2,count);
+        audio_generated+=count;
+        audio_cursor+=count; audio_quota-=count;
+        audio_debt-=(uint64_t)count*TICKS_FROM_US(1000000);
+        if(audio_cursor==(unsigned)audio_get_buffer_length()) {
+            audio_write_end(); audio_buffer=NULL;
+        }
+    }
+}
+static void audio_reserve(void) {
+    /* Mode changes may wait for VI and allocate new framebuffers. Fill spare
+       buffers before that deliberate stall; it is outside steady play timing. */
+    for(unsigned i=0;i<4;i++) {
+        if(!audio_buffer) {
+            if(!audio_can_write()) break;
+            audio_buffer=audio_write_begin(); audio_cursor=0;
+        }
+        fill_audio(audio_buffer+audio_cursor*2,audio_get_buffer_length()-audio_cursor);
+        audio_write_end(); audio_buffer=NULL;
+    }
+}
+void audio_storage_service(void) {
+    if(!audio_clock) return;
+    /* Preserve the existing intentional EEPROM mute while keeping AI fed.
+       Each page write is short enough to service between pages. Do not
+       advance voices for silence or accumulate sample debt across the save. */
+    for(unsigned i=0;i<4;i++) {
+        if(!audio_buffer) {
+            if(!audio_can_write()) break;
+            audio_buffer=audio_write_begin(); audio_cursor=0;
+        }
+        memset(audio_buffer+audio_cursor*2,0,(audio_get_buffer_length()-audio_cursor)*4);
+        audio_write_end(); audio_buffer=NULL;
+    }
+    audio_debt=0; audio_clock=get_ticks(); audio_quota=0;
+}
+#endif
 static surface_t ink;
 static rspq_block_t *ink_blit;
 static float ink_x,ink_y,ink_w,ink_h;
@@ -112,34 +172,47 @@ static struct {
 } text_cache[32];
 static unsigned render_frame=1;
 #ifdef PLASMAPONG_FRAME_WORK_PROFILE
-static void profile_frame_work(uint64_t begin,Phase phase) {
+static void profile_frame_work(uint64_t begin,uint64_t buffer_wait,Phase phase) {
     /* Include simulation, interrupts, buffer acquisition and completed RDP
        drawing, excluding deliberate rate-limiter sleep. Quantiles are upper
        bounds in 250-us buckets; maximum and average retain exact microseconds. */
-    static unsigned bins[256],frames,maximum;
-    static uint64_t total;
+    static unsigned bins[2][256],frames,maximum[2],wait_max;
+    static uint64_t total[2],wait_total;
     static Phase measured_phase;
-    if(phase!=measured_phase) {
-        memset(bins,0,sizeof(bins)); frames=maximum=0; total=0;
+    static FrameRate measured_mode;
+    if(phase!=measured_phase || game.frame_rate!=measured_mode) {
+        memset(bins,0,sizeof(bins)); frames=wait_max=0;
+        memset(maximum,0,sizeof(maximum)); memset(total,0,sizeof(total)); wait_total=0;
         measured_phase=phase;
+        measured_mode=game.frame_rate;
     }
     unsigned us=TIMER_MICROS_LL(get_ticks()-begin);
-    unsigned bucket=(us+249)/250;
-    bins[bucket<256?bucket:255]++; frames++; total+=us;
-    if(us>maximum) maximum=us;
+    unsigned wait_us=TIMER_MICROS_LL(buffer_wait);
+    wait_total+=wait_us; if(wait_us>wait_max) wait_max=wait_us;
+    for(unsigned mode=0;mode<2;mode++) {
+        unsigned value=mode?us-wait_us:us;
+        unsigned bucket=(value+249)/250;
+        bins[mode][bucket<256?bucket:255]++; total[mode]+=value;
+        if(value>maximum[mode]) maximum[mode]=value;
+    }
+    frames++;
     if(frames==150) {
-        unsigned count=0,p50=0,p95=0,p99=0;
-        for(unsigned i=0;i<256;i++) {
-            count+=bins[i];
-            unsigned bound=i==255?maximum:i*250;
-            if(!p50 && count>=75) p50=bound;
-            if(!p95 && count>=143) p95=bound;
-            if(!p99 && count>=149) p99=bound;
+        for(unsigned mode=0;mode<2;mode++) {
+            unsigned count=0,p50=0,p95=0,p99=0;
+            for(unsigned i=0;i<256;i++) {
+                count+=bins[mode][i];
+                unsigned bound=i==255?maximum[mode]:i*250;
+                if(!p50 && count>=75) p50=bound;
+                if(!p95 && count>=143) p95=bound;
+                if(!p99 && count>=149) p99=bound;
+            }
+            static const char *names[]={"MENU","LOBBY","PLAY","PAUSED","FINISHED","SCORES","OPTIONS"};
+            debugf("Frame %s: average %u us, p50 <= %u us, p95 <= %u us, p99 <= %u us, max %u us (150 %s frames)\n",
+                mode?"active":"work",(unsigned)(total[mode]/frames),p50,p95,p99,maximum[mode],names[phase]);
         }
-        static const char *names[]={"MENU","LOBBY","PLAY","PAUSED","FINISHED","SCORES","OPTIONS"};
-        debugf("Frame work: average %u us, p50 <= %u us, p95 <= %u us, p99 <= %u us, max %u us (150 %s frames)\n",
-            (unsigned)(total/frames),p50,p95,p99,maximum,names[phase]);
-        memset(bins,0,sizeof(bins)); frames=maximum=0; total=0;
+        debugf("Buffer wait: average %u us, max %u us\n",(unsigned)(wait_total/frames),wait_max);
+        memset(bins,0,sizeof(bins)); frames=wait_max=0;
+        memset(maximum,0,sizeof(maximum)); memset(total,0,sizeof(total)); wait_total=0;
     }
 }
 #endif
@@ -257,7 +330,13 @@ void draw_fluid(const Fluid *f,float x,float y,float width,float height,bool spe
 #endif
     if(speed) {
 #ifdef PLASMAPONG_SPEED_RSP
+#ifdef PLASMAPONG_PIXELS_CHAIN
+        fluid_speed_pixels_rsp_begin(f,ink.buffer,ink.stride/sizeof(uint32_t));
+        pixel_done=rspq_syncpoint_new(); pixel_pending=true;
+        rspq_flush();
+#else
         fluid_speed_pixels_rsp(f,ink.buffer,ink.stride/sizeof(uint32_t));
+#endif
 #else
         /* CPU writers use cached stores, then expose complete rows to RDP. */
         void *pixels=CachedAddr(ink.buffer);
@@ -266,7 +345,13 @@ void draw_fluid(const Fluid *f,float x,float y,float width,float height,bool spe
 #endif
     } else {
 #ifdef PLASMAPONG_PREPARE_RSP
+#ifdef PLASMAPONG_PIXELS_CHAIN
+        fluid_pixels_rsp_begin(f,ink.buffer,ink.stride/sizeof(uint32_t));
+        pixel_done=rspq_syncpoint_new(); pixel_pending=true;
+        rspq_flush();
+#else
         fluid_pixels_rsp(f,ink.buffer,ink.stride/sizeof(uint32_t));
+#endif
 #else
         void *pixels=CachedAddr(ink.buffer);
         fluid_pixels(f,pixels,ink.stride/sizeof(uint32_t));
@@ -289,15 +374,23 @@ void draw_fluid(const Fluid *f,float x,float y,float width,float height,bool spe
             .width=FW,.height=FH,.scale_x=width*draw_scale/FW,.scale_y=height*draw_scale/FH,.filtering=true});
         ink_blit=rspq_block_end();
     }
+    /* The upload follows its pixel producer on the same queue. CPU tail
+       preparation can overlap generation; frame-start wait protects reuse. */
     rspq_block_run(ink_blit);
 #ifdef PLASMAPONG_FLUID_PROFILE
     texture_ticks+=get_ticks()-texture_begin;
 #endif
 }
 static void video_configure(FrameRate rate) {
+#ifdef PLASMAPONG_AUDIO_STREAM
+    if(audio_clock) audio_reserve();
+#endif
     /* All cached commands contain physical coordinates and font/texture
        state. Finish queued work before replacing them or the framebuffers. */
     rspq_wait();
+#ifdef PLASMAPONG_PIXELS_CHAIN
+    pixel_pending=false;
+#endif
     for(unsigned i=0;i<DRAW_STATIC_COUNT;i++) {
         if(static_draw[i]) rspq_block_free(static_draw[i]);
         static_draw[i]=NULL;
@@ -316,13 +409,17 @@ static void video_configure(FrameRate rate) {
     video_rate=rate;
     perf_reset();
     debugf("Plasma Pong 64: video %ux%u%s, %u FPS\n",320*draw_scale,240*draw_scale,
-        draw_scale==2?" interlaced":" progressive",(unsigned)rate);
+        draw_scale==2?" interlaced":" progressive",GAME_HZ);
+#ifdef PLASMAPONG_AUDIO_STREAM
+    if(audio_clock) {
+        audio_reserve();
+        audio_debt=0; audio_clock=get_ticks(); audio_quota=0;
+    }
+#endif
 }
 int main(void) {
     debug_init_isviewer(); debug_init_emulog(); timer_init(); joypad_init();
     register_VI_handler(perf_vi);
-    audio_init(SOUND_RATE,4); sound_init(&sound,audio_get_frequency());
-    audio_set_buffer_callback(fill_audio); audio_write_silence();
     /* Pad rows so partial-width uploads use LoadTile. The pinned libdragon's
        RGBA32 LoadBlock path corrupts this non-power-of-two texture width. */
     rdpq_init(); ink=surface_alloc(FMT_RGBA32,64,FH);
@@ -360,14 +457,43 @@ int main(void) {
     rdpq_text_register_font(2,hi_font);
     rdpq_text_register_font(1,font); game_init(&game); scores_load(&game); game.menu_rng=(uint32_t)get_ticks();
 #ifdef PLASMAPONG_SMOKE_FPS
-    _Static_assert(PLASMAPONG_SMOKE_FPS==30 || PLASMAPONG_SMOKE_FPS==60,"valid benchmark frame rate");
+    _Static_assert(PLASMAPONG_SMOKE_FPS==30 || PLASMAPONG_SMOKE_FPS==60,"valid legacy benchmark resolution selector");
     game.frame_rate=(FrameRate)PLASMAPONG_SMOKE_FPS;
+#endif
+#ifdef PLASMAPONG_SMOKE_HIGH_RES
+    game.frame_rate=FPS_30;
 #endif
 #ifdef PLASMAPONG_SAVE_SMOKE
     save_smoke(&game);
 #endif
     video_configure(game.frame_rate);
-    uint64_t previous=get_ticks(); float accumulator=0;
+    /* Build the first scene's immutable/text commands during startup. This
+       first visible menu is initialization, before the timed update loop. */
+    uint64_t startup_begin=get_ticks();
+    ui_init();
+    surface_t *startup_frame=display_get();
+    ui_measure_menu(&game);
+    fill_mode=false;
+    rdpq_attach(startup_frame,NULL); ui_draw(&game);
+    if(perf_visible) {
+        rect(14,27,250,28,0x09111f);
+        label(18,39,0,perf_text); label(18,51,0,perf_gap);
+    }
+    rdpq_detach_show(); rspq_wait();
+    debugf("Plasma Pong 64: startup render %llu us (outside update budget)\n",
+        (unsigned long long)TIMER_MICROS_LL(get_ticks()-startup_begin));
+    /* Start playback after loading and the first render, so they cannot
+       consume the producer's initial buffer reserve or create sample debt. */
+    audio_init(SOUND_RATE,4); sound_init(&sound,audio_get_frequency());
+#ifdef PLASMAPONG_AUDIO_STREAM
+    audio_write_silence(); audio_write_silence();
+    audio_clock=get_ticks();
+#else
+    audio_set_buffer_callback(fill_audio); audio_write_silence();
+#endif
+    /* The startup render already consumed part of the first field's time. */
+    uint64_t previous=startup_begin; float accumulator=0;
+    uint32_t previous_vi=vi_count;
     uint64_t sim_ticks=0; unsigned sim_steps=0;
     uint64_t draw_ticks=0; unsigned draw_frames=0;
     uint64_t frame_window=get_ticks(); unsigned frame_steps=0;
@@ -377,11 +503,21 @@ int main(void) {
     perf_reset();
     debugf("Plasma Pong 64: ready, %u-byte game state, %u MiB RDRAM\n",(unsigned)sizeof(game),(unsigned)get_memory_size()/(1024*1024));
     while(1) {
+        /* Start NTSC/MPAL work after each real VI field. An estimated clock
+           period can drift across a display deadline even when work fits.
+           Physics retains its nominal 1/60 step; PAL uses clock catch-up. */
         const float frame_step=game_dt(&game);
+        bool field_paced=get_tv_type()!=TV_PAL;
+        uint32_t fields=0;
+        if(field_paced) {
+            while(vi_count==previous_vi) wait_ticks(TICKS_FROM_US(50));
+            uint32_t current_vi=vi_count;
+            fields=current_vi-previous_vi; previous_vi=current_vi;
+        }
         uint64_t now=get_ticks();
         float elapsed=TIMER_MICROS_LL(now-previous)*.000001f; previous=now;
         /* Bound catch-up after stalls; fixed physics works on PAL and NTSC. */
-        accumulator+=minf(elapsed,.1f);
+        accumulator+=minf(field_paced?fields*frame_step:elapsed,.1f);
         /* There is no render interpolation: a frame with no new simulation
            step repeats the same image. Reserve that time for the next selected-rate
            update instead of spending it regenerating/uploading the texture.
@@ -393,6 +529,22 @@ int main(void) {
         }
 #ifdef PLASMAPONG_FRAME_WORK_PROFILE
         uint64_t work_begin=get_ticks();
+#endif
+#ifdef PLASMAPONG_AUDIO_STREAM
+        uint64_t audio_now=get_ticks();
+        audio_debt+=(audio_now-audio_clock)*(unsigned)audio_get_frequency();
+        audio_clock=audio_now;
+        uint64_t owed=audio_debt/TICKS_FROM_US(1000000);
+        audio_quota=owed>384?384:(unsigned)owed;
+        if(!(*(volatile uint32_t *)0xa450000c & (1u<<30))) audio_underruns++;
+#endif
+#ifdef PLASMAPONG_PIXELS_CHAIN
+        /* The previous texture producer owns its source dye/velocity until
+           this point. Finish that producer before CPU splats can dirty it;
+           its subsequent RDP drawing can still overlap this simulation. */
+        if(pixel_pending) {
+            rspq_flush(); rspq_syncpoint_wait(pixel_done); pixel_pending=false;
+        }
 #endif
         joypad_poll(); Input input[MAX_PLAYERS]={0};
         for(int p=0;p<MAX_PLAYERS;p++) {
@@ -429,6 +581,7 @@ int main(void) {
             if(game.scores_dirty) {
                 scores_store(&game);
                 previous=get_ticks(); accumulator=0;
+                previous_vi=vi_count;
             }
 #ifdef PLASMAPONG_FLUID_PROFILE
             fluid_profile.enabled=false;
@@ -458,14 +611,27 @@ int main(void) {
                 }
             }
         }
+#ifdef PLASMAPONG_AUDIO_STREAM
+        audio_background();
+#endif
         if(video_rate!=game.frame_rate) {
             video_configure(game.frame_rate);
             /* Switching VI modes and EEPROM writes are outside play timing. */
             previous=get_ticks(); accumulator=0;
+            previous_vi=vi_count;
             frame_window=previous; frame_steps=0;
             draw_ticks=0; draw_frames=0; sim_ticks=0; sim_steps=0;
+#ifdef PLASMAPONG_FRAME_WORK_PROFILE
+            work_begin=get_ticks();
+#endif
         }
+#ifdef PLASMAPONG_FRAME_WORK_PROFILE
+        uint64_t buffer_begin=get_ticks();
+#endif
         surface_t *frame=display_get();
+#ifdef PLASMAPONG_FRAME_WORK_PROFILE
+        uint64_t buffer_wait=get_ticks()-buffer_begin;
+#endif
         uint64_t draw_begin=get_ticks();
         /* Finish the previous frame before overwriting its shared texture or
            freeing a blit block. The simulation above can run alongside RDP. */
@@ -494,9 +660,15 @@ int main(void) {
 #endif
         draw_ticks+=get_ticks()-draw_begin;
 #ifdef PLASMAPONG_FRAME_WORK_PROFILE
-        profile_frame_work(work_begin,game.phase);
+        profile_frame_work(work_begin,buffer_wait,game.phase);
 #endif
         if(++draw_frames==150) {
+#ifdef PLASMAPONG_AUDIO_STREAM
+            debugf("Audio stream: %u samples, %u underrun observations, %llu samples owed\n",
+                audio_generated,audio_underruns,
+                (unsigned long long)(audio_debt/TICKS_FROM_US(1000000)));
+            audio_generated=audio_underruns=0;
+#endif
             debugf("Plasma Pong 64: draw average %llu us/frame\n",
                 (unsigned long long)(TIMER_MICROS_LL(draw_ticks)/draw_frames));
             uint64_t window_end=get_ticks();
@@ -508,7 +680,7 @@ int main(void) {
             debugf("Presentation: %lu new / %lu VI, %lu repeats, longest %lu VI gap (%lu missed, target %u FPS)\n",
                 (unsigned long)shown.frames,(unsigned long)shown.refreshes,
                 (unsigned long)shown.repeats,(unsigned long)shown.longest_gap,
-                (unsigned long)shown.misses,(unsigned)game.frame_rate);
+                (unsigned long)shown.misses,GAME_HZ);
 #ifdef PLASMAPONG_FLUID_PROFILE
             debugf("Draw profile: pixels %llu us, texture %llu us, wait %llu us, other %llu us/frame\n",
                 (unsigned long long)TIMER_MICROS_LL(pixel_ticks)/draw_frames,

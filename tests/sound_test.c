@@ -55,8 +55,32 @@ static void exact_mixer(void) {
     }
     puts("PASS: blocked mixer matches original PCM and voice state over 1200 variable-size callbacks");
 }
+static void partitioned_mixer(void) {
+    Sound a,b;
+    Game game={.phase=PLAY,.players=4,.lives={3,3,3,3}};
+    int16_t whole[632*2],parts[632*2];
+    sound_init(&a,15926); b=a;
+    for(unsigned n=0;n<300;n++) {
+        game.sound_events=(n*61u)&0x7ff;
+        for(unsigned p=0;p<MAX_PLAYERS;p++) {
+            game.bat[p].sucking=(n+p)%11<8;
+            game.previous[p].z=(n+p)%13<9;
+        }
+        sound_update(&a,&game); sound_update(&b,&game);
+        sound_render_reference(&a,whole,632);
+        for(unsigned offset=0;offset<632;) {
+            unsigned count=1+(offset+n*17u)%128;
+            if(count>632-offset) count=632-offset;
+            sound_render(&b,parts+offset*2,count); offset+=count;
+        }
+        assert(!memcmp(whole,parts,sizeof(whole)));
+        assert(!memcmp(&a,&b,sizeof(a)));
+    }
+    puts("PASS: partitioned audio batches preserve exact PCM and complete voice state");
+}
 int main(void) {
     exact_mixer();
+    partitioned_mixer();
     sound_init(&s,SOUND_RATE); second(); assert(energy(0)==0 && energy(1)==0);
     g=(Game){.phase=PLAY,.sound_events=SOUND_BAT1}; sound_update(&s,&g); second();
     int hit_peak=peak(); long long hit=energy(0); assert(hit>0 && hit>energy(1)*2);

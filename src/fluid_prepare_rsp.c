@@ -4,6 +4,9 @@
 #include "fluid_pressure.h"
 DEFINE_RSP_UCODE(rsp_prepare);
 static uint32_t overlay_id;
+#ifdef PLASMAPONG_AUDIO_STREAM
+extern void audio_background(void);
+#endif
 _Static_assert(FW==48 && FH==33 && sizeof(FluidDyeTrace)==48,"RSP preparation grid/trace layout");
 _Static_assert(FLUID_SPEED_PALETTE_SIZE==260,"RSP speed palette DMA layout");
 _Static_assert(DYE_SCALE==8192 && VELOCITY_LIMIT==16383,"RSP preparation lane ranges");
@@ -30,7 +33,7 @@ void fluid_velocity_trace_rsp(FluidDyeTrace *trace,const FluidVelocityFixed *vel
     prepare_wait();
     data_cache_hit_invalidate(trace,FLUID_TRACE_BATCHES*sizeof(*trace));
 }
-void fluid_pixels_rsp(const Fluid *f,uint32_t *pixels,unsigned stride) {
+void fluid_pixels_rsp_begin(const Fluid *f,uint32_t *pixels,unsigned stride) {
     assert(((uintptr_t)pixels&15)==0 && stride>=FW && stride%4==0);
     const FluidDyeFixed *ink=fluid_dye(f);
     prepare_init();
@@ -39,6 +42,9 @@ void fluid_pixels_rsp(const Fluid *f,uint32_t *pixels,unsigned stride) {
        buffers. The DMA writes only the first FW pixels of each padded row. */
     data_cache_hit_writeback_invalidate(CachedAddr(pixels),stride*FH*sizeof(*pixels));
     rspq_write(overlay_id,1,PhysicalAddr(ink),PhysicalAddr(pixels),stride*sizeof(*pixels),0);
+}
+void fluid_pixels_rsp(const Fluid *f,uint32_t *pixels,unsigned stride) {
+    fluid_pixels_rsp_begin(f,pixels,stride);
     prepare_wait();
     data_cache_hit_invalidate(CachedAddr(pixels),stride*FH*sizeof(*pixels));
 }
@@ -63,6 +69,11 @@ void fluid_gradient_rsp(FluidVelocityFixed *velocity,const int32_t *pressure) {
     data_cache_hit_writeback(pressure,FN*sizeof(*pressure));
     data_cache_hit_writeback_invalidate(velocity,sizeof(*velocity));
     rspq_write(overlay_id,3,PhysicalAddr(velocity->u),PhysicalAddr(velocity->v),PhysicalAddr(pressure));
+#ifdef PLASMAPONG_AUDIO_STREAM
+    /* Projection is queued; use its RSP execution time for bounded mixing. */
+    rspq_flush();
+    audio_background();
+#endif
     prepare_wait();
     data_cache_hit_invalidate(velocity,sizeof(*velocity));
 }
@@ -78,7 +89,7 @@ void fluid_projection_rsp(FluidVelocityFixed *velocity,int32_t *divergence,int32
 }
 #endif
 
-void fluid_speed_pixels_rsp(const Fluid *f,uint32_t *pixels,unsigned stride) {
+void fluid_speed_pixels_rsp_begin(const Fluid *f,uint32_t *pixels,unsigned stride) {
     static _Alignas(16) uint32_t palette[FLUID_SPEED_PALETTE_SIZE];
     static bool ready;
     assert(((uintptr_t)pixels&15)==0 && stride>=FW && stride%4==0);
@@ -92,6 +103,9 @@ void fluid_speed_pixels_rsp(const Fluid *f,uint32_t *pixels,unsigned stride) {
     data_cache_hit_writeback(v,sizeof(*v));
     data_cache_hit_writeback_invalidate(CachedAddr(pixels),stride*FH*sizeof(*pixels));
     rspq_write(overlay_id,4,PhysicalAddr(v),PhysicalAddr(pixels),stride*sizeof(*pixels),PhysicalAddr(palette));
+}
+void fluid_speed_pixels_rsp(const Fluid *f,uint32_t *pixels,unsigned stride) {
+    fluid_speed_pixels_rsp_begin(f,pixels,stride);
     prepare_wait();
     data_cache_hit_invalidate(CachedAddr(pixels),stride*FH*sizeof(*pixels));
 }

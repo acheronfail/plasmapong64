@@ -62,12 +62,13 @@ curl_batch:
     addiu t6,s6,%lo(urow)
     lqv $v01,0,t3
     lqv $v02,0,t4
-    .set lane,0
-    .rept 8
-    lsv $v03,lane*2,lane*2-2,t5
-    lsv $v04,lane*2,lane*2+2,t5
-    .set lane,lane+1
-    .endr
+    /* Two partial vector loads join the unaligned neighbour window. */
+    addiu t8,t5,-2
+    lqv $v03,0,t8
+    lrv $v03,16,t8
+    addiu t8,t5,2
+    lqv $v04,0,t8
+    lrv $v04,16,t8
     vsub $v03,$v04,$v03
     vsub $v01,$v01,$v02
     vmulf $v03,$v03,K16384
@@ -123,12 +124,12 @@ confine_batch:
     lqv $v01,0,t3
     lqv $v02,0,t4
     lqv $v07,0,t5
-    .set lane,0
-    .rept 8
-    lsv $v03,lane*2,lane*2-2,t5
-    lsv $v04,lane*2,lane*2+2,t5
-    .set lane,lane+1
-    .endr
+    addiu t8,t5,-2
+    lqv $v03,0,t8
+    lrv $v03,16,t8
+    addiu t8,t5,2
+    lqv $v04,0,t8
+    lrv $v04,16,t8
     vabs $v01,$v01,$v01
     vabs $v02,$v02,$v02
     vabs $v03,$v03,$v03

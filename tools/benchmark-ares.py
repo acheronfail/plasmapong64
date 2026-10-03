@@ -33,6 +33,7 @@ if args.memory_mib is not None:
     command[1:1] = ['--setting', f'Nintendo64/ExpansionPak={"true" if args.memory_mib == 8 else "false"}']
 measurements = {}
 presentation = []
+audio_stream = []
 start = time.monotonic()
 with args.log.open('w') as log:
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -72,9 +73,16 @@ with args.log.open('w') as log:
                             presentation[-1].update(misses=int(target[1]), target_fps=int(target[2]))
                     if 'PASS:' in line:
                         print(line, flush=True)
-                    work = re.search(r'Frame work: average (\d+) us, p50 <= (\d+) us, p95 <= (\d+) us, p99 <= (\d+) us, max (\d+) us', line)
+                    audio = re.search(r'Audio stream: (\d+) samples, (\d+) underrun observations, (\d+) samples owed', line)
+                    if audio:
+                        audio_stream.append(dict(zip(('samples', 'underrun_observations', 'samples_owed'), map(int, audio.groups()))))
+                    work = re.search(r'Frame (work|active|busy): average (\d+) us, p50 <= (\d+) us, p95 <= (\d+) us, p99 <= (\d+) us, max (\d+) us', line)
                     if work:
-                        for name, value in zip(('work_average', 'work_p50_bound', 'work_p95_bound', 'work_p99_bound', 'work_max'), work.groups()):
+                        for name, value in zip(('average', 'p50_bound', 'p95_bound', 'p99_bound', 'max'), work.groups()[1:]):
+                            measurements.setdefault(work[1]+'_'+name, []).append(int(value))
+                    buffer_wait = re.search(r'Buffer wait: average (\d+) us, max (\d+) us', line)
+                    if buffer_wait:
+                        for name,value in zip(('buffer_wait_average','buffer_wait_max'),buffer_wait.groups()):
                             measurements.setdefault(name, []).append(int(value))
                     if re.search(r'assertion failed|mismatch trial|RDPQ.*(?:ERROR|WARNING)|missing cache (?:invalidation|writeback)|DMA.*(?:cached|dirty)', line, re.I):
                         raise RuntimeError(line)
@@ -86,8 +94,13 @@ with args.log.open('w') as log:
                 required.append('flow_emit')
             if 'work_average' in measurements:
                 required.append('work_average')
+            if 'active_average' in measurements:
+                required.extend(('active_average', 'buffer_wait_average'))
+            if 'busy_average' in measurements:
+                required.append('busy_average')
             if (all(len(measurements.get(k, [])) >= args.windows for k in required)
-                    and (not presentation or len(presentation) >= args.windows)):
+                    and (not presentation or len(presentation) >= args.windows)
+                    and (not audio_stream or len(audio_stream) >= args.windows)):
                 break
         else:
             raise RuntimeError('Timed out before the requested complete measurement windows')
@@ -105,5 +118,7 @@ result = {key: {'mean_us': sum(values[:args.windows])/len(values[:args.windows])
 if presentation:
     # Counters restart on scene changes or the console's R reset button.
     result['presentation'] = presentation
+if audio_stream:
+    result['audio_stream'] = audio_stream
 args.log.with_suffix('.json').write_text(json.dumps(result, indent=2) + '\n')
 print(json.dumps(result, indent=2))

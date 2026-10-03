@@ -13,24 +13,26 @@ static void ready(FrameRate fps) {
 int main(void) {
     for(int fps=30;fps<=60;fps+=30) {
         ready((FrameRate)fps);
+        assert(game_tick_units(&g)==1 && game_dt(&g)==STEP && game_emission(&g)==.5f);
+        const int hz=GAME_HZ;
         float x=g.bat[0].x; in[0].x=1; game_step(&g,in);
-        assert(fabsf(g.bat[0].x-x-92.0f/fps)<.001f);
+        assert(fabsf(g.bat[0].x-x-92.0f/hz)<.001f);
         ready((FrameRate)fps); g.held=0; in[0].a=true;
-        for(int i=0;i<fps;i++) game_step(&g,in);
+        for(int i=0;i<hz;i++) game_step(&g,in);
         assert(g.bat[0].charge==1 && g.bat[0].suction_ticks==60);
         assert(fabsf(g.elapsed-1)<.00001f);
-        for(int i=1;i<fps/15;i++) game_step(&g,in);
+        for(int i=1;i<hz/15;i++) game_step(&g,in);
         assert(g.held==0);
         game_step(&g,in); assert(g.held==-1 && g.bat[0].cooldown_ticks==300);
         g.phase=PAUSED; game_step(&g,in); assert(g.bat[0].cooldown_ticks==300);
         g.phase=PLAY;
-        for(int i=0;i<5*fps;i++) game_step(&g,in);
+        for(int i=0;i<5*hz;i++) game_step(&g,in);
         assert(!g.bat[0].cooldown_ticks && g.bat[0].release_required);
         ready((FrameRate)fps); g.flow_effect=FLOW_TAILS;
         for(int i=0;i<FN;i++) fluid_velocity(&g.fluid)->u[i]=fluid_flow_encode(30);
         for(int j=0;j<FLOW_HISTORY;j++) g.tracer_history[j][0].x=g.tracer_history[j][0].y=100;
         g.tracers[0].life=1000;
-        for(int i=0;i<fps*4/15;i++) game_flow_step(&g);
+        for(int i=0;i<hz*4/15;i++) game_flow_step(&g);
         assert(fabsf(g.tracer_history[g.tracer_head][0].x-108)<.001f);
         assert(g.tracer_history[(g.tracer_head+FLOW_HISTORY-1)%FLOW_HISTORY][0].x==100);
         assert(g.tracers[0].life==984);

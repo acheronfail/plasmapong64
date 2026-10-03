@@ -20,11 +20,21 @@ rows: .ds.b ROW_BYTES*9
 rows_end:
 divrows: .ds.b ROW_BYTES*8
 divrows_end:
+#ifdef PLASMAPONG_PRESSURE_VECTOR_SUM
+sum_words: .ds.b 16
+#endif
     .text
 /* a0=pressure, a1=divergence, a2=unused. DMAExec clobbers s0/s4/t0/t1/t2.
  * s1=output cursor, s2=input cursor, s3=tick, s5=pass, s6/s7=current buffers,
  * fp/k0=outer ring cursors, v0=row, v1=half-row loop count. */
 PressureSolve:
+#ifdef PLASMAPONG_PRESSURE_VECTOR_SUM
+    li t3,1
+    mtc2 t3,$v20.e0
+    vxor $v20,vzero,$v20.e0
+    li t3,0x55
+    ctc2 t3,COP2_CTRL_VCC
+#endif
     addiu s1,a0,ROW_BYTES
     addiu s2,a1,ROW_BYTES
     li s3,1
@@ -93,6 +103,99 @@ not_bottom:
     beqz s5,first_half
     move t4,zero
     lw t4,0(s6)
+#ifdef PLASMAPONG_PRESSURE_VECTOR_SUM
+    /* The right/above/below values are still from the prior sweep. Sum four
+       independent 32-bit inputs in the vector accumulator, then preserve the
+       exact serial left-neighbour recurrence and arithmetic rounding. */
+.macro scalar_cell offset
+    lw t5,\offset(a1)
+    lw t6,\offset(k1)
+    lw t7,\offset+4(a0)
+    lw t8,\offset(a2)
+    addu t5,t5,t6
+    addu t7,t7,t8
+    addu t5,t5,t7
+    addu t4,t4,t5
+    sra t4,t4,2
+    sw t4,\offset(a0)
+.endm
+    scalar_cell 0
+    scalar_cell 4
+    scalar_cell 8
+    addiu t6,k1,-4
+    addiu t7,a2,-4
+    li t8,%lo(sum_words)
+    .set cell,12
+.macro sum_load
+    addiu t3,a0,cell+4
+    lqv $v01,0,t3
+    lrv $v01,16,t3
+    lqv $v02,cell+4,s7
+    lqv $v03,cell+4,t6
+    lqv $v04,cell+4,t7
+.endm
+    sum_load
+    vmudh $v05,$v20,$v01.q0
+    vmadm $v05,$v20,$v01.q1
+    vmadh $v05,$v20,$v02.q0
+    vmadm $v05,$v20,$v02.q1
+    vmadh $v05,$v20,$v03.q0
+    vmadm $v05,$v20,$v03.q1
+    vmadh $v05,$v20,$v04.q0
+    vmadm $v05,$v20,$v04.q1
+    vsar $v06,COP2_ACC_MD
+    vsar $v07,COP2_ACC_LO
+    vmrg $v08,$v06,$v07
+    sqv $v08,0,t8
+    .set cell,28
+    .rept 9
+    sum_load
+    /* Vector arithmetic for the next four cells pairs with the preceding
+       scalar recurrence. Consume every scratch word before replacing it. */
+    lw t5,0(t8)
+    vmudh $v05,$v20,$v01.q0
+    lw t9,4(t8)
+    vmadm $v05,$v20,$v01.q1
+    lw a3,8(t8)
+    vmadh $v05,$v20,$v02.q0
+    lw v1,12(t8)
+    vmadm $v05,$v20,$v02.q1
+    addu t4,t4,t5
+    vmadh $v05,$v20,$v03.q0
+    sra t4,t4,2
+    vmadm $v05,$v20,$v03.q1
+    sw t4,cell-16(a0)
+    vmadh $v05,$v20,$v04.q0
+    addu t4,t4,t9
+    vmadm $v05,$v20,$v04.q1
+    sra t4,t4,2
+    vsar $v06,COP2_ACC_MD
+    sw t4,cell-12(a0)
+    addu t4,t4,a3
+    vsar $v07,COP2_ACC_LO
+    sra t4,t4,2
+    sw t4,cell-8(a0)
+    addu t4,t4,v1
+    sra t4,t4,2
+    sw t4,cell-4(a0)
+    vmrg $v08,$v06,$v07
+    sqv $v08,0,t8
+    .set cell,cell+16
+    .endr
+    .set part,0
+    .rept 4
+    lw t5,part(t8)
+    addu t4,t4,t5
+    sra t4,t4,2
+    sw t4,156+part(a0)
+    .set part,part+4
+    .endr
+    scalar_cell 172
+    scalar_cell 176
+    scalar_cell 180
+    b row_done
+    nop
+#else
 normal_half:
     .set cell,0
     .rept 23
@@ -116,6 +219,7 @@ normal_half:
     addiu a2,a2,92
     b row_done
     nop
+#endif
 first_half:
     /* Initial current/below pressure is zero, including the left edge. */
     .set cell,0

@@ -170,6 +170,7 @@ void fluid_project(Fluid *f) {
 #endif
 }
 /* Blend existing pigment channels to keep all four jets in the plasma palette. */
+#if !defined(PLASMAPONG_SPLAT_PLAN) || !defined(PLASMAPONG_DYE_FIXED)
 static void player_ink(FluidInk *ink,int k,float amount,int player) {
     if(player==2) {
         ink_add(&ink->blue[k],amount*.65f,3);
@@ -179,12 +180,18 @@ static void player_ink(FluidInk *ink,int k,float amount,int player) {
         ink_add(&ink->red[k],amount*.65f,3);
     } else ink_add(player?&ink->red[k]:&ink->blue[k],amount,3);
 }
+#endif
 #if defined(PLASMAPONG_SPLAT_PLAN) && defined(PLASMAPONG_DYE_FIXED)
 typedef struct {
     int16_t *a,*b;
     float wa,wb;
     int ca,cb;
 } SplatInk;
+static inline SplatInk splat_ink_plan(FluidInk *ink,int player) {
+    return player==2?(SplatInk){ink->blue,ink->gold,.65f,.35f,3*DYE_SCALE,(int)(.65f*DYE_SCALE+.5f)}:
+        player==3?(SplatInk){ink->blue,ink->red,.55f,.65f,3*DYE_SCALE,3*DYE_SCALE}:
+        (SplatInk){player?ink->red:ink->blue,NULL,1,0,3*DYE_SCALE,0};
+}
 static inline void splat_ink_add(const SplatInk *p,int k,float amount) {
     int a=p->a[k]+(int)(amount*p->wa*DYE_SCALE+.5f);
     p->a[k]=a>p->ca?p->ca:a<0?0:a;
@@ -212,9 +219,7 @@ void fluid_splat(Fluid *f,float x,float y,float radius,float u,float v,float dye
     FluidInk *ink_grid=fluid_dye(f);
     PROFILE_BEGIN();
 #if defined(PLASMAPONG_SPLAT_PLAN) && defined(PLASMAPONG_DYE_FIXED)
-    SplatInk ink=player==2?(SplatInk){ink_grid->blue,ink_grid->gold,.65f,.35f,3*DYE_SCALE,(int)(.65f*DYE_SCALE+.5f)}:
-        player==3?(SplatInk){ink_grid->blue,ink_grid->red,.55f,.65f,3*DYE_SCALE,3*DYE_SCALE}:
-        (SplatInk){player?ink_grid->red:ink_grid->blue,NULL,1,0,3*DYE_SCALE,0};
+    SplatInk ink=splat_ink_plan(ink_grid,player);
 #endif
     const float inv_radius2=1/(radius*radius);
 #ifdef PLASMAPONG_VELOCITY_FIXED
@@ -257,6 +262,9 @@ void fluid_pump(Fluid *f,float x,float y,float radius,float strength,float dt,in
     FluidFlow *velocity=fluid_velocity(f);
     FluidInk *ink_grid=fluid_dye(f);
     PROFILE_BEGIN();
+#if defined(PLASMAPONG_SPLAT_PLAN) && defined(PLASMAPONG_DYE_FIXED)
+    SplatInk ink=splat_ink_plan(ink_grid,player);
+#endif
     const float inv_radius2=1/(radius*radius);
     /* A pump is an intentional local source/sink. Apply after projection, so
        pressure does not immediately cancel suction; next step redistributes it. */
@@ -268,9 +276,23 @@ void fluid_pump(Fluid *f,float x,float y,float radius,float strength,float dt,in
         float w=1-d2*inv_radius2;
         float force=strength*w*dt/sqrtf(d2+9);
         int k=iy*FW+ix;
+#ifdef PLASMAPONG_VELOCITY_FIXED
+        /* Power-of-two scaling commutes with the original float operations.
+           Keep the same nearest rounding and 420-pixel/s clamp in Q4 units. */
+        float fixed_force=force*VELOCITY_SCALE;
+        force_add(&velocity->u[k],dx*fixed_force);
+        force_add(&velocity->v[k],dy*fixed_force);
+#else
         velocity->u[k]=fluid_flow_encode(clampf(fluid_flow_decode(velocity->u[k])+dx*force,-420,420));
         velocity->v[k]=fluid_flow_encode(clampf(fluid_flow_decode(velocity->v[k])+dy*force,-420,420));
-        if(strength>0) player_ink(ink_grid,k,strength*dt*.0015f*w,player);
+#endif
+        if(strength>0) {
+#if defined(PLASMAPONG_SPLAT_PLAN) && defined(PLASMAPONG_DYE_FIXED)
+            splat_ink_add(&ink,k,strength*dt*.0015f*w);
+#else
+            player_ink(ink_grid,k,strength*dt*.0015f*w,player);
+#endif
+        }
     }
     PROFILE_END(PROFILE_PUMP);
 }

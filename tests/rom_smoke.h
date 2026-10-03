@@ -59,6 +59,15 @@ static void smoke_input(Game *g,Input in[MAX_PLAYERS]) {
         in[p]=(Input){.connected=true,.x=sinf(tick*.021f+p),
             .y=sinf(tick*.037f+p*2.4f),.z=tick%110<90,.a=(tick+40*p)%145>118};
     }
+#ifdef PLASMAPONG_SMOKE_STRESS
+    /* Test-only worst case: retain all players and exercise every jet/pump
+       continuously, including bypassing grab-break cooldowns. */
+    if(g->phase==PLAY) for(int p=0;p<PLASMAPONG_SMOKE_PLAYERS;p++) {
+        g->lives[p]=MULTIPLAYER_LIVES;
+        g->bat[p].cooldown_ticks=0; g->bat[p].release_required=false;
+        in[p].z=in[p].a=true;
+    }
+#endif
 #ifdef PLASMAPONG_SMOKE_ARCADE
     in[1]=(Input){0};
     static bool level_set;

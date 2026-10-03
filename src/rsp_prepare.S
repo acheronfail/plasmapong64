@@ -264,12 +264,12 @@ divergence_batch:
     addiu t5,s6,%lo(input2)
     lqv $v01,0,t4
     lqv $v02,0,t5
-    .set lane,0
-    .rept 8
-    lsv $v03,lane*2,lane*2-2,t3
-    lsv $v04,lane*2,lane*2+2,t3
-    .set lane,lane+1
-    .endr
+    addiu t6,t3,-2
+    lqv $v03,0,t6
+    lrv $v03,16,t6
+    addiu t6,t3,2
+    lqv $v04,0,t6
+    lrv $v04,16,t6
     vsub $v02,$v02,$v01
     vsub $v04,$v04,$v03
     vmudh $v05,$v02,$v20.e0

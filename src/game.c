@@ -56,11 +56,6 @@ void game_flow_step(Game *g) {
         }
         float u,v; fluid_sample(&g->fluid,g->tracer_history[old][i].x,g->tracer_history[old][i].y,&u,&v);
         g->tracer_history[head][i].x=g->tracer_history[old][i].x+u*step; g->tracer_history[head][i].y=g->tracer_history[old][i].y+v*step; t->life=t->life>ticks?t->life-ticks:0;
-        if(ticks==2) {
-            unsigned middle=(head+1)%FLOW_HISTORY;
-            g->tracer_history[middle][i].x=(g->tracer_history[head][i].x+g->tracer_history[old][i].x)*.5f;
-            g->tracer_history[middle][i].y=(g->tracer_history[head][i].y+g->tracer_history[old][i].y)*.5f;
-        }
         if(g->tracer_history[head][i].x<0 || g->tracer_history[head][i].x>=ARENA_W || g->tracer_history[head][i].y<0 || g->tracer_history[head][i].y>=ARENA_H) t->life=0;
     }
 }
@@ -91,7 +86,7 @@ static void menu_step(Game *g) {
            moving the selection leaves one clear, continuously emitting row. */
         FluidInk *ink=fluid_dye(&g->fluid);
         /* sqrt(.94): same menu fade per second at twice the update rate. */
-        for(int k=0;k<FN;k++) ink->gold[k]=fluid_ink_encode(fluid_ink_decode(ink->gold[k])*(g->frame_rate==FPS_30?.94f:.969535971f));
+        for(int k=0;k<FN;k++) ink->gold[k]=fluid_ink_encode(fluid_ink_decode(ink->gold[k])*.969535971f);
         /* Inset sources by their eight-unit radius, so their footprint fits
            the measured label instead of extending beyond both ends. */
         float width=maxf(0,g->menu_label_widths[g->menu_selection]-16*(320/ARENA_W));
@@ -116,6 +111,13 @@ static void menu_step(Game *g) {
         for(int x=0;x<FW;x++) {
             float edge=half_width-fabsf((x+.5f)*CELL-ARENA_W*.5f)-CELL*.5f;
             float fade=clampf(edge/CELL,0,1);
+            if(fade==0) {
+                for(int y=0;y<FH;y++) ink->gold[y*FW+x]=0;
+                continue;
+            }
+            /* Positive menu dye is unchanged at unit fade. Avoid decoding
+               and re-encoding the entire interior of the selected label. */
+            if(fade==1) continue;
             for(int y=0;y<FH;y++) {
                 int k=y*FW+x;
                 ink->gold[k]=fluid_ink_encode(fluid_ink_decode(ink->gold[k])*fade);
@@ -239,7 +241,7 @@ static void start_game(Game *g) {
 }
 void game_step(Game *g,const Input physical[MAX_PLAYERS]) {
     const float step=game_dt(g); const float emission=game_emission(g);
-    const float ticks_per_second=g->frame_rate==FPS_30?30.0f:60.0f;
+    const float ticks_per_second=GAME_HZ;
     Input effective[MAX_PLAYERS];
     bool menu=g->phase==MENU || g->phase==OPTIONS || g->phase==SCORES;
     unsigned count=0;

@@ -61,7 +61,11 @@ static void prepare_cases(void) {
         memset(expected_pixels,0x5a,sizeof(expected_pixels));
         fluid_pixels(&f,expected_pixels,64);
         data_cache_hit_writeback_invalidate(&pixels,sizeof(pixels));
-        fluid_pixels_rsp(&f,pixels.value,64);
+        if(trial&1) {
+            fluid_pixels_rsp_begin(&f,pixels.value,64);
+            rdpq_set_fill_color(RGBA32(trial,0,0,255));
+            rspq_wait();
+        } else fluid_pixels_rsp(&f,pixels.value,64);
         data_cache_hit_invalidate(&pixels,sizeof(pixels));
         for(unsigned k=0;k<64*FH;k++) {
             if(expected_pixels[k]!=pixels.value[k]) {
@@ -73,7 +77,11 @@ static void prepare_cases(void) {
         memset(expected_pixels,0x5a,sizeof(expected_pixels));
         fluid_speed_pixels(&f,expected_pixels,64);
         data_cache_hit_writeback_invalidate(&pixels,sizeof(pixels));
-        fluid_speed_pixels_rsp(&f,pixels.value,64);
+        if(trial&1) {
+            fluid_speed_pixels_rsp_begin(&f,pixels.value,64);
+            rdpq_set_fill_color(RGBA32(0,trial,0,255));
+            rspq_wait();
+        } else fluid_speed_pixels_rsp(&f,pixels.value,64);
         data_cache_hit_invalidate(&pixels,sizeof(pixels));
         for(unsigned k=0;k<64*FH;k++) {
             if(expected_pixels[k]!=pixels.value[k]) {
@@ -85,6 +93,6 @@ static void prepare_cases(void) {
         assert(!memcmp(&f,&saved,sizeof(f)));
         for(unsigned k=0;k<4;k++) assert(pixels.before[k]==0x5a5a5a5a && pixels.after[k]==0x5a5a5a5a);
     }
-    debugf("Prepare PASS: 80 exact trace/dye-color/speed-color/divergence fields, full timestep range, padded pixels and DMA guards\n");
+    debugf("Prepare PASS: 80 exact trace/dye-color/speed-color/divergence fields, queued pixel producers, overlay switches, full timestep range, padded pixels and DMA guards\n");
 }
 #endif

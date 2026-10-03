@@ -75,13 +75,14 @@ typedef struct {
     Arcade arcade;
     HighScore highs[HIGH_SCORE_COUNT];
     /* Saved video mode: FPS_60 = 320x240 low res, FPS_30 = 640x480 high res.
-       Retain the serialized values for compatibility with existing EEPROMs. */
+       Both modes now update at GAME_HZ. Retain the legacy field and serialized
+       values for compatibility with existing EEPROMs; these select resolution. */
     FrameRate frame_rate;
     unsigned options_selection;
 } Game;
-static inline unsigned game_tick_units(const Game *g) { return g->frame_rate==FPS_30?2u:1u; }
-static inline float game_dt(const Game *g) { return g->frame_rate==FPS_30?1.0f/30:1.0f/60; }
-static inline float game_emission(const Game *g) { return g->frame_rate==FPS_30?1.0f:.5f; }
+static inline unsigned game_tick_units(const Game *g) { (void)g; return 1u; }
+static inline float game_dt(const Game *g) { (void)g; return STEP; }
+static inline float game_emission(const Game *g) { (void)g; return .5f; }
 static inline unsigned game_players(const Game *g) { return g->mode==ARCADE?2:g->players; }
 static inline bool game_square(const Game *g) { return game_players(g)>2; }
 static inline float game_left(const Game *g) { return game_square(g)?(ARENA_W-ARENA_H)*.5f:0; }

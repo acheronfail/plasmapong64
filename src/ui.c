@@ -14,23 +14,28 @@ static const uint32_t player_colors[]={CYAN,CORAL,MINT,VIOLET};
 static const int player_styles[]={2,3,7,8};
 /* Match the ball dye's RGB contribution in fluid_color(). */
 #define GOLD MENU_GOLD
-static void ring(const Game *g,float x,float y,float radius,uint32_t color) {
+static float ring_direction[20][2];
+void ui_init(void) {
     /* Angles are invariant. Evaluate them once with the platform's own math
        implementation, retaining identical coordinates on subsequent frames. */
-    static float direction[20][2];
     static bool initialized;
     if(!initialized) {
         for(int i=0;i<20;i++) {
             float a=i*6.2831853f/20;
-            direction[i][0]=cosf(a); direction[i][1]=sinf(a);
+            ring_direction[i][0]=cosf(a); ring_direction[i][1]=sinf(a);
         }
         initialized=true;
     }
+}
+static void ring(const Game *g,float x,float y,float radius,uint32_t color) {
+    ui_init();
+    const float world_left=game_left(g),world_right=game_right(g);
+    const bool square=game_square(g);
     for(int i=0;i<20;i++) {
-        float px=x+direction[i][0]*radius-1,py=y+direction[i][1]*radius-1;
-        if(px<OX+game_left(g) || px>OX+game_right(g)-2 || py<OY || py>OY+ARENA_H-2) continue;
-        if(game_square(g)) {
-            float edge_x=minf(px-OX-game_left(g),OX+game_right(g)-px-2);
+        float px=x+ring_direction[i][0]*radius-1,py=y+ring_direction[i][1]*radius-1;
+        if(px<OX+world_left || px>OX+world_right-2 || py<OY || py>OY+ARENA_H-2) continue;
+        if(square) {
+            float edge_x=minf(px-OX-world_left,OX+world_right-px-2);
             float edge_y=minf(py-OY,OY+ARENA_H-py-2);
             if(edge_x+edge_y<CORNER_SIZE) continue;
         }
@@ -195,10 +200,7 @@ static void bat_rect(int p,float x,float y,float dx,float dy,float w,float h,uin
 #ifdef PLASMAPONG_FLUID_PROFILE
 #include <libdragon.h>
 #endif
-static void flow_background(const Game *g,float x,float y,float w,float h) {
-    /* Main-menu selection must remain gold even when speed view is enabled. */
-    draw_fluid(&g->fluid,x,y,w,h,g->phase!=MENU && g->flow_effect==FLOW_SPEED);
-    if(g->flow_effect!=FLOW_PARTICLES && g->flow_effect!=FLOW_TAILS) return;
+static void flow_points(const Game *g,float x,float y,float w,float h,int layers) {
 #ifdef PLASMAPONG_FLUID_PROFILE
     uint64_t flow_begin=get_ticks();
 #endif
@@ -227,7 +229,6 @@ static void flow_background(const Game *g,float x,float y,float w,float h) {
        the existing back-to-front, color-grouped draw order in compact batches. */
     static DrawPoint points[5][4][FLOW_TRACERS];
     unsigned counts[5][4]={{0}};
-    int layers=g->flow_effect==FLOW_TAILS?4:0;
     /* Tail offsets are capped at 24 world units. A one-unit guard covers
        float rounding: beyond this halo every dot is hidden by the side mask. */
     const float halo=layers?25:1;
@@ -273,6 +274,13 @@ static void flow_background(const Game *g,float x,float y,float w,float h) {
 #ifdef PLASMAPONG_FLUID_PROFILE
     flow_emit_ticks+=get_ticks()-flow_begin;
 #endif
+}
+static void flow_background(const Game *g,float x,float y,float w,float h) {
+    /* Separate the two fixed layer counts so the compiler can specialise
+       the history and point loops while preserving every dot and its order. */
+    draw_fluid(&g->fluid,x,y,w,h,g->phase!=MENU && g->flow_effect==FLOW_SPEED);
+    if(g->flow_effect==FLOW_TAILS) flow_points(g,x,y,w,h,4);
+    else if(g->flow_effect==FLOW_PARTICLES) flow_points(g,x,y,w,h,0);
 }
 void ui_draw(const Game *g) {
     if(g->phase==OPTIONS) {
@@ -336,6 +344,8 @@ void ui_draw(const Game *g) {
     }
     flow_background(g,OX,OY,ARENA_W,ARENA_H);
     if(game_square(g)) square_court(g); else draw_static(DRAW_COURT,court);
+    float suction_radius=0;
+    bool radius_ready=false;
     for(unsigned p=0;p<game_players(g);p++) {
         if(!game_alive(g,p)) continue;
         const Bat *b=&g->bat[p]; uint32_t c=player_colors[p];
@@ -343,7 +353,8 @@ void ui_draw(const Game *g) {
         if(broken) c=0x737d8a;
         float x=OX+b->x,y=OY+b->y;
         if(b->sucking) {
-            ring(g,x,y,24+2*sinf(g->elapsed*7),c);
+            if(!radius_ready) { suction_radius=24+2*sinf(g->elapsed*7); radius_ready=true; }
+            ring(g,x,y,suction_radius,c);
             if(g->held==(int)p)
                 bat_rect(p,x,y,-9,BAT_HALF+5,18*b->charge,2,b->charge>=1?0x40ff70:c);
         }
