@@ -2,6 +2,8 @@
 set -eu
 cd "$(dirname "$0")/.."
 mkdir -p build
+cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic -Isrc tests/perf_test.c -o build/perf-test
+./build/perf-test
 cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -Isrc src/fluid_advection.c src/fluid_dye_fixed.c tests/dye_test.c -lm -o build/dye-test
 ./build/dye-test
 cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -Isrc src/fluid_advection.c tests/advection_test.c -o build/advection-test
@@ -16,7 +18,7 @@ cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic -Isrc src/game.c src/arcade.c sr
 cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic -Isrc src/save.c tests/save_test.c -o build/save-test
 ./build/save-test
 cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic -Isrc src/game.c src/arcade.c src/fluid.c src/fluid_advection.c src/ui.c tools/preview.c -lm -o build/preview
-for state in menu menu-4p menu-options play lobby paused finished arcade gameover scores level overcharge 3p 4p; do
+for state in menu menu-4p menu-options options play lobby paused finished arcade gameover scores level overcharge 3p 4p; do
     ./build/preview "$state" > "build/preview-$state.svg"
 done
 
@@ -60,4 +62,6 @@ for backend in float dye velocity confinement; do
     esac
     cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic $flags -Isrc src/game.c src/arcade.c src/fluid.c src/fluid_advection.c $sources tests/multiplayer_test.c -lm -o "build/multiplayer-$backend-test"
     "./build/multiplayer-$backend-test"
+    cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic $flags -Isrc src/game.c src/arcade.c src/fluid.c src/fluid_advection.c $sources tests/fps_test.c -lm -o "build/fps-$backend-test"
+    "./build/fps-$backend-test"
 done

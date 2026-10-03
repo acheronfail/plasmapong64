@@ -136,11 +136,15 @@ N64_CFLAGS += -DPLASMAPONG_FLUID_PROFILE
 endif
 # Inline the fluid sampling loops without expanding the rest of the ROM.
 $(BUILD_DIR)/src/fluid.o $(BUILD_DIR)/src/fluid_advection.o $(BUILD_DIR)/src/fluid_dye_fixed.o $(BUILD_DIR)/src/fluid_velocity_fixed.o $(BUILD_DIR)/src/fluid_confinement.o: CFLAGS += -O3
+$(BUILD_DIR)/src/game.o $(BUILD_DIR)/src/ui.o: CFLAGS += -O3
 ifeq ($(SMOKE_FLOW),1)
 N64_CFLAGS += -DPLASMAPONG_SMOKE -DPLASMAPONG_SMOKE_FLOW
 endif
 ifneq ($(SMOKE_EFFECT),)
 N64_CFLAGS += -DPLASMAPONG_SMOKE_EFFECT=$(SMOKE_EFFECT)
+endif
+ifneq ($(SMOKE_FPS),)
+N64_CFLAGS += -DPLASMAPONG_SMOKE_FPS=$(SMOKE_FPS)
 endif
 ifeq ($(SMOKE),1)
 SMOKE_PLAYERS ?= 2

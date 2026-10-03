@@ -63,18 +63,30 @@ static void flow_tests(void) {
     game_step(&a,input); assert(!memcmp(saved,a.tracers,sizeof(saved)));
     game_init(&a); a.flow_effect=FLOW_TAILS; game_flow_step(&a);
     for(int i=0;i<FN;i++) fluid_velocity(&a.fluid)->u[i]=fluid_flow_encode(30);
-    a.tracers[0].x[0]=100; a.tracers[0].y[0]=100;
-    game_flow_step(&a); assert(fabsf(a.tracers[0].x[0]-101)<.001f && a.tracers[0].x[1]==100);
+    a.tracers[0].x[a.tracer_head]=100; a.tracers[0].y[a.tracer_head]=100;
+    game_flow_step(&a); assert(fabsf(a.tracers[0].x[a.tracer_head]-(100+30*STEP))<.001f && a.tracers[0].x[(a.tracer_head+1)%FLOW_HISTORY]==100);
     for(int i=1;i<FLOW_HISTORY-1;i++) game_flow_step(&a);
-    assert(fabsf(a.tracers[0].x[0]-108)<.001f && a.tracers[0].x[FLOW_HISTORY-1]==100);
+    assert(fabsf(a.tracers[0].x[a.tracer_head]-(100+(FLOW_HISTORY-1)*30*STEP))<.001f && a.tracers[0].x[(a.tracer_head+FLOW_HISTORY-1)%FLOW_HISTORY]==100);
     a.tracers[0].life=0; game_flow_step(&a);
     for(int i=1;i<FLOW_HISTORY;i++) {
         assert(a.tracers[0].x[i]==a.tracers[0].x[0] && a.tracers[0].y[i]==a.tracers[0].y[0]);
     }
+    /* Every ring slot must retain its age across several cursor wraps. */
+    for(int j=0;j<FLOW_HISTORY;j++) a.tracers[0].x[j]=a.tracers[0].y[j]=100;
+    a.tracers[0].life=4*FLOW_HISTORY;
+    for(int step=1;step<=3*FLOW_HISTORY;step++) {
+        game_flow_step(&a);
+        for(int age=0;age<FLOW_HISTORY;age++) {
+            unsigned slot=(a.tracer_head+age)%FLOW_HISTORY;
+            float expected=100+(step>age?step-age:0)*30*STEP;
+            assert(fabsf(a.tracers[0].x[slot]-expected)<.001f);
+            assert(a.tracers[0].y[slot]==100);
+        }
+    }
     for(int i=0;i<400;i++) game_flow_step(&a);
     for(int i=0;i<FLOW_TRACERS;i++) if(a.tracers[i].life) {
-        assert(a.tracers[i].x[0]>=0 && a.tracers[i].x[0]<ARENA_W);
-        assert(a.tracers[i].y[0]>=0 && a.tracers[i].y[0]<ARENA_H);
+        assert(a.tracers[i].x[a.tracer_head]>=0 && a.tracers[i].x[a.tracer_head]<ARENA_W);
+        assert(a.tracers[i].y[a.tracer_head]>=0 && a.tracers[i].y[a.tracer_head]<ARENA_H);
     }
     fluid_init(&a.fluid); uint32_t dark=fluid_color(&a.fluid,0);
     assert(fluid_speed_color(&a.fluid,0)==dark);
@@ -183,14 +195,14 @@ int main(void) {
     assert(energy(&g.fluid)<e);
     ready(); g.bx=145; g.by=90; g.bvx=100; g.bvy=0;
     for(int i=0;i<FN;i++) fluid_velocity(&g.fluid)->v[i]=fluid_flow_encode(110);
-    game_step(&g,in); assert(g.bvy>5.5f && g.bvy<7); /* Cross-current bends the ball. */
+    game_step(&g,in); assert(g.bvy>165*STEP && g.bvy<210*STEP); /* Cross-current bends the ball. */
     /* A sustained jet leaves useful momentum four seconds after release.
        Measure decoded speed so every storage backend uses the same units. */
     for(int p=0;p<2;p++) {
         ready(); g.serve=100; in[p].z=true;
-        for(int t=0;t<90;t++) game_step(&g,in);
+        for(int t=0;t<3*GAME_HZ;t++) game_step(&g,in);
         in[p].z=false;
-        for(int t=0;t<120;t++) game_step(&g,in);
+        for(int t=0;t<4*GAME_HZ;t++) game_step(&g,in);
         float residual=0;
         for(int k=0;k<FN;k++) {
             float fu=fluid_flow_decode(fluid_velocity(&g.fluid)->u[k]);
@@ -198,7 +210,9 @@ int main(void) {
             residual+=fu*fu+fv*fv;
         }
         float speed=sqrtf(residual/FN);
-        assert(speed>13 && speed<20);
+        /* At 60 Hz, shorter backtraces lose less momentum to interpolation.
+           Keep the four-second residual within the measured float/fixed band. */
+        assert(speed>18 && speed<24);
     }
     ready(); in[0].a=true; game_step(&g,in);
     fluid_sample(&g.fluid,g.bat[0].x+22,g.bat[0].y,&u,&v); assert(u<0);
@@ -236,7 +250,7 @@ int main(void) {
     for(int p=0;p<2;p++) {
         float release_energy[4];
         float release_speed[4];
-        int hold_ticks[4]={0,1,15,30};
+        int hold_ticks[4]={0,1,GAME_HZ/2,GAME_HZ};
         for(int h=0;h<4;h++) {
             ready(); g.serve=100; g.held=p; in[p].a=true;
             for(int t=0;t<hold_ticks[h];t++) game_step(&g,in);
@@ -246,7 +260,7 @@ int main(void) {
             g.held=p;
             in[p].a=false; game_step(&g,in);
             assert(g.held==-1);
-            float launch=hold_ticks[h]==30?290:200*hold_ticks[h]*STEP;
+            float launch=hold_ticks[h]==GAME_HZ?290:200*hold_ticks[h]*STEP;
             assert(fabsf(g.bvx-(p?-1:1)*launch)<.001f);
             release_energy[h]=energy(&g.fluid);
             fluid_sample(&g.fluid,g.bat[p].x+(p?-22:22),g.bat[p].y+24,&u,&v);
@@ -272,7 +286,7 @@ int main(void) {
         for(int t=0;t<60;t++) game_step(&g,in);
         assert(tap_energy<energy(&g.fluid));
     }
-    /* Both green ticks give the perfect bonus, with a sharp jump from the
+    /* All ticks in the grace window give the perfect bonus, with a sharp jump from the
        last undercharged tick. The following held tick breaks instead. */
     for(int p=0;p<2;p++) {
         for(unsigned ticks=SUCTION_CHARGE_TICKS-1;ticks<SUCTION_BREAK_TICKS;ticks++) {
@@ -289,8 +303,8 @@ int main(void) {
         g.bat[p].sucking=true; g.bat[p].charge=.99f;
         game_step(&g,in); assert(fabsf(g.bvx*(p?-1:1)-198)<.001f);
     }
-    /* Full charge has a two-tick grace window; breaking drops into the flow
-       without injecting a burst, then locks suction for 150 active ticks. */
+    /* Full charge has a 67ms grace window; breaking drops into the flow
+       without injecting a burst, then locks suction for five active seconds. */
     for(int p=0;p<2;p++) {
         ready(); g.serve=100; in[p].a=true;
         g.held=p;
@@ -392,7 +406,7 @@ int main(void) {
     assert(gold_sum(&g.fluid)<.5f); /* It advects and fades as a third dye. */
     ready();
     uint32_t physics_hash=2166136261u;
-    for(int t=0;t<3600;t++) {
+    for(int t=0;t<120*GAME_HZ;t++) {
         for(int p=0;p<2;p++) {
             in[p].x=sinf(t*.043f+p); in[p].y=cosf(t*.081f+p);
             in[p].z=t%90<60; in[p].a=t%70<32;

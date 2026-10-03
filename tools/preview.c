@@ -4,6 +4,10 @@
 #include <stdlib.h>
 #include <math.h>
 #include <string.h>
+void draw_points(const DrawPoint *points,unsigned count,uint32_t c) {
+    for(unsigned i=0;i<count;i++) rect(points[i].x,points[i].y,1,1,c);
+}
+void draw_points_end(void) {}
 void draw_static(unsigned id,void (*draw)(void)) { (void)id; draw(); }
 void rect(float x,float y,float w,float h,uint32_t c) {
     if(w>0 && h>0) printf("<rect x='%g' y='%g' width='%g' height='%g' fill='#%06x'/>\n",x,y,w,h,c);

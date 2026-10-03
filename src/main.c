@@ -7,6 +7,7 @@
 #include "sound.h"
 #include "save.h"
 #include "fluid_profile.h"
+#include "perf.h"
 #ifdef PLASMAPONG_PREPARE_RSP
 #include "fluid_velocity_fixed.h"
 #endif
@@ -37,10 +38,47 @@
 #endif
 static Game game;
 static Sound sound;
+static volatile PresentationStats presentation;
+static bool perf_visible=true;
+static char perf_text[64]="FPS -- / --", perf_gap[64]="MISS 0  GAP 1 VI";
+static PresentationStats perf_window;
+static void perf_vi(void) {
+    /* VI_ORIGIN identifies the actual scanned-out surface. We use 240p, so
+       alternating interlaced field offsets cannot masquerade as new frames.
+       Register before display_init: pinned libdragon prepends handlers, so
+       its framebuffer swap runs before this sampler. No work is fenced here. */
+    presentation_sample(&presentation,*(volatile uint32_t *)0xA4400004,get_ticks());
+}
+static PresentationStats perf_snapshot(void) {
+    disable_interrupts();
+    PresentationStats s=presentation;
+    enable_interrupts();
+    return s;
+}
+static void perf_reset(void) {
+    disable_interrupts();
+    presentation=(PresentationStats){.allowed_gap=game_tick_units(&game)};
+    enable_interrupts();
+    perf_window=(PresentationStats){0};
+    strcpy(perf_text,"FPS -- / --"); strcpy(perf_gap,"MISS 0  GAP 1 VI");
+}
+static void perf_update(void) {
+    PresentationStats s=perf_snapshot();
+    if(!s.seeded) return;
+    if(!perf_window.seeded) { perf_window=s; return; }
+    uint64_t us=TIMER_MICROS_LL(s.ticks-perf_window.ticks);
+    if(us<500000) return;
+    unsigned fps=(uint64_t)(s.frames-perf_window.frames)*10000000/us;
+    unsigned hz=(uint64_t)(s.refreshes-perf_window.refreshes)*10000000/us;
+    snprintf(perf_text,sizeof(perf_text),"FPS %u.%u / %u.%u",fps/10,fps%10,hz/10,hz%10);
+    snprintf(perf_gap,sizeof(perf_gap),"MISS %lu  GAP %lu VI",(unsigned long)s.misses,(unsigned long)s.longest_gap);
+    perf_window=s;
+}
 #ifdef PLASMAPONG_FLUID_PROFILE
 static uint64_t audio_ticks;
 static uint64_t pixel_ticks, texture_ticks, wait_draw_ticks;
 static unsigned audio_frames;
+uint64_t flow_prepare_ticks,flow_emit_ticks;
 #endif
 static void fill_audio(short *buffer,size_t frames) {
 #ifdef PLASMAPONG_FLUID_PROFILE
@@ -56,6 +94,8 @@ static rspq_block_t *ink_blit;
 static float ink_x,ink_y,ink_w,ink_h;
 static bool fill_mode;
 static uint32_t fill_color;
+static _Alignas(16) uint64_t point_commands[5*(FLOW_TRACERS+8)];
+static unsigned point_commands_used;
 /* Bounded text command cache. Entries used this frame cannot be evicted;
    frame-start rspq_wait guarantees older entries are no longer in flight. */
 static struct {
@@ -86,6 +126,31 @@ void rect(float x,float y,float w,float h,uint32_t c) {
         rdpq_set_mode_fill(color(c)); fill_color=c; fill_mode=true;
     }
     rdpq_fill_rectangle(x,y,x+w,y+h);
+}
+void draw_points(const DrawPoint *points,unsigned count,uint32_t c) {
+    if(!count) return;
+    assert(point_commands_used+count+2<=sizeof(point_commands)/sizeof(*point_commands));
+    if(!point_commands_used) rdpq_set_mode_fill(RGBA32(0,0,0,255));
+    uint64_t *commands=point_commands+point_commands_used;
+    /* Pipe sync before each color change; 16-bit fill repeats the same pixel. */
+    uint32_t pixel=color_to_packed16(color(c));
+    *commands++=0xE700000000000000ull;
+    *commands++=0xF700000000000000ull|((uint64_t)pixel<<16)|pixel;
+    for(unsigned i=0;i<count;i++) {
+        assert(points[i].x<320 && points[i].y<240);
+        uint32_t xy=((uint32_t)points[i].x<<14)|((uint32_t)points[i].y<<2);
+        /* Fill-cycle lower-right is inclusive: equal corners cover one pixel. */
+        commands[i]=((uint64_t)(0xF6000000u|xy)<<32)|xy;
+    }
+    point_commands_used+=count+2;
+}
+void draw_points_end(void) {
+    if(!point_commands_used) return;
+    data_cache_hit_writeback(point_commands,point_commands_used*sizeof(*point_commands));
+    rdpq_exec(point_commands,point_commands_used*sizeof(*point_commands));
+    /* Raw draws bypass RDPQ's pipe tracking. Fence state changes explicitly. */
+    rdpq_sync_pipe();
+    fill_mode=false;
 }
 void label(float x,float y,int style,const char *s) {
     fill_mode=false;
@@ -191,6 +256,7 @@ void draw_fluid(const Fluid *f,float x,float y,float width,float height,bool spe
 }
 int main(void) {
     debug_init_isviewer(); debug_init_emulog(); timer_init(); joypad_init();
+    register_VI_handler(perf_vi);
     display_init(RESOLUTION_320x240,DEPTH_16_BPP,3,GAMMA_NONE,FILTERS_RESAMPLE);
     audio_init(SOUND_RATE,4); sound_init(&sound,audio_get_frequency());
     audio_set_buffer_callback(fill_audio); audio_write_silence();
@@ -224,6 +290,10 @@ int main(void) {
     const uint32_t colors[]={0xeaf6ff,0xa0b3c9,0x48dcff,0xff637e,0xffffff,0x02040a,0x737d8a,0x70ffd0,0xc28aff};
     for(int i=0;i<9;i++) rdpq_font_style(font,i,&(rdpq_fontstyle_t){.color=color(colors[i])});
     rdpq_text_register_font(1,font); game_init(&game); scores_load(&game); game.menu_rng=(uint32_t)get_ticks();
+#ifdef PLASMAPONG_SMOKE_FPS
+    _Static_assert(PLASMAPONG_SMOKE_FPS==30 || PLASMAPONG_SMOKE_FPS==60,"valid benchmark frame rate");
+    game.frame_rate=(FrameRate)PLASMAPONG_SMOKE_FPS;
+#endif
 #ifdef PLASMAPONG_SAVE_SMOKE
     save_smoke(&game);
 #endif
@@ -231,24 +301,34 @@ int main(void) {
     uint64_t sim_ticks=0; unsigned sim_steps=0;
     uint64_t draw_ticks=0; unsigned draw_frames=0;
     uint64_t frame_window=get_ticks(); unsigned frame_steps=0;
+    Phase perf_phase=game.phase;
+    FrameRate perf_rate=game.frame_rate;
+    bool perf_l=false,perf_r=false;
+    perf_reset();
     debugf("Plasma Pong 64: ready, %u-byte game state\n",(unsigned)sizeof(game));
     while(1) {
+        const float frame_step=game_dt(&game);
         uint64_t now=get_ticks();
         float elapsed=TIMER_MICROS_LL(now-previous)*.000001f; previous=now;
         /* Bound catch-up after stalls; fixed physics works on PAL and NTSC. */
         accumulator+=minf(elapsed,.1f);
         /* There is no render interpolation: a frame with no new simulation
-           step repeats the same image. Reserve that time for the next 30 Hz
+           step repeats the same image. Reserve that time for the next selected-rate
            update instead of spending it regenerating/uploading the texture.
            Interrupts remain enabled so audio continues during this wait. */
-        if(accumulator<STEP) {
+        if(accumulator<frame_step) {
             /* Round up: sub-microsecond remainders must still make progress. */
-            wait_ticks(TICKS_FROM_US(1+(uint32_t)((STEP-accumulator)*1000000.0f)));
+            wait_ticks(TICKS_FROM_US(1+(uint32_t)((frame_step-accumulator)*1000000.0f)));
             continue;
         }
         joypad_poll(); Input input[MAX_PLAYERS]={0};
         for(int p=0;p<MAX_PLAYERS;p++) {
             joypad_inputs_t in=joypad_get_inputs((joypad_port_t)p);
+            if(p==0) {
+                if(in.btn.l && !perf_l) perf_visible=!perf_visible;
+                if(in.btn.r && !perf_r) perf_reset();
+                perf_l=in.btn.l; perf_r=in.btn.r;
+            }
             input[p]=(Input){.connected=joypad_get_style((joypad_port_t)p)==JOYPAD_STYLE_N64,
                 .a=in.btn.a,.z=in.btn.z,.start=in.btn.start,.b=in.btn.b,
                 .x=in.stick_x/80.0f,.y=in.stick_y/80.0f};
@@ -257,7 +337,7 @@ int main(void) {
             if(in.btn.d_left) input[p].x=-1;
             if(in.btn.d_right) input[p].x=1;
         }
-        while(accumulator>=STEP) {
+        while(accumulator>=frame_step) {
             uint64_t begin=get_ticks();
 #ifdef PLASMAPONG_SMOKE
             smoke_input(&game,input);
@@ -269,7 +349,7 @@ int main(void) {
             memcpy(profile_before,fluid_profile.ticks,sizeof(profile_before));
             memcpy(calls_before,fluid_profile.calls,sizeof(calls_before));
 #endif
-            game_step(&game,input); accumulator-=STEP;
+            game_step(&game,input); accumulator-=frame_step;
             frame_steps++;
             disable_interrupts(); sound_update(&sound,&game); enable_interrupts();
             if(game.scores_dirty) {
@@ -286,8 +366,8 @@ int main(void) {
             if(game.phase==PLAY) {
                 sim_ticks+=get_ticks()-begin;
                 if(++sim_steps==150) {
-                    debugf("Plasma Pong 64: simulation average %llu us/step (budget 33333 us)\n",
-                        (unsigned long long)(TIMER_MICROS_LL(sim_ticks)/sim_steps));
+                    debugf("Plasma Pong 64: simulation average %llu us/step (budget %u us)\n",
+                        (unsigned long long)(TIMER_MICROS_LL(sim_ticks)/sim_steps),(unsigned)(game_dt(&game)*1000000+.5f));
 #ifdef PLASMAPONG_FLUID_PROFILE
                     static const char *names[PROFILE_COUNT]={
                         "velocity_advection","velocity_swap","curl","confinement",
@@ -313,9 +393,19 @@ int main(void) {
         wait_draw_ticks+=get_ticks()-draw_begin;
 #endif
         render_frame++;
+        /* The frame-start RSP/RDP wait also releases the raw point buffers. */
+        point_commands_used=0;
+        if(game.phase!=perf_phase || game.frame_rate!=perf_rate) {
+            perf_reset(); perf_phase=game.phase; perf_rate=game.frame_rate;
+        }
+        perf_update();
         fill_mode=false;
         rdpq_attach(frame,NULL);
         ui_draw(&game);
+        if(perf_visible) {
+            rect(14,27,250,28,0x09111f);
+            label(18,39,0,perf_text); label(18,51,0,perf_gap);
+        }
         rdpq_detach_show();
 #ifdef PLASMAPONG_DRAW_SYNC_PROFILE
         /* Diagnostic only: include RSP/RDP completion, not just submission. */
@@ -330,12 +420,21 @@ int main(void) {
                 (unsigned long long)(TIMER_MICROS_LL(window_end-frame_window)/draw_frames),
                 frame_steps,draw_frames);
             frame_window=window_end; frame_steps=0;
+            PresentationStats shown=perf_snapshot();
+            debugf("Presentation: %lu new / %lu VI, %lu repeats, longest %lu VI gap (%lu missed, target %u FPS)\n",
+                (unsigned long)shown.frames,(unsigned long)shown.refreshes,
+                (unsigned long)shown.repeats,(unsigned long)shown.longest_gap,
+                (unsigned long)shown.misses,(unsigned)game.frame_rate);
 #ifdef PLASMAPONG_FLUID_PROFILE
             debugf("Draw profile: pixels %llu us, texture %llu us, wait %llu us, other %llu us/frame\n",
                 (unsigned long long)TIMER_MICROS_LL(pixel_ticks)/draw_frames,
                 (unsigned long long)TIMER_MICROS_LL(texture_ticks)/draw_frames,
                 (unsigned long long)TIMER_MICROS_LL(wait_draw_ticks)/draw_frames,
                 (unsigned long long)TIMER_MICROS_LL(draw_ticks-pixel_ticks-texture_ticks-wait_draw_ticks)/draw_frames);
+            debugf("Flow draw: prepare %llu us, emit %llu us/frame\n",
+                (unsigned long long)TIMER_MICROS_LL(flow_prepare_ticks)/draw_frames,
+                (unsigned long long)TIMER_MICROS_LL(flow_emit_ticks)/draw_frames);
+            flow_prepare_ticks=flow_emit_ticks=0;
             pixel_ticks=texture_ticks=wait_draw_ticks=0;
             disable_interrupts();
             uint64_t audio_time=audio_ticks; unsigned samples=audio_frames;

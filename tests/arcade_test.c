@@ -72,7 +72,7 @@ int main(void) {
     assert(g.arcade.lives==2 && g.phase==PLAY);
     float bx=g.bx; elapsed=g.arcade.level_time; tick();
     assert(g.bx==bx && g.arcade.level_time==elapsed);
-    for(int t=0;t<50;t++) tick();
+    for(int t=0;t<2*GAME_HZ;t++) tick();
     assert(g.arcade.transition==0);
     g.arcade.level=5; g.arcade.goals=2; goal(0); assert(g.arcade.lives==3 && g.arcade.level==6);
     g.arcade.level=10; g.arcade.goals=2; g.arcade.lives=5; goal(0); assert(g.arcade.lives==5);
@@ -104,7 +104,7 @@ int main(void) {
     /* Long-run physics and real AI inputs at several difficulty levels. */
     for(unsigned level=1;level<=101;level+=25) {
         ready(); g.arcade.level=level; g.arcade.lives=5;
-        for(int t=0;t<900;t++) {
+        for(int t=0;t<30*GAME_HZ;t++) {
             in[0].y=sinf(t*.071f); in[0].z=t%90<60; in[0].a=t%120>100;
             tick();
             assert(isfinite(g.bx) && isfinite(g.by));

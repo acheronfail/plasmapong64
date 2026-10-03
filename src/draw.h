@@ -1,7 +1,14 @@
 #ifndef DRAW_H
 #define DRAW_H
 #include "game.h"
+#ifdef PLASMAPONG_FLUID_PROFILE
+extern uint64_t flow_prepare_ticks,flow_emit_ticks;
+#endif
 void rect(float x,float y,float w,float h,uint32_t c);
+typedef struct { uint16_t x,y; } DrawPoint;
+/* At most five layers of FLOW_TRACERS in a frame; screen-clipped pixels. */
+void draw_points(const DrawPoint *points,unsigned count,uint32_t c);
+void draw_points_end(void);
 void label(float x,float y,int style,const char *s);
 void label_edge(float x,float y,int style,const char *s,bool right);
 float label_width(const char *s);

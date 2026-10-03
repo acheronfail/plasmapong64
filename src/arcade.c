@@ -17,7 +17,7 @@ static float random_signed(Arcade *a) {
 Input arcade_ai(Game *g) {
     Arcade *a=&g->arcade;
     float d=arcade_difficulty(g);
-    a->ai_wait-=STEP;
+    a->ai_wait-=game_dt(g);
     if(a->ai_wait<=0) {
         /* Observe only at reaction intervals, then commit to that target.
            No extra fluid solve or perfect prediction of future currents. */
@@ -51,7 +51,9 @@ static void add_points(Arcade *a,uint64_t amount) {
     a->points=sum>UINT32_MAX?UINT32_MAX:(uint32_t)sum;
 }
 void arcade_currents(Game *g) {
-    if(g->arcade.level<6 || g->arcade.ticks++%3) return;
+    if(g->arcade.level<6) return;
+    unsigned ticks=g->arcade.ticks; g->arcade.ticks+=game_tick_units(g);
+    if(ticks%(GAME_HZ/10)>=game_tick_units(g)) return;
     float force=35*arcade_difficulty(g),wave=sinf(g->elapsed*.8f);
     switch((g->arcade.level-6)%3) {
     case 0:

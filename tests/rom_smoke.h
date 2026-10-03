@@ -3,13 +3,15 @@
 #define PLASMAPONG_SMOKE_PLAYERS 2
 #endif
 static void smoke_input(Game *g,Input in[MAX_PLAYERS]) {
-    static unsigned tick;
+    static unsigned steps;
+    /* Keep the same input/effect timeline in seconds as the 30 Hz replay. */
+    unsigned tick=steps*30/GAME_HZ;
 #ifdef PLASMAPONG_SMOKE_EFFECT
     _Static_assert(PLASMAPONG_SMOKE_EFFECT>=0 && PLASMAPONG_SMOKE_EFFECT<FLOW_COUNT,"valid benchmark effect");
     g->flow_effect=(FlowEffect)PLASMAPONG_SMOKE_EFFECT;
 #endif
 #ifdef PLASMAPONG_SMOKE_FLOW
-    if(tick%450==0) {
+    if(steps%(15*GAME_HZ)==0) {
         g->flow_effect=(FlowEffect)((tick/450)%FLOW_COUNT);
         memset(g->tracers,0,sizeof(g->tracers));
         debugf("FLOW SMOKE: effect %u\n",(unsigned)g->flow_effect);
@@ -40,5 +42,5 @@ static void smoke_input(Game *g,Input in[MAX_PLAYERS]) {
             in[0].x=tick%2==0?1:0;
         else in[0].start=tick%2==0;
     }
-    tick++;
+    steps+=game_tick_units(g);
 }

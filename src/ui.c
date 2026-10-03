@@ -168,10 +168,16 @@ static void bat_rect(int p,float x,float y,float dx,float dy,float w,float h,uin
     if(p<2) rect(x+dx,y+dy,w,h,c);
     else rect(x+dy,y+dx,h,w,c);
 }
+#ifdef PLASMAPONG_FLUID_PROFILE
+#include <libdragon.h>
+#endif
 static void flow_background(const Game *g,float x,float y,float w,float h) {
     /* Main-menu selection must remain gold even when speed view is enabled. */
     draw_fluid(&g->fluid,x,y,w,h,g->phase!=MENU && g->flow_effect==FLOW_SPEED);
     if(g->flow_effect!=FLOW_PARTICLES && g->flow_effect!=FLOW_TAILS) return;
+#ifdef PLASMAPONG_FLUID_PROFILE
+    uint64_t flow_begin=get_ticks();
+#endif
     /* A small, saturated palette preserves batching: at most four color
        changes per layer, rather than one per particle. Read nearest-cell dye
        once per head; tails share its tint. Mixed/clear fluid stays neutral. */
@@ -181,53 +187,71 @@ static void flow_background(const Game *g,float x,float y,float w,float h) {
         {0xdb506b,0xbd455c,0x9f3a4e,0x812f3f,0x632430}, /* coral */
         {0xc7a333,0xac8d2c,0x917725,0x75611e,0x5a4a17}  /* gold */
     };
-    uint8_t buckets[4][FLOW_TRACERS]; unsigned counts[4]={0};
-    float tail_scale[FLOW_TRACERS];
+    unsigned head=g->tracer_head,history[5];
+    for(unsigned j=0;j<5;j++) history[j]=(head+j*FLOW_SAMPLE_TICKS)%FLOW_HISTORY;
+    const float sx=w/ARENA_W,sy=h/ARENA_H;
+    /* Prepare every dot for one tracer while its history is in cache. Keep
+       the existing back-to-front, color-grouped draw order in compact batches. */
+    static DrawPoint points[5][4][FLOW_TRACERS];
+    unsigned counts[5][4]={{0}};
+    int layers=g->flow_effect==FLOW_TAILS?4:0;
     const FluidInk *ink=fluid_dye(&g->fluid);
     const FluidInkValue minimum=fluid_ink_encode(.04f);
     for(unsigned i=0;i<FLOW_TRACERS;i++) {
         const FlowTracer *t=&g->tracers[i]; if(!t->life) continue;
-        int k=(int)(t->y[0]/CELL)*FW+(int)(t->x[0]/CELL);
+        float hx=t->x[head],hy=t->y[head];
+        int k=(int)(hy/CELL)*FW+(int)(hx/CELL);
         FluidInkValue r=ink->red[k],b=ink->blue[k],gold=ink->gold[k];
         unsigned tint=0;
         if(b>minimum && b>r+r/2 && b>gold+gold/2) tint=1;
         else if(r>minimum && r>b+b/2 && r>gold+gold/2) tint=2;
         else if(gold>minimum && gold>r+r/2 && gold>b+b/2) tint=3;
-        buckets[tint][counts[tint]++]=(uint8_t)i;
-        tail_scale[i]=1;
-        if(g->flow_effect==FLOW_TAILS) {
-            float extent=0;
-            for(int j=2;j<FLOW_HISTORY;j+=2)
-                extent=maxf(extent,maxf(fabsf(t->x[j]-t->x[0]),fabsf(t->y[j]-t->y[0])));
-            /* Scale the entire trail together so fast tails keep spaced dots. */
-            if(extent>24) tail_scale[i]=24/extent;
+        float dx[5]={0},dy[5]={0},length[5]={0};
+        float extent=0;
+        for(int j=1;j<=layers;j++) {
+            dx[j]=t->x[history[j]]-hx; dy[j]=t->y[history[j]]-hy;
+            length[j]=maxf(fabsf(dx[j]),fabsf(dy[j]));
+            extent=maxf(extent,length[j]);
+        }
+        float scale=extent>24?24/extent:1;
+        for(int j=0;j<=layers;j++) {
+            if(j && length[j]*scale<1) continue;
+            /* Histories and their convex combinations stay in the positive
+               screen domain. Integer truncation is therefore floor. */
+            int px=(int)(x+(hx+dx[j]*scale)*sx);
+            int py=(int)(y+(hy+dy[j]*scale)*sy);
+            if(px>=x && py>=y && px<x+w && py<y+h)
+                points[j][tint][counts[j][tint]++]=(DrawPoint){px,py};
         }
     }
-    for(int j=g->flow_effect==FLOW_TAILS?4:0;j>=0;j--) {
-        for(unsigned tint=0;tint<4;tint++) for(unsigned n=0;n<counts[tint];n++) {
-            unsigned i=buckets[tint][n];
-            const FlowTracer *t=&g->tracers[i];
-            float dx=(t->x[j*2]-t->x[0])*tail_scale[i],dy=(t->y[j*2]-t->y[0])*tail_scale[i];
-            float length=maxf(fabsf(dx),fabsf(dy));
-            if(j && length<1) continue;
-            float px=floorf(x+(t->x[0]+dx)*w/ARENA_W);
-            float py=floorf(y+(t->y[0]+dy)*h/ARENA_H);
-            if(px>=x && py>=y && px<x+w && py<y+h) rect(px,py,1,1,colors[tint][j]);
-        }
-    }
+#ifdef PLASMAPONG_FLUID_PROFILE
+    flow_prepare_ticks+=get_ticks()-flow_begin; flow_begin=get_ticks();
+#endif
+    for(int j=layers;j>=0;j--)
+        for(unsigned tint=0;tint<4;tint++)
+            draw_points(points[j][tint],counts[j][tint],colors[tint][j]);
+    draw_points_end();
+#ifdef PLASMAPONG_FLUID_PROFILE
+    flow_emit_ticks+=get_ticks()-flow_begin;
+#endif
 }
 void ui_draw(const Game *g) {
     if(g->phase==OPTIONS) {
         flow_background(g,0,0,320,240);
-        rect(12,78,296,83,0x09111f);
-        menu_label(101,4,"OPTIONS");
+        rect(12,64,296,117,0x09111f);
+        menu_label(87,4,"OPTIONS");
+        rect(20,g->options_selection?124:98,280,20,0x142c3b);
+        rect(20,g->options_selection?124:98,2,20,CYAN);
         const char *effects[]={"NONE","PARTICLES","PARTICLE TAILS","SPEED"};
         char setting[64]; snprintf(setting,sizeof(setting),"< FLOW EFFECT: %s >",effects[g->flow_effect]);
-        menu_label(125,4,setting);
+        menu_label(113,g->options_selection==0?2:1,setting);
+        snprintf(setting,sizeof(setting),"< FRAME RATE: %u FPS >",(unsigned)g->frame_rate);
+        menu_label(139,g->options_selection==1?2:1,setting);
         if(!g->save_available || g->save_failed)
-            menu_label(149,1,!g->save_available?"NO SAVE STORAGE - SESSION ONLY":"SAVE FAILED - SESSION ONLY");
-        centered_hint(195,"[LEFT] / [RIGHT] CHANGE");
-        centered_hint(216,"[B] BACK"); return;
+            menu_label(169,1,!g->save_available?"NO SAVE STORAGE - SESSION ONLY":"SAVE FAILED - SESSION ONLY");
+        centered_hint(196,"[UP] / [DOWN] SELECT");
+        centered_hint(213,"[LEFT] / [RIGHT] CHANGE");
+        centered_hint(232,"[B] BACK"); return;
     }
     if(g->phase==MENU) {
         flow_background(g,0,0,320,240);

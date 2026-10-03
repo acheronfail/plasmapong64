@@ -8,6 +8,24 @@ with left/right on the multiplayer menu row. Multiplayer is greyed out with fewe
 than two controllers, and larger matches are available only when enough pads are
 connected. Players are assigned connected N64 controllers in port order.
 
+Choose **OPTIONS → FRAME RATE** to switch between **30 FPS** and **60 FPS**
+(default). Up/down selects a row; left/right changes its value. Each change saves
+automatically to cartridge EEPROM alongside flow effects and high scores. Older
+save records retain their scores/effect and default to 60 FPS. The setting changes
+both physics and rendering frequency; movement, charge and cooldown retain their
+real-world durations, though fluid trajectories can differ with the timestep.
+
+A console performance overlay is enabled for testing: **L** on controller port 1
+shows/hides it; **R** resets its counters. `FPS` shows newly presented frames per
+second followed by measured video refresh rate. `MISS` counts repeated refreshes
+beyond the selected mode's allowance: one refresh per frame at 60 FPS, two at
+30 FPS. `GAP` is the longest interval in refreshes (1 is ideal at 60 FPS; 2 at
+30 FPS). Counters restart on scene or frame-rate changes. After entering gameplay,
+press R and exercise four-player jets, suction, and all flow effects for several
+minutes. NTSC is roughly 60 Hz; PAL's native video mode remains roughly 50 Hz,
+with physics running at the selected frequency. The overlay updates its cached
+text twice a second; hiding it removes its drawing cost while sampling continues.
+
 Three- and four-player matches use a square court: P1 (cyan) on the left, P2
 (coral) on the right, P3 (mint) at the bottom, and P4 (violet) at the top. The top
 is a wall in 3P. Diagonal corner walls and inset movement limits keep adjacent
@@ -160,7 +178,7 @@ badges. Arcade requires one emulated N64 pad in port 1; multiplayer requires two
   rewards, lives, arena-current patterns, and ranked scores with saturating points.
 - `src/save.c` and `src/save_n64.c`: portable score serialization/checksums and a
   two-slot EEPROM backend. ROM metadata requests 4K EEPROM.
-- `src/game.c`: fixed 30 Hz simulation, four ball collision substeps per tick,
+- `src/game.c`: selectable 30/60 Hz simulation, four ball collision substeps per tick,
   velocity-field coupling, conditional catches, launch, scoring, and match state.
   Bats stay in their own end of the court. Time accumulation supports PAL and
   NTSC; catch-up is capped after long stalls.
@@ -172,7 +190,8 @@ badges. Arcade requires one emulated N64 pad in port 1; multiplayer requires two
   filtered tile overlaps keep chunk boundaries smooth. RDP completion is
   synchronized after the next simulation step and before reusing texture memory.
   Immutable drawing commands are recorded as RSPQ blocks; rendering follows the
-  30 Hz simulation instead of generating duplicate frames between updates. Game state occupies about 70 KB;
+  selected simulation frequency instead of generating duplicate frames between
+  updates. Game state occupies about 57 KiB;
   the ROM does not require an Expansion Pak. Emulator debug output reports the
   average simulation cost every 150 active steps and draw cost every 150 frames.
   The fluid source uses `-O3` on N64, and shared timestep/radius factors are
@@ -906,16 +925,17 @@ emulation. Logs, ROMs, per-frame CSVs and numeric summaries are retained in
 
 ### Flow display options
 
-Choose **OPTIONS** from the main menu, then press left/right on the D-pad or
-stick to cycle **FLOW EFFECT** through **NONE**, **PARTICLES**, **PARTICLE TAILS**,
-and **SPEED**. B returns to the main menu. The animated background
+Choose **OPTIONS** from the main menu. Up/down selects **FLOW EFFECT** or
+**FRAME RATE**; left/right changes the selected value. Flow effects are **NONE**,
+**PARTICLES**, **PARTICLE TAILS**, and **SPEED**; frame rates are **30 FPS** and
+**60 FPS**. B returns to the main menu. The animated background
 previews the selected effect. Each change automatically saves to cartridge EEPROM;
 missing storage or a failed write is shown in the options screen. Successful
 saves are silent, without confirmation text in the options or high-score screens.
 
 Particles use 96 visual-only tracers sampled from the current velocity field at
-30 Hz, with periodic distributed respawns. Heads and tails are single framebuffer
-pixels, strongly tinted cyan, coral or gold by the dominant local dye (mixed/clear
+the selected simulation frequency, with periodic distributed respawns. Heads and
+tails are single framebuffer pixels, strongly tinted cyan, coral or gold by the dominant local dye (mixed/clear
 fluid uses a dim blue-grey). Four colour batches per layer keep render-state changes
 bounded; tinting reads one grid cell per particle without extra interpolation.
 Particle tails add four fading history markers spanning eight simulation ticks
@@ -1127,3 +1147,91 @@ suite. A fourteen-window four-player run cycled all four effects with RDP valida
 and no reported assertion, RDP or DMA errors. The portable test suite and CPU-only
 fallback build also pass. Logs, intermediate experiments, source/ROM hashes and
 aggregate results are retained in `build/rsp_next/` (`results.json`).
+
+
+### 60 Hz migration and console presentation monitor (2026-10-03)
+
+The default timestep is now 1/60 second. Charge still takes one second, the
+perfect-release window remains about 67 ms, and cooldown lasts five active
+seconds. Menu and ball dye emissions and moving-jet forces retain their amount
+per second; menu fade uses the square root of its old per-update multiplier.
+Arcade currents retain their 10 Hz injection schedule. Tracers retain their
+1.5–4.5 second lifetimes and approximately 267 ms histories, sampled into the same
+five visible tail dots. A circular history avoids copying every sample at 60 Hz.
+The shorter fluid-advection timestep loses less momentum to interpolation; the
+four-second residual-flow test now checks the measured 60 Hz float/fixed range.
+
+Four-player tails initially exceeded the new budget. The final path prepares all
+dots for each tracer while its history is cached, then submits their existing
+back-to-front/color order in one RDP command buffer. Explicit pipe syncs surround
+raw color changes, and the frame-start RSP/RDP wait protects buffer reuse.
+Gameplay and UI source files also use `-O3`. No particles, visible tail layers,
+fluid cells or pressure iterations were removed.
+
+The monitor samples VI_ORIGIN after libdragon's display swap handler, counting
+actual framebuffer changes rather than submitted frames or simulation steps.
+This is specific to the current non-interlaced display mode. L hides the panel;
+R resets the scene's measurements. Numbers update every half second using cached
+text commands. A matching ten-window two-player comparison measured **1.028 ms
+with the panel versus 0.994 ms hidden** for draw submission: about **0.034 ms/frame**
+of additional drawing cost. Both runs retained the sampler and had zero repeated
+refreshes. This comparison is an ares measurement, not a hardware overhead bound.
+
+The normal asynchronous rendering path is the performance acceptance path.
+`DRAW_SYNC_PROFILE=1` deliberately serializes completed drawing and reduces
+pipeline overlap; RDP validation also adds substantial overhead. Those diagnostic
+builds can drop frames even when the ordinary build presents every refresh.
+Do not use their frame rates as the console release frame rate.
+
+Portable tests cover presentation counting/reset, circular-history wraparound,
+wall-clock gameplay durations, and 120 seconds of gameplay at 60 Hz. All six RSP
+numerical suites pass. A four-player all-effects RDP validation run reported no
+RDP errors. The larger five-command preparation overlay exposed a shared cache
+line between the registration command table and empty saved state when embedded
+at an eight-byte RDRAM alignment; padding now separates them. The benchmark runner
+also treats DMA/cache warnings as failures and supports `--draw-only` for menus.
+
+Measurements, intermediate stress failures, screenshots and final summaries are
+retained in `build/60fps/`. Hardware validation is still required; the diagnostic
+panel is enabled in the default playable ROM for that purpose.
+
+Final ares presentation checks (audio and HUD enabled, no diagnostic draw fence):
+
+| Workload | Duration | Presentation result |
+| --- | ---: | --- |
+| 2P scripted play | ~25 s | No repeated refreshes |
+| 4P cycling NONE, PARTICLES, TAILS, SPEED | ~70 s | No repeated refreshes; 16.714 ms average submission interval |
+| 4P continuous TAILS | ~45 s | 4 repeats out of 2,694 measured refreshes; longest gap 2 VI |
+| Main menu | ~10 s | One initial repeat, no additional repeats after startup |
+
+Continuous tails averaged **12.017 ms simulation + 3.561 ms draw submission**.
+The default is now 60 Hz, but the heaviest workload is not yet guaranteed to stay
+locked to every refresh.
+
+
+### Saved frame-rate selection (2026-10-03)
+
+The frame-rate option persists in version-3 EEPROM records, using one formerly
+unused byte and the existing checksummed, alternating-slot write sequence.
+Version-1 and version-2 records remain readable. Selecting a menu row does not
+write EEPROM; changing its value does. New matches and rematches retain the
+setting. Switching frequency discards the accumulator after the save, avoiding a
+catch-up burst. Timers use a 60 Hz counter base, advancing by two units at 30 FPS.
+Tail history interpolates the intermediate sample at 30 FPS to retain its duration.
+
+Portable tests cover both rates across all four host fluid backends, menu input
+debouncing, restart retention, charge/grace/cooldown duration, paddle motion,
+tracer history, save migration, invalid saved values, and presentation counting.
+The dedicated EEPROM ROM verifies 30 FPS and then 60 FPS across successive boots.
+Ares automatically flushes save memory every 30 host seconds, so persistence runs
+must allow that interval before terminating the emulator.
+
+Four-player continuous-tail benchmarks with audio and HUD enabled are retained
+in `build/fps_options/`. At 30 FPS, simulation averaged **12.776 ms** and drawing
+submission **3.731 ms**, with **33.351 ms** average frame intervals. The free-running
+scheduler produced 32 intervals of three refreshes across 1,780 measured refreshes;
+30 FPS is not perfectly locked to alternate VIs. At 60 FPS, simulation averaged
+**12.545 ms** and drawing submission **3.710 ms**, with **17.496 ms** average frame
+intervals and 83 repeated refreshes out of 1,873. This demanding run is worse than
+the earlier fixed-60 checkpoint; neither mode should be described as perfectly
+paced based on emulator averages. Console testing remains the final check.

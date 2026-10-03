@@ -11,6 +11,10 @@ RSPQ_BeginOverlayHeader
     RSPQ_DefineCommand Gradient,12
     RSPQ_DefineCommand SpeedPixels,16
 RSPQ_EndOverlayHeader
+    /* Embedded data can be only 8-byte aligned in RDRAM. Keep the command
+       table's CPU cache line separate from the state saved by RSP DMA. */
+    .align 4
+    .space 16
 RSPQ_EmptySavedState
     .quad 0
     .bss

@@ -11,19 +11,21 @@ static uint32_t checksum(const uint8_t *p) {
     }
     return ~crc;
 }
-void score_save_encode(uint8_t data[SCORE_SAVE_BYTES],const HighScore scores[HIGH_SCORE_COUNT],uint32_t generation,FlowEffect effect) {
-    memset(data,0,SCORE_SAVE_BYTES); memcpy(data,"PPH2",4); put32(data+4,generation);
+void score_save_encode(uint8_t data[SCORE_SAVE_BYTES],const HighScore scores[HIGH_SCORE_COUNT],uint32_t generation,FlowEffect effect,FrameRate frame_rate) {
+    memset(data,0,SCORE_SAVE_BYTES); memcpy(data,"PPH3",4); put32(data+4,generation);
     for(int i=0;i<HIGH_SCORE_COUNT;i++) {
         uint8_t *p=data+12+i*12;
         put32(p,scores[i].points); put32(p+4,scores[i].level);
         memcpy(p+8,scores[i].initials,3);
     }
-    data[132]=(uint8_t)effect;
+    data[132]=(uint8_t)effect; data[133]=(uint8_t)frame_rate;
     put32(data+8,checksum(data));
 }
-bool score_save_decode(const uint8_t data[SCORE_SAVE_BYTES],HighScore scores[HIGH_SCORE_COUNT],uint32_t *generation,FlowEffect *effect) {
+bool score_save_decode(const uint8_t data[SCORE_SAVE_BYTES],HighScore scores[HIGH_SCORE_COUNT],uint32_t *generation,FlowEffect *effect,FrameRate *frame_rate) {
     bool legacy=!memcmp(data,"PPH1",4);
-    if((!legacy && memcmp(data,"PPH2",4)) || get32(data+8)!=checksum(data)) return false;
+    bool current=!memcmp(data,"PPH3",4);
+    if((!legacy && !current && memcmp(data,"PPH2",4)) || get32(data+8)!=checksum(data)) return false;
+    if(current && data[133]!=FPS_30 && data[133]!=FPS_60) return false;
     if(!legacy && data[132]>=FLOW_COUNT) return false;
     HighScore decoded[HIGH_SCORE_COUNT]={0};
     for(int i=0;i<HIGH_SCORE_COUNT;i++) {
@@ -36,5 +38,5 @@ bool score_save_decode(const uint8_t data[SCORE_SAVE_BYTES],HighScore scores[HIG
         if(i && (decoded[i].points>decoded[i-1].points ||
            (decoded[i].points==decoded[i-1].points && decoded[i].level>decoded[i-1].level))) return false;
     }
-    memcpy(scores,decoded,sizeof(decoded)); *effect=legacy?FLOW_NONE:(FlowEffect)data[132]; *generation=get32(data+4); return true;
+    memcpy(scores,decoded,sizeof(decoded)); *effect=legacy?FLOW_NONE:(FlowEffect)data[132]; *frame_rate=current?(FrameRate)data[133]:FPS_60; *generation=get32(data+4); return true;
 }

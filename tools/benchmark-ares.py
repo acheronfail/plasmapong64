@@ -15,6 +15,7 @@ parser.add_argument('log', type=pathlib.Path)
 parser.add_argument('--ares', default='../ares/build/rundir/bin/ares')
 parser.add_argument('--windows', type=int, default=10)
 parser.add_argument('--timeout', type=float, default=240)
+parser.add_argument('--draw-only', action='store_true', help='measure menus without waiting for PLAY simulation logs')
 args = parser.parse_args()
 if args.windows < 1 or args.timeout <= 0:
     parser.error('windows and timeout must be positive')
@@ -28,6 +29,7 @@ if not settings.exists() and user_settings.exists():
 command = [args.ares, '--settings-file', str(settings.resolve()), '--setting', 'Developer/HomebrewMode=true', '--setting', 'Input/Defocus=Block', '--system',
            'Nintendo 64', '--no-file-prompt', str(args.rom.resolve())]
 measurements = {}
+presentation = []
 start = time.monotonic()
 with args.log.open('w') as log:
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -51,14 +53,23 @@ with args.log.open('w') as log:
                         match = re.search(r'Fluid profile: (\w+) (\d+) us', line)
                     if match:
                         measurements.setdefault(match[1], []).append(int(match[2]))
+                    shown = re.search(r'Presentation: (\d+) new / (\d+) VI, (\d+) repeats, longest (\d+) VI gap', line)
+                    if shown:
+                        presentation.append(dict(zip(('frames', 'refreshes', 'repeats', 'longest_gap_vi'), map(int, shown.groups()))))
+                        target = re.search(r'\((\d+) missed, target (\d+) FPS\)', line)
+                        if target:
+                            presentation[-1].update(misses=int(target[1]), target_fps=int(target[2]))
                     if 'PASS:' in line:
                         print(line, flush=True)
-                    if re.search(r'assertion failed|mismatch trial|RDPQ.*(?:ERROR|WARNING)', line, re.I):
+                    if re.search(r'assertion failed|mismatch trial|RDPQ.*(?:ERROR|WARNING)|missing cache (?:invalidation|writeback)|DMA.*(?:cached|dirty)', line, re.I):
                         raise RuntimeError(line)
-            required = ['simulation average', 'draw average']
-            if 'velocity_advection' in measurements:
+            required = ['draw average', 'frame interval']
+            if not args.draw_only:
+                required.append('simulation average')
+            if 'velocity_advection' in measurements and not args.draw_only:
                 required.append('sample')
-            if all(len(measurements.get(k, [])) >= args.windows for k in required):
+            if (all(len(measurements.get(k, [])) >= args.windows for k in required)
+                    and (not presentation or len(presentation) >= args.windows)):
                 break
         else:
             raise RuntimeError('Timed out before the requested complete measurement windows')
@@ -73,5 +84,8 @@ with args.log.open('w') as log:
 result = {key: {'mean_us': sum(values[:args.windows])/len(values[:args.windows]),
                 'min_us': min(values[:args.windows]), 'max_us': max(values[:args.windows]),
                 'windows': len(values[:args.windows])} for key, values in measurements.items()}
+if presentation:
+    # Counters restart on scene changes or the console's R reset button.
+    result['presentation'] = presentation
 args.log.with_suffix('.json').write_text(json.dumps(result, indent=2) + '\n')
 print(json.dumps(result, indent=2))
