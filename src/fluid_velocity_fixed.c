@@ -53,7 +53,11 @@ void fluid_advect_velocity_fixed(FluidVelocityFixed *next,const FluidVelocityFix
         float grid_dt,float decay,unsigned rounding) {
     static _Alignas(16) FluidDyeTrace trace[FN];
 #ifdef PLASMAPONG_PREPARE_RSP
+#ifdef PLASMAPONG_ADVECTION_CHAIN
+    fluid_velocity_trace_rsp_begin(trace,velocity,grid_dt);
+#else
     fluid_velocity_trace_rsp(trace,velocity,grid_dt);
+#endif
 #else
     fluid_velocity_trace(trace,velocity,grid_dt);
 #endif

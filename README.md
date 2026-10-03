@@ -1045,3 +1045,85 @@ A final 70-second/fourteen-window four-player run cycled NONE, PARTICLES,
 PARTICLE TAILS and SPEED with RDP validation enabled, maintained roughly 33.34 ms
 submission intervals, and reported no RDP/DMA errors. Emulator screenshots of
 two-player dye rendering and four-player SPEED were visually checked.
+
+### Exact gradient and SPEED offloads after `fae1c0d` (2026-10-03)
+
+Commit `fae1c0d` saves the previous performance checkpoint. The next iteration
+keeps the same 30 Hz schedule and adds these default optimizations:
+
+- **Pressure gradient on RSP:** eight signed lanes retain the full 32-bit pressure
+  difference. The existing rounded division by 3072 is computed exactly using
+  `n=(abs(difference)+1536)>>10` and `floor(n*43691/131072)`. For `n>=98304`, the
+  final velocity clamp permits saturating the intermediate quotient to 32767.
+  This is integer arithmetic, not an approximate reciprocal. Normal wall
+  velocities are zeroed and tangential edge velocities receive the same update.
+  Three rotating pressure rows fetch each row only once.
+- **SPEED pixels on RSP:** vector magnitude calculation retains the existing
+  max-plus-half-min rule. A 260-word DMA-aligned palette is generated once from
+  the original CPU interpolation code. The palette contains all 257 distinct
+  integer speed entries plus padding; no colors or thresholds change.
+- **Queued advection:** backtrace generation and interpolation share one final
+  completion wait. Trace buffers are invalidated before enqueueing, remain
+  untouched by the CPU while owned by RSP, and are consumed in queue order.
+  The standalone trace API remains synchronous for callers needing CPU access.
+- **Pressure DMA prefetch:** double-buffered divergence rows overlap the next
+  row's input transfer with the existing scalar solve. The following synchronous
+  pressure write completes the prefetch before its buffer is consumed. The
+  solver's order, eight iterations and full Q12 words remain unchanged.
+
+`GRADIENT_RSP=0`, `SPEED_RSP=0` and `ADVECTION_CHAIN=0` retain the corresponding
+CPU or separate-wait paths for comparison. They only take effect with RSP
+preparation enabled. `SMOKE_EFFECT=3` selects a fixed SPEED benchmark;
+`just benchmark-speed` builds it with stage and completed-drawing timers. As
+before, use separate build directories for flag combinations.
+
+The preparation overlay uses **3,472 bytes IMEM** and **2,944 bytes DMEM**
+(including its header/state); pressure uses **3,936 bytes IMEM** and **1,520 bytes
+DMEM**. A tested alternative that vectorized independent pressure neighbor sums
+was bit-exact but slower in ares (about 3.85 versus 2.85 ms for pressure). It was
+removed; its source and measurements remain in `build/rsp_next/`.
+
+Validation adds **162 gradient fields** covering rounding ties, carry boundaries,
+quotient saturation, small/large random pressures, every wall and DMA guards.
+The reciprocal identity is exhaustively checked over its 98,304-value
+unsaturated domain. The 80-field preparation suite also checks SPEED pixels,
+padded rows and source integrity, and the velocity fixtures exercise the complete
+queued backtrace/interpolation path. Existing pressure, dye, velocity, confinement
+and portable gameplay suites remain enabled.
+
+Final ares comparisons use the same pinned toolchain/emulator and scripted inputs
+as above. The two-player default comparison reruns the checkpoint for ten windows;
+SPEED and four-player results use six windows. SPEED runs include stage profiling
+on both sides. The four-player checkpoint is the preceding iteration's measured
+result. All performance rows include completed RSP/RDP drawing, with validation
+disabled.
+
+| Completed-frame measurement | `fae1c0d` | This iteration | Reduction |
+| --- | ---: | ---: | ---: |
+| 2P simulation | 10.993 ms | 10.159 ms | 7.6% |
+| 2P completed drawing | 1.322 ms | 1.316 ms | 0.5% |
+| 2P simulation + completed drawing | 12.315 ms | 11.475 ms | 6.8% |
+| 2P SPEED completed drawing | 3.276 ms | 1.391 ms | 57.5% |
+| 2P SPEED simulation + completed drawing | 14.459 ms | 11.605 ms | 19.7% |
+| 4P simulation + completed drawing | 14.386 ms | 13.535 ms | 5.9% |
+
+Relative to the original `fae1860` baseline, normal two-player simulation plus
+completed drawing is now **31.0% lower** (16.641 to 11.475 ms). These averages
+remain emulator measurements, not individual-frame bounds or hardware guarantees.
+Submission intervals remain approximately **33.34 ms**; the 30 Hz target is unchanged.
+
+The final profiled SPEED run puts the largest stages at pressure **2.776 ms**,
+dye advection **2.307 ms**, velocity advection **1.825 ms**, gradient **0.970 ms**,
+and splats **0.647 ms**. The gradient previously cost **1.517 ms** in the matching
+SPEED run. Separate controlled six-window runs attribute about **0.116 ms** to
+sharing the advection completion wait and **0.069 ms** to pressure DMA prefetch.
+Pressure and advection are already on RSP; further gains need better memory access
+or scheduling, rather than simply moving those stages. CPU splats remain a smaller
+offload candidate; particle tails and tracer sampling also warrant separate
+effect-specific profiling.
+
+All six on-console numerical suites passed, including the new 162-field gradient
+suite. A fourteen-window four-player run cycled all four effects with RDP validation
+and no reported assertion, RDP or DMA errors. The portable test suite and CPU-only
+fallback build also pass. Logs, intermediate experiments, source/ROM hashes and
+aggregate results are retained in `build/rsp_next/` (`results.json`).

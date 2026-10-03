@@ -21,6 +21,9 @@ void fluid_channels_rsp(int16_t *next,const int16_t *source,const FluidDyeTrace 
     }
     unsigned bytes=channels*FN*sizeof(int16_t);
     data_cache_hit_writeback(source,bytes);
+    /* CPU traces may be dirty. RSP-generated traces were invalidated before
+       enqueueing, so this cannot overwrite their pending DMA output. The final
+       syncpoint also completes any trace command queued by our caller. */
     data_cache_hit_writeback(trace,FN*sizeof(*trace));
     data_cache_hit_invalidate(next,bytes);
     for(unsigned c=0;c<channels;c++) {
@@ -43,7 +46,11 @@ void fluid_advect_ink_rsp(FluidDyeFixed *next,const FluidDyeFixed *ink,
     static _Alignas(16) FluidDyeTrace trace[FN];
 #ifdef PLASMAPONG_VELOCITY_FIXED
 #ifdef PLASMAPONG_PREPARE_RSP
+#ifdef PLASMAPONG_ADVECTION_CHAIN
+    fluid_velocity_trace_rsp_begin(trace,velocity,grid_dt);
+#else
     fluid_velocity_trace_rsp(trace,velocity,grid_dt);
+#endif
 #else
     fluid_velocity_trace(trace,velocity,grid_dt);
 #endif

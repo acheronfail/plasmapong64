@@ -1,3 +1,6 @@
+ADVECTION_CHAIN ?= 1
+SPEED_RSP ?= 1
+GRADIENT_RSP ?= 1
 PREPARE_RSP ?= 1
 FLUID_RSP ?= 1
 DYE_RSP ?= 1
@@ -84,6 +87,15 @@ ifeq ($(PREPARE_RSP)$(VELOCITY_RSP),11)
 src += src/fluid_prepare_rsp.c
 rsp_obj += $(BUILD_DIR)/src/rsp_prepare.o
 N64_CFLAGS += -DPLASMAPONG_PREPARE_RSP
+ifeq ($(ADVECTION_CHAIN),1)
+N64_CFLAGS += -DPLASMAPONG_ADVECTION_CHAIN
+endif
+ifeq ($(GRADIENT_RSP),1)
+N64_CFLAGS += -DPLASMAPONG_GRADIENT_RSP
+endif
+ifeq ($(SPEED_RSP),1)
+N64_CFLAGS += -DPLASMAPONG_SPEED_RSP
+endif
 endif
 ifeq ($(CONFINEMENT_TEST),1)
 ifneq ($(CONFINEMENT_FIXED),1)
@@ -126,6 +138,9 @@ endif
 $(BUILD_DIR)/src/fluid.o $(BUILD_DIR)/src/fluid_advection.o $(BUILD_DIR)/src/fluid_dye_fixed.o $(BUILD_DIR)/src/fluid_velocity_fixed.o $(BUILD_DIR)/src/fluid_confinement.o: CFLAGS += -O3
 ifeq ($(SMOKE_FLOW),1)
 N64_CFLAGS += -DPLASMAPONG_SMOKE -DPLASMAPONG_SMOKE_FLOW
+endif
+ifneq ($(SMOKE_EFFECT),)
+N64_CFLAGS += -DPLASMAPONG_SMOKE_EFFECT=$(SMOKE_EFFECT)
 endif
 ifeq ($(SMOKE),1)
 SMOKE_PLAYERS ?= 2

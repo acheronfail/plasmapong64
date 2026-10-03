@@ -8,6 +8,8 @@ RSPQ_BeginOverlayHeader
     RSPQ_DefineCommand Trace,16
     RSPQ_DefineCommand Pixels,16
     RSPQ_DefineCommand Divergence,12
+    RSPQ_DefineCommand Gradient,12
+    RSPQ_DefineCommand SpeedPixels,16
 RSPQ_EndOverlayHeader
 RSPQ_EmptySavedState
     .quad 0
@@ -17,6 +19,12 @@ input0: .ds.b 96
 input1: .ds.b 96
 input2: .ds.b 96
 result: .ds.b 288
+grad_above: .ds.b 192
+grad_middle: .ds.b 192
+grad_below: .ds.b 192
+grad_u: .ds.b 96
+grad_v: .ds.b 96
+speed_palette: .ds.b 1040
     .text
 .macro transfer base, buffer, size, direction
     move s0,\base
@@ -287,6 +295,210 @@ divergence_batch:
     addiu s3,s3,192
     addiu s5,s5,-1
     bnez s5,divergence_row
+    nop
+    j RSPQ_Loop
+    nop
+/* a0=u, a1=v, a2=Q12 pressure. Exact signed rounded division by 3072.
+ * Let n=(abs(difference)+1536)>>10. For n<98304,
+ * floor(n/3) == floor(n*43691/131072). Larger n can saturate to 32767:
+ * subtracting that from any legal Q4 velocity already reaches the final clamp.
+ * Unsigned halves retain all 32 difference bits; no float reciprocal is used. */
+Gradient:
+    move s1,a0
+    move s2,a1
+    move s3,a2
+    li s5,0
+    li t3,1536
+    mtc2 t3,$v20.e0
+    li t3,64
+    mtc2 t3,$v20.e1
+    li t3,43691
+    mtc2 t3,$v20.e2
+    li t3,32768
+    mtc2 t3,$v20.e3
+    li t3,1024
+    mtc2 t3,$v20.e4
+    li t3,32767
+    mtc2 t3,$v20.e5
+    li t3,-16383
+    mtc2 t3,$v20.e6
+    li t3,16383
+    mtc2 t3,$v20.e7
+    vnor $v21,vzero,vzero
+    ctc2 zero,COP2_CTRL_VCO
+    li fp,%lo(grad_above)
+    li k0,%lo(grad_middle)
+    li k1,%lo(grad_below)
+    transfer s3,grad_middle,192,DMA_IN
+gradient_row:
+    /* Retain above/current rows: each pressure row is fetched only once.
+       The unused above/below scratch on normal walls is masked on output. */
+    li t3,32
+    beq s5,t3,gradient_loaded
+    nop
+    addiu s0,s3,192
+    move s4,k1
+    li t0,191
+    li t1,192
+    jal DMAExec
+    li t2,DMA_IN
+gradient_loaded:
+    transfer s1,grad_u,96,DMA_IN
+    transfer s2,grad_v,96,DMA_IN
+    move s6,zero
+gradient_batch:
+    sll t3,s6,1
+    addu t3,t3,k0
+    .set lane,0
+    .rept 8
+    lsv $v01,lane*2,lane*4-4,t3
+    lsv $v02,lane*2,lane*4-2,t3
+    lsv $v03,lane*2,lane*4+4,t3
+    lsv $v04,lane*2,lane*4+6,t3
+    .set lane,lane+1
+    .endr
+    addiu t4,s6,%lo(grad_u)
+.macro gradient_axis
+    /* Difference v03:v04 - v01:v02. Only the low half wraps. */
+    vsubc $v04,$v04,$v02
+    vsub $v03,$v03,$v01
+    vlt $v05,$v03,vzero
+    vmrg $v06,$v21,vzero
+    vand $v07,$v06,K1
+    vxor $v03,$v03,$v06
+    vxor $v04,$v04,$v06
+    vaddc $v04,$v04,$v07
+    vadd $v03,$v03,vzero
+    vor $v06,$v06,K1        /* restore sign later with +/-1 */
+    vaddc $v04,$v04,$v20.e0
+    vadd $v03,$v03,vzero
+    /* Low 16 bits of n; the 17th bit is high>=1024. */
+    vmudn $v08,$v03,$v20.e1
+    vmudl $v09,$v04,$v20.e1
+    vor $v08,$v08,$v09
+    vmudl $v08,$v08,$v20.e2
+    vge $v05,$v03,$v20.e4
+    vxor $v09,vzero,$v20.e2
+    vmrg $v09,$v09,vzero
+    vaddc $v08,$v08,$v09
+    vmudl $v08,$v08,$v20.e3
+    ctc2 zero,COP2_CTRL_VCO
+    /* high>=1536 means n>=98304 and a guaranteed saturated result. */
+    vge $v05,$v03,$v20.e0
+    vxor $v09,vzero,$v20.e5
+    vmrg $v08,$v09,$v08
+    vabs $v08,$v06,$v08
+    lqv $v10,0,t4
+    vsub $v10,$v10,$v08
+    vge $v10,$v10,$v20.e6
+    vlt $v10,$v10,$v20.e7
+    sqv $v10,0,t4
+.endm
+    gradient_axis
+    sll t3,s6,1
+    addu t4,t3,k1
+    addu t3,t3,fp
+    .set lane,0
+    .rept 8
+    lsv $v01,lane*2,lane*4,t3
+    lsv $v02,lane*2,lane*4+2,t3
+    lsv $v03,lane*2,lane*4,t4
+    lsv $v04,lane*2,lane*4+2,t4
+    .set lane,lane+1
+    .endr
+    addiu t4,s6,%lo(grad_v)
+    gradient_axis
+    addiu s6,s6,16
+    slti t3,s6,96
+    bnez t3,gradient_batch
+    nop
+    sh zero,%lo(grad_u)(zero)
+    sh zero,%lo(grad_u)+94(zero)
+    beqz s5,gradient_zero_v
+    li t3,32
+    bne s5,t3,gradient_store
+    nop
+gradient_zero_v:
+    li t3,%lo(grad_v)
+    sqv vzero,0,t3
+    sqv vzero,16,t3
+    sqv vzero,32,t3
+    sqv vzero,48,t3
+    sqv vzero,64,t3
+    sqv vzero,80,t3
+gradient_store:
+    transfer s1,grad_u,96,DMA_OUT
+    transfer s2,grad_v,96,DMA_OUT
+    move t3,fp
+    move fp,k0
+    move k0,k1
+    move k1,t3
+    addiu s1,s1,96
+    addiu s2,s2,96
+    addiu s3,s3,192
+    addiu s5,s5,1
+    slti t3,s5,33
+    bnez t3,gradient_row
+    nop
+    j RSPQ_Loop
+    nop
+/* a0=velocity (u,v), a1=RGBA32 pixels, a2=row stride, a3=palette.
+ * Exact integer max-plus-half-min magnitude and the shared CPU palette. */
+SpeedPixels:
+    move s1,a0
+    move s2,a1
+    move s3,a2
+    li s5,33
+    transfer a3,speed_palette,1040,DMA_IN
+    li t3,32768
+    mtc2 t3,$v20.e0
+    li t3,4096
+    mtc2 t3,$v20.e1
+    li t3,256
+    mtc2 t3,$v20.e2
+    li t3,4
+    mtc2 t3,$v20.e3
+    ctc2 zero,COP2_CTRL_VCO
+speed_row:
+    transfer s1,input0,96,DMA_IN
+    addiu s7,s1,3168
+    transfer s7,input1,96,DMA_IN
+    move s6,zero
+speed_batch:
+    addiu t3,s6,%lo(input0)
+    addiu t4,s6,%lo(input1)
+    lqv $v01,0,t3
+    lqv $v02,0,t4
+    vabs $v01,$v01,$v01
+    vabs $v02,$v02,$v02
+    vlt $v03,$v01,$v02
+    vge $v04,$v01,$v02
+    vmudm $v03,$v03,$v20.e0
+    vadd $v04,$v04,$v03
+    vmudm $v04,$v04,$v20.e1
+    vlt $v04,$v04,$v20.e2
+    vmudn $v04,$v04,$v20.e3
+    li t3,%lo(input2)
+    sqv $v04,0,t3
+    sll t4,s6,1
+    addiu t4,t4,%lo(result)
+    .set lane,0
+    .rept 8
+    lhu t5,lane*2(t3)
+    addiu t5,t5,%lo(speed_palette)
+    lw t5,0(t5)
+    sw t5,lane*4(t4)
+    .set lane,lane+1
+    .endr
+    addiu s6,s6,16
+    slti t3,s6,96
+    bnez t3,speed_batch
+    nop
+    transfer s2,result,192,DMA_OUT
+    addiu s1,s1,96
+    addu s2,s2,s3
+    addiu s5,s5,-1
+    bnez s5,speed_row
     nop
     j RSPQ_Loop
     nop

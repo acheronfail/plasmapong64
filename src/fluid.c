@@ -139,6 +139,9 @@ void fluid_project(Fluid *f) {
     fluid_pressure_cpu(f->pressure,f->divergence);
 #endif
     PROFILE_END(PROFILE_PRESSURE);
+#ifdef PLASMAPONG_GRADIENT_RSP
+    fluid_gradient_rsp(velocity,f->pressure);
+#else
     for(int y=1;y<FH-1;y++) for(int x=1;x<FW-1;x++) {
         int k=y*FW+x;
         subtract_gradient(&velocity->u[k],f->pressure[k+1]-f->pressure[k-1]);
@@ -157,6 +160,7 @@ void fluid_project(Fluid *f) {
         subtract_gradient(&velocity->v[k],f->pressure[k+FW]-f->pressure[k-FW]);
     }
     walls(f);
+#endif
     PROFILE_END(PROFILE_GRADIENT);
 }
 /* Blend existing pigment channels to keep all four jets in the plasma palette. */
@@ -333,16 +337,7 @@ void fluid_pixels(const Fluid *f,uint32_t *pixels,unsigned stride) {
         pixels[y*stride+x]=(dye_color(ink_grid,y*FW+x)<<8)|255;
 }
 
-static inline uint32_t speed_color(const FluidFlow *flow,int k) {
-#ifdef PLASMAPONG_VELOCITY_FIXED
-    int u=flow->u[k],v=flow->v[k];
-    u=u<0?-u:u; v=v<0?-v:v;
-    int speed=(u>v?u+v/2:v+u/2)/VELOCITY_SCALE;
-#else
-    int u=(int)fabsf(fluid_flow_decode(flow->u[k]));
-    int v=(int)fabsf(fluid_flow_decode(flow->v[k]));
-    int speed=u>v?u+v/2:v+u/2;
-#endif
+static inline uint32_t speed_palette_color(unsigned speed) {
     /* Fixed speed stops (pixels/second): 0, 16, 32, 64, 128, 256.
        Wider high-speed bands retain detail in weak currents. No dye dependency,
        auto-exposure, square root, or per-cell division is needed. */
@@ -360,6 +355,23 @@ static inline uint32_t speed_color(const FluidFlow *flow,int k) {
     unsigned g=(((a>>8)&255)*(256-t)+((b>>8)&255)*t)>>8;
     unsigned blue=((a&255)*(256-t)+(b&255)*t)>>8;
     return (r<<16)|(g<<8)|blue;
+}
+
+static inline uint32_t speed_color(const FluidFlow *flow,int k) {
+#ifdef PLASMAPONG_VELOCITY_FIXED
+    int u=flow->u[k],v=flow->v[k];
+    u=u<0?-u:u; v=v<0?-v:v;
+    int speed=(u>v?u+v/2:v+u/2)/VELOCITY_SCALE;
+#else
+    int u=(int)fabsf(fluid_flow_decode(flow->u[k]));
+    int v=(int)fabsf(fluid_flow_decode(flow->v[k]));
+    int speed=u>v?u+v/2:v+u/2;
+#endif
+    return speed_palette_color((unsigned)speed);
+}
+
+void fluid_speed_palette(uint32_t *rgba) {
+    for(unsigned i=0;i<FLUID_SPEED_PALETTE_SIZE;i++) rgba[i]=(speed_palette_color(i)<<8)|255;
 }
 
 uint32_t fluid_speed_color(const Fluid *f,int k) {

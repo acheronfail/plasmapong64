@@ -18,6 +18,10 @@ static void prepare_cases(void) {
             rng=rng*1664525u+1013904223u;
             v->v[k]=(int)(rng%32767)-16383;
             if(trial<8) v->u[k]=v->v[k]=trial<4?0:(k&1?16383:-16383);
+            if(trial>=8 && trial<24) {
+                v->u[k]=(k%258)*16*(trial&1?-1:1);
+                v->v[k]=((k%17)*16+trial%16)*(trial&2?-1:1);
+            }
             rng=rng*1664525u+1013904223u;
             d->red[k]=rng%24577;
             rng=rng*1664525u+1013904223u;
@@ -65,10 +69,22 @@ static void prepare_cases(void) {
                 assert(0);
             }
         }
+        memset(&pixels,0x5a,sizeof(pixels));
+        memset(expected_pixels,0x5a,sizeof(expected_pixels));
+        fluid_speed_pixels(&f,expected_pixels,64);
+        data_cache_hit_writeback_invalidate(&pixels,sizeof(pixels));
+        fluid_speed_pixels_rsp(&f,pixels.value,64);
+        data_cache_hit_invalidate(&pixels,sizeof(pixels));
+        for(unsigned k=0;k<64*FH;k++) {
+            if(expected_pixels[k]!=pixels.value[k]) {
+                debugf("Speed mismatch trial %u cell %u: %08lx/%08lx\n",trial,k,(unsigned long)expected_pixels[k],(unsigned long)pixels.value[k]);
+                assert(0);
+            }
+        }
         data_cache_hit_invalidate(&f,sizeof(f));
         assert(!memcmp(&f,&saved,sizeof(f)));
         for(unsigned k=0;k<4;k++) assert(pixels.before[k]==0x5a5a5a5a && pixels.after[k]==0x5a5a5a5a);
     }
-    debugf("Prepare PASS: 80 exact trace/color/divergence fields, full timestep range, padded pixels and DMA guards\n");
+    debugf("Prepare PASS: 80 exact trace/dye-color/speed-color/divergence fields, full timestep range, padded pixels and DMA guards\n");
 }
 #endif

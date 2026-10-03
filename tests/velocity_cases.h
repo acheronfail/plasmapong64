@@ -52,6 +52,12 @@ static void velocity_cases(void) {
         fluid_velocity_fixed_reference(&output.value,&packed.value,traces,d,rounding);
 #endif
         assert(!memcmp(&expected,&output.value,sizeof(expected)));
+        /* Exercise the complete trace -> interpolation path as well as the
+           explicit-trace kernel, including its single-wait queued variant. */
+#ifdef PLASMAPONG_VELOCITY_FIXED
+        fluid_advect_velocity_fixed(&output.value,&packed.value,dt/CELL,decay,rounding);
+        assert(!memcmp(&expected,&output.value,sizeof(expected)));
+#endif
         assert(!memcmp(&saved,&packed.value,sizeof(saved)));
         assert(!memcmp(saved_traces,traces,sizeof(traces)));
         for(int i=0;i<16;i++) assert(output.before[i]==0x5a && output.after[i]==0x5a && packed.before[i]==0xa5 && packed.after[i]==0xa5);

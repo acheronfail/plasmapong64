@@ -1,5 +1,6 @@
-/* Bit-exact Q12 pressure passes. Three rotating pressure rows and one
- * divergence row fit in DMEM. The serial Gauss-Seidel left dependency stays
+/* Bit-exact Q12 pressure passes. Three rotating pressure rows and two
+ * divergence rows fit in DMEM. Prefetch the next divergence row while solving.
+ * The serial Gauss-Seidel left dependency stays
  * scalar; this first overlay deliberately makes no precision/solver changes.
  * Each command is one pass so RSPQ can service other overlays between passes.
  */
@@ -21,7 +22,7 @@ RSPQ_EmptySavedState
     .bss
     .align 4
 rows: .ds.b ROW_BYTES*3
-divrow: .ds.b ROW_BYTES
+divrow: .ds.b ROW_BYTES*2
     .text
 
 /* a0=pressure physical address, a1=divergence address, a2=pass (0..7).
@@ -39,6 +40,12 @@ PressurePass:
     li t1,ROW_BYTES
     li fp,1                    /* row y */
     addiu s2,s2,ROW_BYTES
+    li v0,%lo(divrow)
+    li v1,%lo(divrow)+ROW_BYTES
+    move s0,s2
+    move s4,v0
+    jal DMAExec
+    li t2,DMA_IN
     bnez s3,load_initial
     addiu k0,s1,ROW_BYTES      /* pressure cursor */
     /* First pass starts at zero regardless of old pressure/scratch contents. */
@@ -68,10 +75,16 @@ row_loop:
     jal DMAExec
     li t2,DMA_IN
 load_divergence:
-    move s0,s2
-    li s4,%lo(divrow)
+    /* The current row was loaded at entry or prefetched by the prior row.
+       That row's synchronous output DMA also completed the earlier prefetch. */
+    li t3,LAST_ROW
+    beq fp,t3,div_ready
+    addiu s0,s2,ROW_BYTES
+    move s4,v1
     jal DMAExec
-    li t2,DMA_IN
+    li t2,DMA_IN_ASYNC
+div_ready:
+    move s4,v0
     li t3,4                    /* x byte offset */
     beqz s3,first_cells
     move t4,zero               /* zero initial left on first pass */
@@ -132,6 +145,9 @@ not_top:
     j RSPQ_Loop
     nop
 next_row:
+    move t3,v0
+    move v0,v1
+    move v1,t3
     move t3,s5
     move s5,s6
     move s6,s7

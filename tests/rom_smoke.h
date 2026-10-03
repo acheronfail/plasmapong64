@@ -4,6 +4,10 @@
 #endif
 static void smoke_input(Game *g,Input in[MAX_PLAYERS]) {
     static unsigned tick;
+#ifdef PLASMAPONG_SMOKE_EFFECT
+    _Static_assert(PLASMAPONG_SMOKE_EFFECT>=0 && PLASMAPONG_SMOKE_EFFECT<FLOW_COUNT,"valid benchmark effect");
+    g->flow_effect=(FlowEffect)PLASMAPONG_SMOKE_EFFECT;
+#endif
 #ifdef PLASMAPONG_SMOKE_FLOW
     if(tick%450==0) {
         g->flow_effect=(FlowEffect)((tick/450)%FLOW_COUNT);

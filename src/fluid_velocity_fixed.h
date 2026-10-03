@@ -12,12 +12,19 @@ void fluid_velocity_trace(FluidDyeTrace *trace,const FluidVelocityFixed *velocit
 void fluid_advect_velocity_fixed(FluidVelocityFixed *next,const FluidVelocityFixed *velocity,
     float grid_dt,float decay,unsigned rounding);
 #ifdef PLASMAPONG_PREPARE_RSP
-/* Synchronous, main-thread-only DMA APIs. Inputs/outputs own full cache lines.
+/* Main-thread-only DMA APIs; synchronous except for the queue-only variant.
+   Inputs/outputs own full cache lines.
    Trace preserves the CPU Q20 coefficient, Q12 clamp and Q15 fractions.
    Pixels require a 16-byte-aligned buffer with stride divisible by four.
    Divergence replaces interior rows (unused side columns become zero). */
+/* Queue-only variant for trace -> interpolation on the same RSPQ queue.
+   Do not access trace on CPU until the consuming interpolation call finishes. */
+void fluid_velocity_trace_rsp_begin(FluidDyeTrace *trace,const FluidVelocityFixed *velocity,float grid_dt);
 void fluid_velocity_trace_rsp(FluidDyeTrace *trace,const FluidVelocityFixed *velocity,float grid_dt);
+/* Gradient accepts |pressure| <= 32760*4096 and enforces zero normal walls. */
+void fluid_gradient_rsp(FluidVelocityFixed *velocity,const int32_t *pressure);
 void fluid_divergence_rsp(int32_t *divergence,const FluidVelocityFixed *velocity);
+void fluid_speed_pixels_rsp(const Fluid *f,uint32_t *pixels,unsigned stride);
 void fluid_pixels_rsp(const Fluid *f,uint32_t *pixels,unsigned stride);
 #endif
 #endif

@@ -74,6 +74,8 @@ void fluid_project(Fluid *f);
 void fluid_sample(const Fluid *f, float x, float y, float *u, float *v);
 void fluid_splat(Fluid *f, float x, float y, float radius, float u, float v, float dye, int player);
 void fluid_pump(Fluid *f, float x, float y, float radius, float strength, float dt, int player);
+#define FLUID_SPEED_PALETTE_SIZE 260 /* 257 colors plus complete DMA cache-line padding. */
+void fluid_speed_palette(uint32_t *rgba);
 void fluid_speed_pixels(const Fluid *f, uint32_t *pixels, unsigned stride);
 uint32_t fluid_speed_color(const Fluid *f, int i);
 uint32_t fluid_color(const Fluid *f, int i);

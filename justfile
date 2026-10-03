@@ -108,3 +108,7 @@ benchmark-prepare:
 # Include the final RSP/RDP completion wait in the drawing timer (diagnostic only).
 benchmark-complete:
     ./tools/build-rom.sh -j4 SMOKE=1 DRAW_SYNC_PROFILE=1 ROM=plasmapong-complete-benchmark BUILD_DIR=build/complete_benchmark
+
+# Fixed SPEED effect, per-stage timings, and completed-frame drawing time.
+benchmark-speed:
+    ./tools/build-rom.sh -j4 SMOKE=1 SMOKE_EFFECT=3 FLUID_PROFILE=1 DRAW_SYNC_PROFILE=1 ROM=plasmapong-speed-benchmark BUILD_DIR=build/speed_benchmark

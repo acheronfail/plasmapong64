@@ -17,6 +17,7 @@
 #include "../tests/velocity_cases.h"
 #ifdef PLASMAPONG_PREPARE_RSP
 #include "../tests/prepare_cases.h"
+#include "../tests/gradient_cases.h"
 #endif
 #endif
 #ifdef PLASMAPONG_DYE_TEST
@@ -150,10 +151,14 @@ void draw_fluid(const Fluid *f,float x,float y,float width,float height,bool spe
     uint64_t pixel_begin=get_ticks();
 #endif
     if(speed) {
+#ifdef PLASMAPONG_SPEED_RSP
+        fluid_speed_pixels_rsp(f,ink.buffer,ink.stride/sizeof(uint32_t));
+#else
         /* CPU writers use cached stores, then expose complete rows to RDP. */
         void *pixels=CachedAddr(ink.buffer);
         fluid_speed_pixels(f,pixels,ink.stride/sizeof(uint32_t));
         data_cache_hit_writeback(pixels,ink.stride*FH);
+#endif
     } else {
 #ifdef PLASMAPONG_PREPARE_RSP
         fluid_pixels_rsp(f,ink.buffer,ink.stride/sizeof(uint32_t));
@@ -209,6 +214,7 @@ int main(void) {
     velocity_cases();
 #ifdef PLASMAPONG_PREPARE_RSP
     prepare_cases();
+    gradient_cases();
 #endif
 #endif
 #ifdef PLASMAPONG_CONFINEMENT_TEST
