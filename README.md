@@ -1,14 +1,27 @@
 # Plasma Pong 64 — Nintendo 64
 
-Arcade and two-player Pong inside a real-time 2D fluid simulation. Cyan and coral dye reveal
+Arcade and two- to four-player Pong inside a real-time 2D fluid simulation. Cyan and coral dye reveal
 currents stirred by the bats. Those same currents accelerate and deflect the ball.
 The ball leaves a subtle gold dye trail that mixes into the currents and fades.
-In multiplayer, first to **9 points** wins, using N64 controllers in **ports 1
-and 2**. Single player uses **port 1** against an AI opponent. On boot, a main
+In two-player matches, first to **9 points** wins. Select **2P**, **3P**, or **4P**
+with left/right on the multiplayer menu row. Multiplayer is greyed out with fewer
+than two controllers, and larger matches are available only when enough pads are
+connected. Players are assigned connected N64 controllers in port order.
+
+Three- and four-player matches use a square court: P1 (cyan) on the left, P2
+(coral) on the right, P3 (mint) at the bottom, and P4 (violet) at the top. The top
+is a wall in 3P. Diagonal corner walls and inset movement limits keep adjacent
+paddles apart. Each player starts with **three lives**; missing your side loses
+one. Eliminated players' sides become walls, and the **last player standing** wins.
+A rematch restores every player's lives and requires all selected pads.
+Single player uses **port 1** against an AI opponent. On boot, a main
 menu runs randomly seeded fluid currents
 and mixing colours across the entire screen, with a raised cyan/coral/gold PLASMA PONG 64
 block title and shadowed menu text over the fluid. The game screen omits the title;
-Player labels sit at matching insets from the court edges. Use up/down to choose
+Two-player labels sit at matching insets from the court edges; 3P/4P uses the
+colour-matched life counters above the court. The active menu row uses bright
+text and continuously emits gold dye. Dedicated triangles surround the player
+count, with unavailable directions dimmed. Use up/down to choose
 **MULTI-PLAYER**, **SINGLE PLAYER**, **HIGH SCORES**, or **OPTIONS**, then A or START to confirm.
 Press START in the lobby to begin.
 
@@ -16,20 +29,22 @@ Press START in the lobby to begin.
 
 | Control | Action |
 | --- | --- |
-| Analog stick / D-pad | Move your bat vertically and a short distance forwards/backwards |
-| Hold Z | Fire a continuous coloured fluid jet towards the opponent |
+| Analog stick / D-pad | Move along your side and a short distance forwards/backwards |
+| Hold Z | Fire a continuous coloured fluid jet into the court |
 | Hold A | Suck nearby fluid towards your bat; catch a nearby ball if it is slow enough |
 | Release A | Launch a caught ball with an outward fluid burst; hold the ball for one second and release during the brief green bar for a bonus-speed shot |
 | START | Confirm menu selection, start, pause/resume, or multiplayer rematch |
+| Left/right on MULTI-PLAYER | Select an available player count |
 | Up/down, then A on the main menu | Choose a mode or view high scores |
 | B in the lobby, pause, or winner screen | Return to the main menu |
 
 Suction reaches about 35 arena pixels; actual capture requires the ball to be
 within 18 pixels on the playing side of the bat. Fast shots and strong currents
 can beat a grab. You can move while holding the ball and aim a release with the
-bat's vertical motion. Z and A can be used together. Unplugging a required
+bat's motion along its side. Z and A can be used together. Unplugging a required
 controller pauses the match; reconnect it and press START to resume. Arcade mode
-ignores controller 2 during a run.
+ignores the other controllers during a run. Eliminated players can disconnect
+without pausing the remaining players.
 
 The charge bar appears and starts filling only while a ball is caught. Suction
 without a ball does not charge or overheat, and releasing A without a ball causes
@@ -170,7 +185,8 @@ badges. Arcade requires one emulated N64 pad in port 1; multiplayer requires two
 
 ## Validation
 
-`just check` covers two-player start gating, movement stirring, jet direction,
+`just check` covers 2P/3P/4P controller gating, square courts, elimination walls,
+lives, rematches, rotated paddle powers, four-player audio, and two-player start gating, movement stirring, jet direction,
 suction/release flow, catches for both players, rejection of fast catches,
 bat/wall collisions, scoring and rematches, disconnect/pause/resume, pressure
 projection, velocity decay, actual fluid-to-ball coupling, inward dye transport

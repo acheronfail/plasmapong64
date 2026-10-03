@@ -148,8 +148,8 @@ int main(void) {
     confinement_cases();
 #endif
     rdpq_font_t *font=rdpq_font_load_builtin(FONT_BUILTIN_DEBUG_VAR);
-    const uint32_t colors[]={0xeaf6ff,0xa0b3c9,0x48dcff,0xff637e,0xffffff,0x02040a,0x737d8a};
-    for(int i=0;i<7;i++) rdpq_font_style(font,i,&(rdpq_fontstyle_t){.color=color(colors[i])});
+    const uint32_t colors[]={0xeaf6ff,0xa0b3c9,0x48dcff,0xff637e,0xffffff,0x02040a,0x737d8a,0x70ffd0,0xc28aff};
+    for(int i=0;i<9;i++) rdpq_font_style(font,i,&(rdpq_fontstyle_t){.color=color(colors[i])});
     rdpq_text_register_font(1,font); game_init(&game); scores_load(&game); game.menu_rng=(uint32_t)get_ticks();
 #ifdef PLASMAPONG_SAVE_SMOKE
     save_smoke(&game);
@@ -173,8 +173,8 @@ int main(void) {
             wait_ticks(TICKS_FROM_US(1+(uint32_t)((STEP-accumulator)*1000000.0f)));
             continue;
         }
-        joypad_poll(); Input input[2]={0};
-        for(int p=0;p<2;p++) {
+        joypad_poll(); Input input[MAX_PLAYERS]={0};
+        for(int p=0;p<MAX_PLAYERS;p++) {
             joypad_inputs_t in=joypad_get_inputs((joypad_port_t)p);
             input[p]=(Input){.connected=joypad_get_style((joypad_port_t)p)==JOYPAD_STYLE_N64,
                 .a=in.btn.a,.z=in.btn.z,.start=in.btn.start,.b=in.btn.b,

@@ -2,6 +2,13 @@
 #define GAME_H
 #include "fluid.h"
 #include <stdbool.h>
+#define MAX_PLAYERS 4
+#define MENU_FIRST_ROW 112
+#define MENU_ROW_SPACING 24
+#define MULTIPLAYER_LIVES 3
+#define CORNER_SIZE 29.0f
+/* Keep adjacent paddle outlines separated as the corner size changes. */
+#define SQUARE_BAT_DEPTH (CORNER_SIZE-8.0f)
 #define STEP (1.0f/30.0f)
 #define BAT_HALF 14.0f
 #define BALL_RADIUS 3.0f
@@ -28,7 +35,7 @@ typedef struct {
     uint32_t rng;
 } Arcade;
 enum { SOUND_BAT1=1, SOUND_BAT2=2, SOUND_WALL=4, SOUND_GOAL=8, SOUND_WIN=16, SOUND_SELECT=32, SOUND_BACK=64,
-       SOUND_BREAK1=128, SOUND_BREAK2=256 };
+       SOUND_BREAK1=128, SOUND_BREAK2=256, SOUND_BAT_OTHER=512, SOUND_BREAK_OTHER=1024 };
 typedef enum { FLOW_NONE, FLOW_PARTICLES, FLOW_TAILS, FLOW_SPEED, FLOW_COUNT } FlowEffect;
 #define FLOW_TRACERS 96
 #define FLOW_HISTORY 9
@@ -42,13 +49,14 @@ typedef struct {
     MenuCurrent menu_current[3];
     uint32_t menu_rng;
     unsigned menu_ticks, sound_events;
-    Bat bat[2];
-    Input previous[2];
+    Bat bat[MAX_PLAYERS];
+    Input previous[MAX_PLAYERS];
     float bx,by,bvx,bvy,serve,elapsed;
-    unsigned score[2];
+    unsigned score[MAX_PLAYERS],lives[MAX_PLAYERS];
+    unsigned players,player_port[MAX_PLAYERS];
     int held,winner;
     Phase phase;
-    bool connected[2];
+    bool connected[MAX_PLAYERS];
     bool save_available,save_failed,scores_dirty;
     GameMode mode;
     unsigned menu_selection,initial_cursor;
@@ -56,13 +64,23 @@ typedef struct {
     Arcade arcade;
     HighScore highs[HIGH_SCORE_COUNT];
 } Game;
+static inline unsigned game_players(const Game *g) { return g->mode==ARCADE?2:g->players; }
+static inline bool game_square(const Game *g) { return game_players(g)>2; }
+static inline float game_left(const Game *g) { return game_square(g)?(ARENA_W-ARENA_H)*.5f:0; }
+static inline float game_right(const Game *g) { return ARENA_W-game_left(g); }
+static inline bool game_alive(const Game *g,unsigned p) { return !game_square(g) || g->lives[p]>0; }
+static inline bool game_ready(const Game *g) {
+    for(unsigned p=0;p<(g->mode==ARCADE?1:g->players);p++)
+        if((g->phase==FINISHED || game_alive(g,p)) && !g->connected[p]) return false;
+    return true;
+}
 static inline bool game_ball_hot(const Game *g) {
     return g->serve<=0 && g->held<0 &&
         g->bvx*g->bvx+g->bvy*g->bvy>BALL_HOT_SPEED*BALL_HOT_SPEED;
 }
 void game_init(Game *g);
 void game_flow_step(Game *g);
-void game_step(Game *g,const Input in[2]);
+void game_step(Game *g,const Input in[MAX_PLAYERS]);
 float arcade_difficulty(const Game *g);
 Input arcade_ai(Game *g);
 void arcade_currents(Game *g);

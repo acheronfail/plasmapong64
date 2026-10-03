@@ -8,7 +8,7 @@ static uint32_t hash_float(uint32_t hash,float value) {
     return (hash^bits)*16777619u;
 }
 static Game g;
-static Input in[2];
+static Input in[MAX_PLAYERS];
 static void ready(void) {
     game_init(&g); g.phase=LOBBY; in[0]=(Input){.connected=true}; in[1]=in[0];
     in[0].start=true; game_step(&g,in); in[0].start=false;
@@ -40,7 +40,7 @@ static float red_sum(const Fluid *f) {
 }
 static void flow_tests(void) {
     static Game a,b;
-    Input input[2]={{.connected=true},{.connected=true}};
+    Input input[MAX_PLAYERS]={{.connected=true},{.connected=true}};
     game_init(&a);
     input[0].y=1; game_step(&a,input); assert(a.menu_selection==3);
     input[0].y=0; input[0].a=true; game_step(&a,input); assert(a.phase==OPTIONS);
@@ -118,13 +118,16 @@ int main(void) {
         assert((g.bx-ARENA_W*.5f)*(p?-1:1)>0);
     }
     memset(in,0,sizeof(in));
-    game_init(&g); Input idle[2]={0};
+    game_init(&g); Input idle[MAX_PLAYERS]={0};
     assert(g.phase==MENU);
     for(int t=0;t<90;t++) game_step(&g,idle);
     assert(g.phase==MENU && energy(&g.fluid)>0);
     float menu_dye=0; for(int i=0;i<FN;i++) menu_dye+=fluid_dye(&g.fluid)->red[i]+fluid_dye(&g.fluid)->blue[i]+fluid_dye(&g.fluid)->gold[i];
     assert(menu_dye>0 && g.score[0]==0 && g.score[1]==0);
-    idle[0]=(Input){.connected=true,.a=true}; game_step(&g,idle); assert(g.phase==LOBBY && (g.sound_events&SOUND_SELECT));
+    idle[0]=(Input){.connected=true,.a=true}; game_step(&g,idle); assert(g.phase==MENU && !g.sound_events);
+    idle[0].a=false; idle[1].connected=true; game_step(&g,idle);
+    idle[0].a=true; game_step(&g,idle); assert(g.phase==LOBBY && (g.sound_events&SOUND_SELECT));
+    idle[1].connected=false;
     game_step(&g,idle); assert(g.sound_events==0);
     idle[0].a=false; idle[0].start=true; game_step(&g,idle); assert(g.phase==LOBBY);
     idle[1].connected=true; game_step(&g,idle); assert(g.phase==LOBBY); /* Release to confirm. */
@@ -297,7 +300,7 @@ int main(void) {
         assert(g.bat[p].charge==1 && !g.bat[p].cooldown_ticks);
         static Game without_burst; without_burst=g;
         without_burst.bat[p].sucking=false; without_burst.held=-1;
-        Input idle[2]={{.connected=true},{.connected=true}};
+        Input idle[MAX_PLAYERS]={{.connected=true},{.connected=true}};
         game_step(&without_burst,idle); game_step(&g,in);
         assert(!g.bat[p].sucking && g.bat[p].charge==0 && g.bat[p].burst==0);
         assert(g.bat[p].cooldown_ticks==SUCTION_COOLDOWN_TICKS && g.bat[p].release_required);
@@ -345,7 +348,7 @@ int main(void) {
         fluid_dye(&g.fluid)->red[15*FW+x]=fluid_ink_encode(1);
         static Game without_suction; without_suction=g;
         in[p].a=true;
-        Input idle[2]={{.connected=true},{.connected=true}};
+        Input idle[MAX_PLAYERS]={{.connected=true},{.connected=true}};
         for(int t=0;t<12;t++) {
             game_step(&g,in); game_step(&without_suction,idle);
         }

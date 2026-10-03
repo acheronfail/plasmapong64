@@ -155,6 +155,16 @@ void fluid_project(Fluid *f) {
     walls(f);
     PROFILE_END(PROFILE_GRADIENT);
 }
+/* Blend existing pigment channels to keep all four jets in the plasma palette. */
+static void player_ink(FluidInk *ink,int k,float amount,int player) {
+    if(player==2) {
+        ink_add(&ink->blue[k],amount*.65f,3);
+        ink_add(&ink->gold[k],amount*.35f,.65f);
+    } else if(player==3) {
+        ink_add(&ink->blue[k],amount*.55f,3);
+        ink_add(&ink->red[k],amount*.65f,3);
+    } else ink_add(player?&ink->red[k]:&ink->blue[k],amount,3);
+}
 void fluid_splat(Fluid *f,float x,float y,float radius,float u,float v,float dye,int player) {
     FluidFlow *velocity=fluid_velocity(f);
     FluidInk *ink_grid=fluid_dye(f);
@@ -168,8 +178,7 @@ void fluid_splat(Fluid *f,float x,float y,float radius,float u,float v,float dye
         int k=iy*FW+ix;
         velocity->u[k]=fluid_flow_encode(clampf(fluid_flow_decode(velocity->u[k])+u*w,-420,420));
         velocity->v[k]=fluid_flow_encode(clampf(fluid_flow_decode(velocity->v[k])+v*w,-420,420));
-        FluidInkValue *ink=player?ink_grid->red:ink_grid->blue;
-        ink_add(&ink[k],dye*w,3);
+        player_ink(ink_grid,k,dye*w,player);
     }
     PROFILE_END(PROFILE_SPLAT);
 }
@@ -190,8 +199,7 @@ void fluid_pump(Fluid *f,float x,float y,float radius,float strength,float dt,in
         int k=iy*FW+ix;
         velocity->u[k]=fluid_flow_encode(clampf(fluid_flow_decode(velocity->u[k])+dx*force,-420,420));
         velocity->v[k]=fluid_flow_encode(clampf(fluid_flow_decode(velocity->v[k])+dy*force,-420,420));
-        FluidInkValue *ink=player?ink_grid->red:ink_grid->blue;
-        if(strength>0) ink_add(&ink[k],strength*dt*.0015f*w,3);
+        if(strength>0) player_ink(ink_grid,k,strength*dt*.0015f*w,player);
     }
     PROFILE_END(PROFILE_PUMP);
 }

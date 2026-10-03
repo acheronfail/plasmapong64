@@ -3,6 +3,19 @@
 #include <math.h>
 #include <string.h>
 static float axis(float a) { return fabsf(a)<.12f?0:clampf(a,-1,1); }
+/* Normal points into the court; tangent follows screen coordinates. */
+static float normal_x(int p) { return p<2?(p?-1:1):0; }
+static float normal_y(int p) { return p<2?0:(p==2?-1:1); }
+static void place_bats(Game *g) {
+    g->bat[0]=(Bat){.x=game_left(g)+20,.y=ARENA_H*.5f};
+    g->bat[1]=(Bat){.x=game_right(g)-20,.y=ARENA_H*.5f};
+    g->bat[2]=(Bat){.x=ARENA_W*.5f,.y=ARENA_H-20};
+    g->bat[3]=(Bat){.x=ARENA_W*.5f,.y=20};
+}
+static void attach_ball(Game *g,int p,float distance) {
+    g->bx=g->bat[p].x+normal_x(p)*distance;
+    g->by=g->bat[p].y+normal_y(p)*distance;
+}
 static void serve(Game *g) {
     g->bx=ARENA_W*.5f; g->by=ARENA_H*.5f;
     /* Let the fluid and players' jets determine the opening motion. */
@@ -11,8 +24,9 @@ static void serve(Game *g) {
 }
 void game_init(Game *g) {
     memset(g,0,sizeof(*g));
-    g->bat[0]=(Bat){.x=20,.y=ARENA_H*.5f};
-    g->bat[1]=(Bat){.x=ARENA_W-20,.y=ARENA_H*.5f};
+    g->players=2;
+    for(unsigned p=0;p<MAX_PLAYERS;p++) { g->player_port[p]=p; g->lives[p]=MULTIPLAYER_LIVES; }
+    place_bats(g);
     g->score_entry=-1; g->arcade.level=1;
     g->phase=MENU; g->menu_rng=0x76a51c93u; g->winner=-1; serve(g);
 }
@@ -57,7 +71,26 @@ static void menu_step(Game *g) {
         c->x=clampf(c->x+c->u*STEP*.2f,16,ARENA_W-16);
         c->y=clampf(c->y+c->v*STEP*.2f,16,ARENA_H-16);
         fluid_splat(&g->fluid,c->x,c->y,26,c->u*.65f,c->v*.65f,p==2?0:.10f,p&1);
-        if(p==2) fluid_ball_dye(&g->fluid,c->x,c->y,.20f);
+        if(p==2 && g->phase!=MENU) fluid_ball_dye(&g->fluid,c->x,c->y,.20f);
+    }
+    if(g->phase==MENU) {
+        /* The active row is the menu's only gold source. Old trails fade so
+           moving the selection leaves one clear, continuously emitting row. */
+        FluidInk *ink=fluid_dye(&g->fluid);
+        for(int k=0;k<FN;k++) ink->gold[k]=fluid_ink_encode(fluid_ink_decode(ink->gold[k])*.94f);
+        const float widths[]={158,116,104,70};
+        float width=widths[g->menu_selection];
+        float y=(MENU_FIRST_ROW+MENU_ROW_SPACING*g->menu_selection-4)*(ARENA_H/240);
+        for(int i=0;i<=12;i++) {
+            float t=i/12.0f;
+            float x=(160+(t-.5f)*width)*(ARENA_W/320);
+            float drift=sinf(g->elapsed*2.3f+i*.9f);
+            for(int side=-1;side<=1;side+=2) {
+                float sy=y+side*3;
+                fluid_splat(&g->fluid,x,sy,12,(t-.5f)*5,side*4+drift*2,0,0);
+                fluid_ball_dye(&g->fluid,x,sy,.48f);
+            }
+        }
     }
     fluid_velocity_step(&g->fluid,STEP); fluid_dye_step(&g->fluid,STEP);
     game_flow_step(g);
@@ -67,11 +100,28 @@ static void limit_ball(Game *g) {
     float speed=sqrtf(g->bvx*g->bvx+g->bvy*g->bvy);
     if(speed>290) { g->bvx*=290/speed; g->bvy*=290/speed; }
 }
+static void corner_bounce(Game *g) {
+    if(!game_square(g)) return;
+    for(int corner=0;corner<4;corner++) {
+        float nx=corner&1?-1:1,ny=corner&2?-1:1;
+        float x=corner&1?game_right(g)-g->bx:g->bx-game_left(g);
+        float y=corner&2?ARENA_H-g->by:g->by;
+        /* Unit diagonal normal is (nx,ny)/sqrt(2). Keep the whole ball inside. */
+        float penetration=CORNER_SIZE+BALL_RADIUS*1.41421356f-x-y;
+        if(penetration<=0) continue;
+        g->bx+=nx*penetration*.5f; g->by+=ny*penetration*.5f;
+        float velocity=g->bvx*nx+g->bvy*ny;
+        if(velocity<0) {
+            g->bvx-=nx*velocity; g->bvy-=ny*velocity;
+            g->sound_events|=SOUND_WALL;
+        }
+    }
+}
 static void ball_step(Game *g) {
     if(g->serve>0) { g->serve=maxf(0,g->serve-STEP); return; }
     if(g->held>=0) {
         Bat *b=&g->bat[g->held];
-        g->bx=b->x+(g->held?-1:1)*8; g->by=b->y;
+        attach_ball(g,g->held,8);
         g->bvx=b->vx; g->bvy=b->vy; return;
     }
     /* Four short collision steps prevent tunnelling through bats at jet speed. */
@@ -86,34 +136,57 @@ static void ball_step(Game *g) {
            countdown or while held. It will be carried by the same current. */
         if(game_ball_hot(g)) fluid_hot_ball_dye(&g->fluid,g->bx,g->by,.13f);
         else fluid_ball_dye(&g->fluid,g->bx,g->by,.065f);
-        float oldx=g->bx;
+        float oldx=g->bx,oldy=g->by;
         g->bx+=g->bvx*dt; g->by+=g->bvy*dt;
-        if(g->by<BALL_RADIUS) { g->by=BALL_RADIUS; g->bvy=fabsf(g->bvy); g->sound_events|=SOUND_WALL; }
-        if(g->by>ARENA_H-BALL_RADIUS) { g->by=ARENA_H-BALL_RADIUS; g->bvy=-fabsf(g->bvy); g->sound_events|=SOUND_WALL; }
-        for(int p=0;p<2;p++) {
-            Bat *b=&g->bat[p]; int dir=p?-1:1;
+        bool top=game_players(g)<4 || !game_alive(g,3);
+        bool bottom=game_players(g)<3 || !game_alive(g,2);
+        if(top && g->by<BALL_RADIUS) { g->by=BALL_RADIUS; g->bvy=fabsf(g->bvy); g->sound_events|=SOUND_WALL; }
+        if(bottom && g->by>ARENA_H-BALL_RADIUS) { g->by=ARENA_H-BALL_RADIUS; g->bvy=-fabsf(g->bvy); g->sound_events|=SOUND_WALL; }
+        if(!game_alive(g,0) && g->bx<game_left(g)+BALL_RADIUS) {
+            g->bx=game_left(g)+BALL_RADIUS; g->bvx=fabsf(g->bvx); g->sound_events|=SOUND_WALL;
+        }
+        if(!game_alive(g,1) && g->bx>game_right(g)-BALL_RADIUS) {
+            g->bx=game_right(g)-BALL_RADIUS; g->bvx=-fabsf(g->bvx); g->sound_events|=SOUND_WALL;
+        }
+        for(unsigned p=0;p<game_players(g);p++) {
+            if(!game_alive(g,p)) continue;
+            Bat *b=&g->bat[p]; float nx=normal_x(p),ny=normal_y(p);
             float dx=g->bx-b->x,dy=g->by-b->y;
             float rvx=g->bvx-b->vx,rvy=g->bvy-b->vy;
-            /* Strong currents and fast shots beat the grab; suction must slow them. */
-            if(b->sucking && dx*dir>=0 && dx*dx+dy*dy<18*18 &&
+            float normal=dx*nx+dy*ny,tangent=p<2?dy:dx;
+            if(b->sucking && normal>=0 && dx*dx+dy*dy<18*18 &&
                rvx*rvx+rvy*rvy<145*145 && u*u+v*v<210*210) {
-                g->held=p; g->bx=b->x+dir*8; g->by=b->y; return;
+                g->held=p; attach_ball(g,p,8); return;
             }
-            float face=b->x+dir*6;
-            bool crossed=(oldx-face)*dir>=0 && (g->bx-face)*dir<=0;
-            bool overlap=fabsf(dx)<6 && fabsf(dy)<BAT_HALF+BALL_RADIUS;
-            if((crossed||overlap) && fabsf(dy)<BAT_HALF+BALL_RADIUS && rvx*dir<0) {
-                g->sound_events|=p?SOUND_BAT2:SOUND_BAT1;
-                g->bx=face; g->bvx=dir*maxf(108,fabsf(g->bvx)*1.04f);
-                g->bvy+=dy*3.8f+b->vy*.3f; limit_ball(g);
-                fluid_splat(&g->fluid,g->bx,g->by,13,dir*35,b->vy*.2f,.35f,p);
+            float oldnormal=(oldx-b->x)*nx+(oldy-b->y)*ny;
+            bool crossed=oldnormal>=6 && normal<=6;
+            bool overlap=fabsf(normal)<6;
+            if((crossed||overlap) && fabsf(tangent)<BAT_HALF+BALL_RADIUS && rvx*nx+rvy*ny<0) {
+                g->sound_events|=p==0?SOUND_BAT1:p==1?SOUND_BAT2:SOUND_BAT_OTHER;
+                float bounce=maxf(108,fabsf(g->bvx*nx+g->bvy*ny)*1.04f);
+                if(p<2) { g->bx=b->x+nx*6; g->bvx=nx*bounce; g->bvy+=tangent*3.8f+b->vy*.3f; }
+                else { g->by=b->y+ny*6; g->bvy=ny*bounce; g->bvx+=tangent*3.8f+b->vx*.3f; }
+                limit_ball(g);
+                fluid_splat(&g->fluid,g->bx,g->by,13,nx*35+(p<2?0:b->vx*.2f),ny*35+(p<2?b->vy*.2f:0),.35f,p);
             }
         }
-        if(g->bx<-BALL_RADIUS || g->bx>ARENA_W+BALL_RADIUS) {
-            int scorer=g->bx<0?1:0;
-            g->score[scorer]++; g->sound_events|=SOUND_GOAL;
-            if(g->mode==ARCADE) arcade_goal(g,scorer);
-            else if(g->score[scorer]>=9) { g->phase=FINISHED; g->winner=scorer; g->sound_events|=SOUND_WIN; }
+        corner_bounce(g);
+        int missed=g->bx<game_left(g)-BALL_RADIUS?0:g->bx>game_right(g)+BALL_RADIUS?1:
+            g->by>ARENA_H+BALL_RADIUS?2:g->by<-BALL_RADIUS?3:-1;
+        if(missed>=0) {
+            g->sound_events|=SOUND_GOAL;
+            if(game_square(g)) {
+                if(g->lives[missed]) g->lives[missed]--;
+                if(!g->lives[missed]) g->bat[missed]=(Bat){0};
+                unsigned remaining=0; int survivor=-1;
+                for(unsigned p=0;p<g->players;p++) if(g->lives[p]) { remaining++; survivor=p; }
+                if(remaining==1) { g->phase=FINISHED; g->winner=survivor; g->sound_events|=SOUND_WIN; }
+            } else {
+                int scorer=1-missed;
+                g->score[scorer]++;
+                if(g->mode==ARCADE) arcade_goal(g,scorer);
+                else if(g->score[scorer]>=9) { g->phase=FINISHED; g->winner=scorer; g->sound_events|=SOUND_WIN; }
+            }
             serve(g); return;
         }
     }
@@ -124,40 +197,64 @@ static void start_game(Game *g) {
     FlowEffect effect=g->flow_effect;
     GameMode mode=g->mode; uint32_t seed=g->menu_rng;
     bool available=g->save_available,failed=g->save_failed;
+    unsigned players=g->players,ports[MAX_PLAYERS]; memcpy(ports,g->player_port,sizeof(ports));
     game_init(g); memcpy(g->highs,saved,sizeof(saved));
+    g->players=players; memcpy(g->player_port,ports,sizeof(ports));
     g->flow_effect=effect;
     g->save_available=available; g->save_failed=failed;
-    g->mode=mode; g->menu_selection=mode==ARCADE?1:0;
+    g->mode=mode; place_bats(g); g->menu_selection=mode==ARCADE?1:0;
     g->menu_rng=seed; g->phase=PLAY;
     g->arcade=(Arcade){.level=1,.lives=3,.rng=0x706f6e67u,.ai_y=ARENA_H*.5f};
-    g->connected[0]=true; g->connected[1]=mode==MULTIPLAYER;
+    for(unsigned p=0;p<game_players(g);p++) g->connected[p]=mode==MULTIPLAYER || p==0;
 }
-void game_step(Game *g,const Input physical[2]) {
-    Input effective[2]={physical[0],physical[1]};
+void game_step(Game *g,const Input physical[MAX_PLAYERS]) {
+    Input effective[MAX_PLAYERS];
+    bool menu=g->phase==MENU || g->phase==OPTIONS || g->phase==SCORES;
+    unsigned count=0;
+    for(unsigned p=0;p<MAX_PLAYERS;p++) {
+        if(physical[p].connected) count++;
+        effective[p]=physical[menu?p:g->player_port[p]];
+        g->connected[p]=effective[p].connected;
+    }
     const Input *in=effective;
     g->sound_events=0;
     bool start=false,confirm=false,back=false;
-    for(int p=0;p<2;p++) {
-        g->connected[p]=physical[p].connected;
-        if(g->mode==ARCADE && g->phase!=MENU && g->phase!=OPTIONS && p==1) continue;
+    for(unsigned p=0;p<MAX_PLAYERS;p++) {
+        if(!menu && (p>=(g->mode==ARCADE?1:g->players) || (g->phase!=FINISHED && !game_alive(g,p)))) continue;
         start|=in[p].connected && in[p].start && !g->previous[p].start;
         confirm|=in[p].connected && in[p].a && !g->previous[p].a;
         back|=in[p].connected && in[p].b && !g->previous[p].b;
     }
-    bool both=in[0].connected && (g->mode==ARCADE || in[1].connected);
+    bool all_connected=game_ready(g);
     if(g->phase==MENU) {
-        menu_step(g);
-        for(int p=0;p<2;p++) if(in[p].connected) {
+        if(g->players>count) g->players=count<2?2:count;
+        for(int p=0;p<MAX_PLAYERS;p++) if(in[p].connected) {
+            int horizontal=direction(in[p].x);
+            if(g->menu_selection==0 && count>=2 && horizontal && horizontal!=direction(g->previous[p].x)) {
+                unsigned selected=g->players;
+                if(horizontal>0 && selected<count) selected++;
+                if(horizontal<0 && selected>2) selected--;
+                if(selected!=g->players) { g->players=selected; g->sound_events|=SOUND_SELECT; }
+            }
             int nav=direction(in[p].y);
             if(nav && nav!=direction(g->previous[p].y)) {
                 g->menu_selection=(g->menu_selection+(nav>0?3:1))%4;
                 g->sound_events|=SOUND_SELECT; break;
             }
         }
-        if(start || confirm) {
+        menu_step(g);
+        if((start || confirm) && (g->menu_selection!=0 || count>=2)) {
             if(g->menu_selection==3) g->phase=OPTIONS;
             else if(g->menu_selection==2) g->phase=SCORES;
-            else { g->mode=g->menu_selection==1?ARCADE:MULTIPLAYER; g->phase=LOBBY; }
+            else {
+                g->mode=g->menu_selection==1?ARCADE:MULTIPLAYER;
+                for(unsigned p=0;p<MAX_PLAYERS;p++) g->player_port[p]=p;
+                if(g->mode==MULTIPLAYER) for(unsigned p=0,n=0;p<MAX_PLAYERS;p++)
+                    if(physical[p].connected) g->player_port[n++]=p;
+                for(unsigned p=0;p<MAX_PLAYERS;p++) { g->lives[p]=MULTIPLAYER_LIVES; g->connected[p]=physical[g->player_port[p]].connected; }
+                place_bats(g); serve(g); g->phase=LOBBY;
+                for(unsigned p=0;p<MAX_PLAYERS;p++) effective[p]=physical[g->player_port[p]];
+            }
             g->sound_events|=SOUND_SELECT;
         }
         memcpy(g->previous,in,sizeof(g->previous)); return;
@@ -165,7 +262,7 @@ void game_step(Game *g,const Input physical[2]) {
     if(g->phase==OPTIONS) {
         menu_step(g);
         if(back || start) { g->phase=MENU; g->sound_events|=SOUND_BACK; }
-        else for(int p=0;p<2;p++) if(in[p].connected) {
+        else for(int p=0;p<MAX_PLAYERS;p++) if(in[p].connected) {
             int nav=direction(in[p].x);
             if(nav && nav!=direction(g->previous[p].x)) {
                 g->flow_effect=(g->flow_effect+(nav>0?1:FLOW_COUNT-1))%FLOW_COUNT;
@@ -196,11 +293,11 @@ void game_step(Game *g,const Input physical[2]) {
     }
     if(back && (g->phase==LOBBY || g->phase==PAUSED || g->phase==FINISHED)) {
         g->phase=MENU; g->held=-1; g->sound_events|=SOUND_BACK;
-        for(int p=0;p<2;p++) g->bat[p].sucking=false;
-        memcpy(g->previous,in,sizeof(g->previous)); return;
+        for(int p=0;p<MAX_PLAYERS;p++) g->bat[p].sucking=false;
+        memcpy(g->previous,physical,sizeof(g->previous)); return;
     }
-    if(!both && g->phase==PLAY) g->phase=PAUSED;
-    if(start && both) {
+    if(!all_connected && g->phase==PLAY) g->phase=PAUSED;
+    if(start && all_connected) {
         if(g->phase==LOBBY || g->phase==FINISHED) {
             start_game(g);
         } else g->phase=g->phase==PLAY?PAUSED:PLAY;
@@ -218,54 +315,64 @@ void game_step(Game *g,const Input physical[2]) {
         if(g->held>=0) g->arcade.hold_time+=STEP; else g->arcade.hold_time=0;
     }
     g->elapsed+=STEP;
-    for(int p=0;p<2;p++) {
-        Bat *b=&g->bat[p]; int dir=p?-1:1;
+    for(unsigned p=0;p<game_players(g);p++) {
+        if(!game_alive(g,p)) continue;
+        Bat *b=&g->bat[p]; float nx=normal_x(p),ny=normal_y(p);
         float x=b->x,y=b->y;
-        b->x=clampf(x+axis(in[p].x)*92*STEP,p?ARENA_W-64:12,p?ARENA_W-12:64);
-        b->y=clampf(y-axis(in[p].y)*125*STEP,BAT_HALF+2,ARENA_H-BAT_HALF-2);
+        float end=game_square(g)?CORNER_SIZE+BAT_HALF+2:BAT_HALF+2;
+        float depth=game_square(g)?SQUARE_BAT_DEPTH:64;
+        if(p<2) {
+            b->x=clampf(x+axis(in[p].x)*92*STEP,p?game_right(g)-depth:game_left(g)+12,p?game_right(g)-12:game_left(g)+depth);
+            b->y=clampf(y-axis(in[p].y)*125*STEP,end,ARENA_H-end);
+        } else {
+            b->x=clampf(x+axis(in[p].x)*125*STEP,game_left(g)+end,game_right(g)-end);
+            b->y=clampf(y-axis(in[p].y)*92*STEP,p==2?ARENA_H-depth:12,p==2?ARENA_H-12:depth);
+        }
         b->vx=(b->x-x)/STEP; b->vy=(b->y-y)/STEP;
         fluid_splat(&g->fluid,b->x,b->y,20,b->vx*.20f,b->vy*.20f,
                     (fabsf(b->vx)+fabsf(b->vy))*STEP*.008f,p);
         b->burst=maxf(0,b->burst-STEP);
         if(in[p].z) {
-            fluid_splat(&g->fluid,b->x+dir*14,b->y,22,dir*1150*STEP,b->vy*.08f,2.6f*STEP,p);
+            fluid_splat(&g->fluid,b->x+nx*14,b->y+ny*14,22,nx*1150*STEP+(p<2?0:b->vx*.08f),ny*1150*STEP+(p<2?b->vy*.08f:0),2.6f*STEP,p);
         }
     }
     if(g->mode==ARCADE) arcade_currents(g);
     fluid_velocity_step(&g->fluid,STEP);
-    for(int p=0;p<2;p++) {
-        Bat *b=&g->bat[p]; int dir=p?-1:1;
+    for(unsigned p=0;p<game_players(g);p++) {
+        if(!game_alive(g,p)) continue;
+        Bat *b=&g->bat[p]; float nx=normal_x(p),ny=normal_y(p);
         if(b->cooldown_ticks) b->cooldown_ticks--;
         if(!in[p].a) b->release_required=false;
         if(b->cooldown_ticks || b->release_required) continue;
         if(in[p].a) {
             /* Only time spent holding the ball contributes to charge. */
-            if(g->held==p) b->suction_ticks++;
+            if(g->held==(int)p) b->suction_ticks++;
             else b->suction_ticks=0;
             if(b->suction_ticks>=SUCTION_BREAK_TICKS) {
                 b->sucking=false; b->charge=0; b->burst=0; b->suction_ticks=0;
                 b->cooldown_ticks=SUCTION_COOLDOWN_TICKS; b->release_required=true;
-                g->sound_events|=p?SOUND_BREAK2:SOUND_BREAK1;
-                if(g->held==p) {
-                    g->held=-1; g->bx=b->x+dir*9; g->by=b->y;
+                g->sound_events|=p==0?SOUND_BREAK1:p==1?SOUND_BREAK2:SOUND_BREAK_OTHER;
+                if(g->held==(int)p) {
+                    g->held=-1; attach_ball(g,p,9);
                     /* Drop into the existing current without a release impulse. */
                     fluid_sample(&g->fluid,g->bx,g->by,&g->bvx,&g->bvy);
                 }
                 continue;
             }
             b->sucking=true; b->charge=minf(1,(float)b->suction_ticks/SUCTION_CHARGE_TICKS);
-            fluid_pump(&g->fluid,b->x+dir*7,b->y,35,-1150,STEP,p);
+            fluid_pump(&g->fluid,b->x+nx*7,b->y+ny*7,35,-1150,STEP,p);
         } else if(b->sucking) {
             b->sucking=false;
-            if(g->held==p) {
+            if(g->held==(int)p) {
                 b->burst=.25f;
                 /* Spend stored charge only when releasing a caught ball. */
                 fluid_pump(&g->fluid,b->x,b->y,40,2800,.13f*b->charge,p);
-                fluid_splat(&g->fluid,b->x+dir*12,b->y,27,dir*240*b->charge,
-                            b->vy*.35f*b->charge,b->charge,p);
-                g->held=-1; g->bx=b->x+dir*9; g->by=b->y;
+                fluid_splat(&g->fluid,b->x+nx*12,b->y+ny*12,27,(nx*240+(p<2?0:b->vx*.35f))*b->charge,
+                            (ny*240+(p<2?b->vy*.35f:0))*b->charge,b->charge,p);
+                g->held=-1; attach_ball(g,p,9);
                 /* Perfect timing earns a clear jump to the ball's speed cap. */
-                g->bvx=dir*(b->charge>=1?290:200*b->charge); g->bvy=b->vy*.55f;
+                float speed=b->charge>=1?290:200*b->charge;
+                g->bvx=nx*speed+(p<2?0:b->vx*.55f); g->bvy=ny*speed+(p<2?b->vy*.55f:0);
             }
             b->charge=0; b->suction_ticks=0;
         }
@@ -273,6 +380,6 @@ void game_step(Game *g,const Input physical[2]) {
     fluid_dye_step(&g->fluid,STEP);
     ball_step(g);
     game_flow_step(g);
-    memcpy(g->previous,physical,sizeof(g->previous));
+    memcpy(g->previous,in,sizeof(g->previous));
     if(g->mode==ARCADE) g->previous[1]=effective[1];
 }

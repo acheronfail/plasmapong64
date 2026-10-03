@@ -82,6 +82,15 @@ int main(void) {
     g.bat[0].sucking=true; g.previous[1].z=true;
     sound_update(&s,&g); second(); second();
     assert(energy(0)==0 && energy(1)==0); /* No power loops during level cards. */
+    /* Top/bottom powers have centered loops and stop on elimination. */
+    for(int p=0;p<MAX_PLAYERS;p++) {
+        sound_init(&s,SOUND_RATE); g=(Game){.phase=PLAY,.players=4,.lives={3,3,3,3}};
+        g.bat[p].sucking=true; g.previous[p].z=true;
+        sound_update(&s,&g); second(); assert(energy(0)>0 && energy(1)>0);
+        if(p>=2) assert(energy(0)==energy(1));
+        g.lives[p]=0; sound_update(&s,&g); second(); second();
+        assert(!energy(0) && !energy(1));
+    }
     preview();
     puts("PASS: sampled effects, stereo panning, quiet sustained loops, fade-out, headroom; build/sound-demo.wav");
 }

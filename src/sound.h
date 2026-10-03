@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #define SOUND_RATE 16000
-#define SOUND_VOICES 8
+#define SOUND_VOICES 12
 typedef struct {
     const int16_t *pcm;
     unsigned length,loop_start;

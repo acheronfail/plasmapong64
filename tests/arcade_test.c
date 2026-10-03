@@ -5,7 +5,7 @@
 #include <string.h>
 #include <limits.h>
 static Game g;
-static Input in[2];
+static Input in[MAX_PLAYERS];
 static void tick(void) { game_step(&g,in); }
 static void ready(void) {
     game_init(&g); memset(in,0,sizeof(in)); in[0].connected=true;

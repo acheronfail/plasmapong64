@@ -7,7 +7,7 @@
 #include <string.h>
 int main(int argc,char **argv) {
     static Game g; game_init(&g); g.phase=LOBBY;
-    Input in[2]={{.connected=true,.start=true},{.connected=true}};
+    Input in[MAX_PLAYERS]={{.connected=true,.start=true},{.connected=true}};
     game_step(&g,in); in[0].start=false;
     int isolated=argc>1 && !strcmp(argv[1],"flow");
     puts("frame,bx,by,bvx,bvy,score0,score1,rms_velocity,max_velocity,mean_u,mean_v,saturated,mean_dye");

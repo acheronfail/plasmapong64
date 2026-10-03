@@ -16,7 +16,7 @@ cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic -Isrc src/game.c src/arcade.c sr
 cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic -Isrc src/save.c tests/save_test.c -o build/save-test
 ./build/save-test
 cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic -Isrc src/game.c src/arcade.c src/fluid.c src/fluid_advection.c src/ui.c tools/preview.c -lm -o build/preview
-for state in menu play lobby paused finished arcade gameover scores level overcharge; do
+for state in menu menu-4p menu-options play lobby paused finished arcade gameover scores level overcharge 3p 4p; do
     ./build/preview "$state" > "build/preview-$state.svg"
 done
 
@@ -49,3 +49,15 @@ cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -DPLASMAPONG_DYE_FIXED -DPLASMAP
 ./build/game-confinement-test
 cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -DPLASMAPONG_DYE_FIXED -DPLASMAPONG_VELOCITY_FIXED -DPLASMAPONG_CONFINEMENT_FIXED -Isrc src/game.c src/arcade.c src/fluid.c src/fluid_advection.c src/fluid_dye_fixed.c src/fluid_velocity_fixed.c src/fluid_confinement.c tests/arcade_test.c -lm -o build/arcade-confinement-test
 ./build/arcade-confinement-test
+
+# Multiplayer geometry and elimination across every portable storage backend.
+for backend in float dye velocity confinement; do
+    case "$backend" in
+        float) flags=""; sources="" ;;
+        dye) flags="-DPLASMAPONG_DYE_FIXED"; sources="src/fluid_dye_fixed.c" ;;
+        velocity) flags="-DPLASMAPONG_DYE_FIXED -DPLASMAPONG_VELOCITY_FIXED"; sources="src/fluid_dye_fixed.c src/fluid_velocity_fixed.c" ;;
+        confinement) flags="-DPLASMAPONG_DYE_FIXED -DPLASMAPONG_VELOCITY_FIXED -DPLASMAPONG_CONFINEMENT_FIXED"; sources="src/fluid_dye_fixed.c src/fluid_velocity_fixed.c src/fluid_confinement.c" ;;
+    esac
+    cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic $flags -Isrc src/game.c src/arcade.c src/fluid.c src/fluid_advection.c $sources tests/multiplayer_test.c -lm -o "build/multiplayer-$backend-test"
+    "./build/multiplayer-$backend-test"
+done
