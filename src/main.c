@@ -287,8 +287,8 @@ int main(void) {
     confinement_cases();
 #endif
     rdpq_font_t *font=rdpq_font_load_builtin(FONT_BUILTIN_DEBUG_VAR);
-    const uint32_t colors[]={0xeaf6ff,0xa0b3c9,0x48dcff,0xff637e,0xffffff,0x02040a,0x737d8a,0x70ffd0,0xc28aff};
-    for(int i=0;i<9;i++) rdpq_font_style(font,i,&(rdpq_fontstyle_t){.color=color(colors[i])});
+    const uint32_t colors[]={0xeaf6ff,0xa0b3c9,0x48dcff,0xff637e,0xffffff,0x02040a,0x737d8a,0x70ffd0,0xc28aff,MENU_GOLD};
+    for(unsigned i=0;i<sizeof(colors)/sizeof(colors[0]);i++) rdpq_font_style(font,i,&(rdpq_fontstyle_t){.color=color(colors[i])});
     rdpq_text_register_font(1,font); game_init(&game); scores_load(&game); game.menu_rng=(uint32_t)get_ticks();
 #ifdef PLASMAPONG_SMOKE_FPS
     _Static_assert(PLASMAPONG_SMOKE_FPS==30 || PLASMAPONG_SMOKE_FPS==60,"valid benchmark frame rate");

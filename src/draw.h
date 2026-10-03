@@ -1,6 +1,9 @@
 #ifndef DRAW_H
 #define DRAW_H
 #include "game.h"
+/* Match the gold dye contribution in fluid_color(). */
+#define MENU_GOLD 0xffcd19
+#define MENU_SELECTED_STYLE 9
 #ifdef PLASMAPONG_FLUID_PROFILE
 extern uint64_t flow_prepare_ticks,flow_emit_ticks;
 #endif

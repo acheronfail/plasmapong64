@@ -13,7 +13,7 @@ void rect(float x,float y,float w,float h,uint32_t c) {
     if(w>0 && h>0) printf("<rect x='%g' y='%g' width='%g' height='%g' fill='#%06x'/>\n",x,y,w,h,c);
 }
 void label(float x,float y,int style,const char *s) {
-    const uint32_t colors[]={0xeaf6ff,0xa0b3c9,0x48dcff,0xff637e,0xffffff,0x02040a,0x737d8a,0x70ffd0,0xc28aff};
+    const uint32_t colors[]={0xeaf6ff,0xa0b3c9,0x48dcff,0xff637e,0xffffff,0x02040a,0x737d8a,0x70ffd0,0xc28aff,MENU_GOLD};
     printf("<text xml:space='preserve' x='%g' y='%g' font-family='monospace' font-size='7' fill='#%06x'>",x,y,colors[style]);
     for(;*s;s++) {
         if(*s=='&') fputs("&amp;",stdout);

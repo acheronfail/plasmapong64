@@ -69,6 +69,8 @@ static float menu_random(Game *g) {
 }
 static void menu_step(Game *g) {
     const float step=game_dt(g); const float emission=game_emission(g);
+    /* Soften menu dye without changing the currents or gameplay effects. */
+    const float dye_strength=g->phase==MENU?.70f:1.0f;
     /* Slowly drifting emitters keep the menu alive even with no controllers. */
     if(g->menu_ticks%(2*GAME_HZ)<game_tick_units(g)) for(int p=0;p<3;p++) {
         float angle=menu_random(g)*6.2831853f;
@@ -79,7 +81,7 @@ static void menu_step(Game *g) {
         MenuCurrent *c=&g->menu_current[p];
         c->x=clampf(c->x+c->u*step*.2f,16,ARENA_W-16);
         c->y=clampf(c->y+c->v*step*.2f,16,ARENA_H-16);
-        fluid_splat(&g->fluid,c->x,c->y,26,c->u*.65f*emission,c->v*.65f*emission,p==2?0:.10f*emission,p&1);
+        fluid_splat(&g->fluid,c->x,c->y,26,c->u*.65f*emission,c->v*.65f*emission,p==2?0:.10f*emission*dye_strength,p&1);
         if(p==2 && g->phase!=MENU) fluid_ball_dye(&g->fluid,c->x,c->y,.20f*emission);
     }
     if(g->phase==MENU) {
@@ -98,7 +100,7 @@ static void menu_step(Game *g) {
             for(int side=-1;side<=1;side+=2) {
                 float sy=y+side*3;
                 fluid_splat(&g->fluid,x,sy,12,(t-.5f)*5*emission,(side*4+drift*2)*emission,0,0);
-                fluid_ball_dye(&g->fluid,x,sy,.48f*emission);
+                fluid_ball_dye(&g->fluid,x,sy,.48f*emission*dye_strength);
             }
         }
     }

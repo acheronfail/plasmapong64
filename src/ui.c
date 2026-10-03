@@ -13,7 +13,7 @@
 static const uint32_t player_colors[]={CYAN,CORAL,MINT,VIOLET};
 static const int player_styles[]={2,3,7,8};
 /* Match the ball dye's RGB contribution in fluid_color(). */
-#define GOLD 0xffcd19
+#define GOLD MENU_GOLD
 static void ring(const Game *g,float x,float y,float radius,uint32_t color) {
     /* Angles are invariant. Evaluate them once with the platform's own math
        implementation, retaining identical coordinates on subsequent frames. */
@@ -105,7 +105,7 @@ static void multiplayer_label(const Game *g,unsigned pads,float y,int style) {
     float x=roundf(160-(title_width+14+4+6+count_width+6+4)*.5f);
     label(x+2,y+2,5,title); label(x,y,style,title);
     x+=title_width+14;
-    uint32_t bright=style==4?WHITE:style==6?0x737d8a:0xa0b3c9;
+    uint32_t bright=style==MENU_SELECTED_STYLE?GOLD:style==6?0x737d8a:0xa0b3c9;
     menu_triangle(x+2,y-2,false,0x02040a);
     menu_triangle(x,y-4,false,pads>=2 && g->players>2?bright:0x58616e);
     x+=10;
@@ -279,7 +279,7 @@ void ui_draw(const Game *g) {
         const char *items[]={"MULTI-PLAYER","SINGLE PLAYER","HIGH SCORES","OPTIONS"};
         unsigned pads=0; for(unsigned p=0;p<MAX_PLAYERS;p++) if(g->connected[p]) pads++;
         for(unsigned i=0;i<4;i++) {
-            int style=i==0 && pads<2?6:g->menu_selection==i?4:1;
+            int style=i==0 && pads<2?6:g->menu_selection==i?MENU_SELECTED_STYLE:1;
             float y=MENU_FIRST_ROW+i*MENU_ROW_SPACING;
             if(i==0) multiplayer_label(g,pads,y,style);
             else menu_label(y,style,items[i]);
