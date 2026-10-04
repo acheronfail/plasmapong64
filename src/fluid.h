@@ -70,6 +70,10 @@ void fluid_velocity_step(Fluid *f, float dt);
 void fluid_dye_step(Fluid *f, float dt);
 void fluid_ball_dye(Fluid *f, float x, float y, float amount);
 void fluid_hot_ball_dye(Fluid *f, float x, float y, float amount);
+#ifdef PLASMAPONG_MENU_STAMPS
+/* Fixed menu geometry; slot identifies one of the 26 label emitters. */
+void fluid_menu_source(Fluid *f,unsigned slot,float x,float y,float u,float v,float gold);
+#endif
 void fluid_project(Fluid *f);
 void fluid_sample(const Fluid *f, float x, float y, float *u, float *v);
 void fluid_splat(Fluid *f, float x, float y, float radius, float u, float v, float dye, int player);

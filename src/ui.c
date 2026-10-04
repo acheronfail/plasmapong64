@@ -296,6 +296,20 @@ static void flow_background(const Game *g,float x,float y,float w,float h) {
     if(g->flow_effect==FLOW_TAILS) flow_points(g,x,y,w,h,4);
     else if(g->flow_effect==FLOW_PARTICLES) flow_points(g,x,y,w,h,0);
 }
+void ui_menu_foreground(const Game *g) {
+    draw_static(DRAW_MENU_TITLE,menu_title);
+    unsigned pads=0; for(unsigned p=0;p<MAX_PLAYERS;p++) if(g->connected[p]) pads++;
+    for(unsigned i=0;i<4;i++) {
+        int style=i==0 && pads<2?6:g->menu_selection==i?MENU_SELECTED_STYLE:1;
+        float y=MENU_FIRST_ROW+i*MENU_ROW_SPACING;
+        if(i==0) multiplayer_label(g,pads,y,style);
+        else menu_label(y,style,menu_items[i]);
+    }
+}
+void ui_menu_particles(const Game *g) {
+    if(g->flow_effect==FLOW_TAILS) flow_points(g,0,0,320,240,4);
+    else if(g->flow_effect==FLOW_PARTICLES) flow_points(g,0,0,320,240,0);
+}
 void ui_draw(const Game *g) {
     if(g->phase==OPTIONS) {
         flow_background(g,0,0,320,240);
@@ -314,14 +328,11 @@ void ui_draw(const Game *g) {
     }
     if(g->phase==MENU) {
         flow_background(g,0,0,320,240);
-        draw_static(DRAW_MENU_TITLE,menu_title);
-        unsigned pads=0; for(unsigned p=0;p<MAX_PLAYERS;p++) if(g->connected[p]) pads++;
-        for(unsigned i=0;i<4;i++) {
-            int style=i==0 && pads<2?6:g->menu_selection==i?MENU_SELECTED_STYLE:1;
-            float y=MENU_FIRST_ROW+i*MENU_ROW_SPACING;
-            if(i==0) multiplayer_label(g,pads,y,style);
-            else menu_label(y,style,menu_items[i]);
-        }
+#ifdef PLASMAPONG_MENU_LABEL_BLOCK
+        draw_menu_foreground(g);
+#else
+        ui_menu_foreground(g);
+#endif
         return;
     }
     /* The opaque fluid blit replaces every court pixel. Clear only its

@@ -1,0 +1,4 @@
+FROM n64-util-toolchain:e356bf3
+COPY trace-rdp-wait.py /tmp/trace-rdp-wait.py
+RUN python3 /tmp/trace-rdp-wait.py
+WORKDIR /work

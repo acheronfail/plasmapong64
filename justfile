@@ -25,6 +25,106 @@ smoke:
 benchmark:
     ./tools/build-rom.sh -j4 SMOKE=1 FLUID_PROFILE=1 ROM=plasmapong-benchmark BUILD_DIR=build/benchmark_rsp_confinement
 
+# Real hardware menu baseline: USB logs, repeatable seed, no completion fence.
+benchmark-hardware:
+    ./tools/build-rom.sh -j4 EXPANSION_BANKS=0 MENU_STAMPS=0 MENU_LABEL_BLOCK=0 FLUID_HIGHPRI=0 USB_LOG=1 BENCH_MENU=1 ROM=plasmapong-hardware BUILD_DIR=build/hardware_menu
+
+# Diagnostic timings; the extra completion fence can alter presentation cadence.
+benchmark-hardware-profile:
+    ./tools/build-rom.sh -j4 EXPANSION_BANKS=0 MENU_STAMPS=0 MENU_LABEL_BLOCK=0 FLUID_HIGHPRI=0 USB_LOG=1 BENCH_MENU=1 FLUID_PROFILE=1 FRAME_WORK_PROFILE=1 ROM=plasmapong-hardware-profile BUILD_DIR=build/hardware_menu_profile
+
+# Stage timings with ordinary asynchronous RSP/RDP overlap.
+benchmark-hardware-stages:
+    ./tools/build-rom.sh -j4 EXPANSION_BANKS=0 MENU_STAMPS=0 MENU_LABEL_BLOCK=0 FLUID_HIGHPRI=0 USB_LOG=1 BENCH_MENU=1 FLUID_PROFILE=1 ROM=plasmapong-hardware-stages BUILD_DIR=build/hardware_menu_stages
+
+# Split earlier RSP queue work from velocity advection, without a full RDP fence.
+benchmark-hardware-queue:
+    ./tools/build-rom.sh -j4 EXPANSION_BANKS=0 MENU_STAMPS=0 MENU_LABEL_BLOCK=0 FLUID_HIGHPRI=0 USB_LOG=1 BENCH_MENU=1 FLUID_PROFILE=1 QUEUE_PROFILE=1 ROM=plasmapong-hardware-queue BUILD_DIR=build/hardware_menu_queue
+
+# Candidate: consolidate per-frame texture, particles and text command buffers.
+benchmark-hardware-batch:
+    ./tools/build-rom.sh -j4 EXPANSION_BANKS=0 MENU_STAMPS=0 MENU_LABEL_BLOCK=0 FLUID_HIGHPRI=0 USB_LOG=1 BENCH_MENU=1 FRAME_BLOCK=1 ROM=plasmapong-hardware-batch BUILD_DIR=build/hardware_menu_batch
+
+# Candidate: let simulation overtake queued drawing, retaining cached rendering.
+benchmark-hardware-highpri:
+    ./tools/build-rom.sh -j4 EXPANSION_BANKS=0 MENU_STAMPS=0 MENU_LABEL_BLOCK=0 FLUID_HIGHPRI_YIELD=0 USB_LOG=1 BENCH_MENU=1 FLUID_HIGHPRI=1 ROM=plasmapong-hardware-highpri BUILD_DIR=build/hardware_menu_highpri
+
+# Open high priority only for RSP batches; let rendering proceed during CPU work.
+benchmark-hardware-yield:
+    ./tools/build-rom.sh -j4 USB_LOG=1 BENCH_MENU=1 EXPANSION_BANKS=1 MENU_STAMPS=1 MENU_LABEL_BLOCK=1 FLUID_HIGHPRI=1 FLUID_HIGHPRI_YIELD=1 ROM=plasmapong-hardware-yield BUILD_DIR=build/hardware_yield
+
+# Hardware test of existing framebuffer bank placement; ordinary cached renderer.
+benchmark-hardware-banks:
+    ./tools/build-rom.sh -j4 MENU_STAMPS=0 MENU_LABEL_BLOCK=0 FLUID_HIGHPRI=0 USB_LOG=1 BENCH_MENU=1 EXPANSION_BANKS=1 ROM=plasmapong-hardware-banks BUILD_DIR=build/hardware_menu_banks
+
+# Measure a texture that fits TMEM; compare against the bank-placement control.
+benchmark-hardware-ink16:
+    ./tools/build-rom.sh -j4 MENU_STAMPS=0 MENU_LABEL_BLOCK=0 FLUID_HIGHPRI=0 USB_LOG=1 BENCH_MENU=1 EXPANSION_BANKS=1 INK16=1 ROM=plasmapong-hardware-ink16 BUILD_DIR=build/hardware_menu_ink16
+
+# Same texture experiment with direct RSP packing and asynchronous production.
+benchmark-hardware-ink16-rsp:
+    ./tools/build-rom.sh -j4 MENU_STAMPS=0 MENU_LABEL_BLOCK=0 FLUID_HIGHPRI=0 USB_LOG=1 BENCH_MENU=1 EXPANSION_BANKS=1 INK16_RSP=1 ROM=plasmapong-hardware-ink16-rsp BUILD_DIR=build/hardware_menu_ink16_rsp
+
+# Cache fixed menu source geometry; compare against the bank-placement control.
+benchmark-hardware-menu-stamps:
+    ./tools/build-rom.sh -j4 MENU_LABEL_BLOCK=0 FLUID_HIGHPRI=0 USB_LOG=1 BENCH_MENU=1 EXPANSION_BANKS=1 MENU_STAMPS=1 ROM=plasmapong-hardware-menu-stamps BUILD_DIR=build/hardware_menu_stamps
+
+# Keep invariant menu title and labels in one cached RDP command buffer.
+benchmark-hardware-menu-labels:
+    ./tools/build-rom.sh -j4 FLUID_HIGHPRI=0 USB_LOG=1 BENCH_MENU=1 EXPANSION_BANKS=1 MENU_STAMPS=1 MENU_LABEL_BLOCK=1 ROM=plasmapong-hardware-menu-labels BUILD_DIR=build/hardware_menu_labels
+
+# Attribute the remaining simulation cost without adding a full RDP fence.
+benchmark-hardware-retained-stages:
+    ./tools/build-rom.sh -j4 FLUID_HIGHPRI=0 USB_LOG=1 BENCH_MENU=1 EXPANSION_BANKS=1 MENU_STAMPS=1 MENU_LABEL_BLOCK=1 FLUID_PROFILE=1 QUEUE_PROFILE=1 ROM=plasmapong-hardware-retained-stages BUILD_DIR=build/hardware_retained_stages
+
+# Diagnostic only: retain simulation/particles/pixel generation, replace the backdrop.
+benchmark-hardware-flat-fluid:
+    ./tools/build-rom.sh -j4 FLUID_HIGHPRI=0 USB_LOG=1 BENCH_MENU=1 EXPANSION_BANKS=1 MENU_STAMPS=1 MENU_LABEL_BLOCK=1 BENCH_FLAT_FLUID=1 ROM=plasmapong-hardware-flat-fluid BUILD_DIR=build/hardware_flat_fluid
+
+# Stream texture and particle commands together, retain cached menu foreground.
+benchmark-hardware-draw-stream:
+    ./tools/build-rom.sh -j4 FLUID_HIGHPRI=0 USB_LOG=1 BENCH_MENU=1 EXPANSION_BANKS=1 MENU_STAMPS=1 MENU_LABEL_BLOCK=1 DRAW_STREAM=1 ROM=plasmapong-hardware-draw-stream BUILD_DIR=build/hardware_draw_stream
+
+# Pinned-libdragon diagnostic: retain streaming, allocate foreground in one buffer.
+benchmark-hardware-menu-buffer:
+    ./tools/build-rom.sh -j4 FLUID_HIGHPRI=0 USB_LOG=1 BENCH_MENU=1 EXPANSION_BANKS=1 MENU_STAMPS=1 MENU_LABEL_BLOCK=1 DRAW_STREAM=1 MENU_BUFFER_KIB=32 ROM=plasmapong-hardware-menu-buffer BUILD_DIR=build/hardware_menu_buffer
+
+# Retain the best cached renderer; signal completion after target cleanup.
+benchmark-hardware-tail-sync:
+    ./tools/build-rom.sh -j4 FLUID_HIGHPRI=0 USB_LOG=1 BENCH_MENU=1 EXPANSION_BANKS=1 MENU_STAMPS=1 MENU_LABEL_BLOCK=1 RDP_TAIL_SYNC=1 ROM=plasmapong-hardware-tail-sync BUILD_DIR=build/hardware_tail_sync
+
+# Sample RDP/SP status without halting the RSP; legacy recipe name retained.
+benchmark-hardware-queue-pc:
+    ./tools/build-rom.sh -j4 FLUID_HIGHPRI=0 USB_LOG=1 BENCH_MENU=1 EXPANSION_BANKS=1 MENU_STAMPS=1 MENU_LABEL_BLOCK=1 FLUID_PROFILE=1 QUEUE_PROFILE=1 QUEUE_PC_PROFILE=1 ROM=plasmapong-hardware-queue-pc BUILD_DIR=build/hardware_queue_pc
+
+# Passive markers inside the RSP wait loop; isolated tracing toolchain image.
+benchmark-hardware-rdp-trace:
+    ./tools/build-rom.sh -j4 FLUID_HIGHPRI=0 USB_LOG=1 BENCH_MENU=1 EXPANSION_BANKS=1 MENU_STAMPS=1 MENU_LABEL_BLOCK=1 FLUID_PROFILE=1 QUEUE_PROFILE=1 QUEUE_PC_PROFILE=1 RDP_WAIT_TRACE=1 ROM=plasmapong-hardware-rdp-trace BUILD_DIR=build/hardware_rdp_trace
+
+# Reuse one menu RDP buffer; update cache-aligned particle slots each frame.
+benchmark-hardware-menu-template:
+    ./tools/build-rom.sh -j4 FLUID_HIGHPRI=0 USB_LOG=1 BENCH_MENU=1 EXPANSION_BANKS=1 MENU_STAMPS=1 MENU_LABEL_BLOCK=1 MENU_TEMPLATE=1 ROM=plasmapong-hardware-menu-template BUILD_DIR=build/hardware_menu_template
+
+# Test high-res VI point sampling against the cached-menu control.
+benchmark-hardware-vi-point:
+    ./tools/build-rom.sh -j4 MENU_LABEL_BLOCK=0 FLUID_HIGHPRI=0 USB_LOG=1 BENCH_MENU=1 EXPANSION_BANKS=1 MENU_STAMPS=1 HIRES_VI_POINT=1 ROM=plasmapong-hardware-vi-point BUILD_DIR=build/hardware_vi_point
+
+# Validate the retained candidate in scripted four-player high-res tails gameplay.
+benchmark-hardware-gameplay:
+    ./tools/build-rom.sh -j4 MENU_LABEL_BLOCK=0 FLUID_HIGHPRI=0 USB_LOG=1 SMOKE=1 SMOKE_PLAYERS=4 SMOKE_HIGH_RES=1 SMOKE_EFFECT=2 SMOKE_STRESS=1 EXPANSION_BANKS=1 MENU_STAMPS=1 ROM=plasmapong-hardware-gameplay BUILD_DIR=build/hardware_gameplay
+
+# Matched four-player stress gameplay with yielding high-priority simulation.
+benchmark-hardware-yield-gameplay:
+    ./tools/build-rom.sh -j4 MENU_LABEL_BLOCK=0 USB_LOG=1 SMOKE=1 SMOKE_PLAYERS=4 SMOKE_HIGH_RES=1 SMOKE_EFFECT=2 SMOKE_STRESS=1 EXPANSION_BANKS=1 MENU_STAMPS=1 FLUID_HIGHPRI=1 FLUID_HIGHPRI_YIELD=1 ROM=plasmapong-hardware-yield-play BUILD_DIR=build/hardware_yield_play
+
+# Matched gameplay control without bank placement or menu source caching.
+benchmark-hardware-gameplay-baseline:
+    ./tools/build-rom.sh -j4 MENU_LABEL_BLOCK=0 FLUID_HIGHPRI=0 USB_LOG=1 SMOKE=1 SMOKE_PLAYERS=4 SMOKE_HIGH_RES=1 SMOKE_EFFECT=2 SMOKE_STRESS=1 EXPANSION_BANKS=0 MENU_STAMPS=0 ROM=plasmapong-hardware-gameplay-baseline BUILD_DIR=build/hardware_gameplay_baseline
+
+# Attempt RAM upload; deployer checks console state. Then boot the new ROM.
+capture-hardware log="build/hardware/menu.log": benchmark-hardware
+    python3 tools/benchmark-hardware.py plasmapong-hardware.z64 {{log}} --upload
+
 # CPU reference backend for comparison with the default RSP pressure, dye, velocity, and confinement.
 cpu:
     ./tools/build-rom.sh -j4 FLUID_RSP=0 DYE_RSP=0 CONFINEMENT_RSP=0 VELOCITY_RSP=0 ROM=plasmapong-cpu BUILD_DIR=build/cpu

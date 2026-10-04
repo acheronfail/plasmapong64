@@ -9,6 +9,9 @@ enum {
     PROFILE_CONFINEMENT, PROFILE_DIVERGENCE, PROFILE_PRESSURE,
     PROFILE_GRADIENT, PROFILE_DYE_ADVECTION, PROFILE_DYE_SWAP,
     PROFILE_SPLAT, PROFILE_PUMP, PROFILE_BALL_DYE, PROFILE_SAMPLE,
+#ifdef PLASMAPONG_QUEUE_PROFILE
+    PROFILE_QUEUE_WAIT,
+#endif
     PROFILE_COUNT
 };
 typedef struct {
@@ -17,6 +20,9 @@ typedef struct {
     unsigned calls[PROFILE_COUNT];
 } FluidProfile;
 extern FluidProfile fluid_profile;
+#ifdef PLASMAPONG_QUEUE_PC_PROFILE
+void fluid_queue_pc_report(void);
+#endif
 #define PROFILE_BEGIN() uint64_t profile_start=get_ticks()
 #define PROFILE_END(stage) do { \
     uint64_t profile_end=get_ticks(); \

@@ -22,4 +22,9 @@ void draw_static(unsigned id,void (*draw)(void));
 void ui_measure_menu(Game *g);
 void ui_init(void);
 void ui_draw(const Game *g);
+void ui_menu_foreground(const Game *g);
+void ui_menu_particles(const Game *g);
+#ifdef PLASMAPONG_MENU_LABEL_BLOCK
+void draw_menu_foreground(const Game *g);
+#endif
 #endif

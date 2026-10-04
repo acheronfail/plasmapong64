@@ -97,8 +97,13 @@ static void menu_step(Game *g) {
             float drift=sinf(g->elapsed*2.3f+i*.9f);
             for(int side=-1;side<=1;side+=2) {
                 float sy=y+side*3;
+#ifdef PLASMAPONG_MENU_STAMPS
+                fluid_menu_source(&g->fluid,i*2+(side>0),x,sy,(t-.5f)*5*emission,
+                    (side*4+drift*2)*emission,.48f*emission*dye_strength);
+#else
                 fluid_splat(&g->fluid,x,sy,12,(t-.5f)*5*emission,(side*4+drift*2)*emission,0,0);
                 fluid_ball_dye(&g->fluid,x,sy,.48f*emission*dye_strength);
+#endif
             }
         }
     }

@@ -18,6 +18,16 @@ Both resolutions use the same 60 Hz physics, emission and timer settings.
 On NTSC, high res targets a new framebuffer each field: roughly 60 fields,
 or 30 complete interlaced scans, per second.
 
+Real-console benchmarks on SummerCart64 now sustain **59.94 FPS** in the
+high-resolution particle menu and scripted four-player high-resolution tails
+stress gameplay. The default RSP scheduler runs simulation jobs at high
+priority and yields between batches, allowing rendering to progress during
+CPU work. The gameplay capture had no repeated fields or audio underruns over
+ten windows; the menu had one startup repeat and none thereafter. Detailed
+captures and controls are recorded in the hardware benchmark notes below.
+See [the final console bottleneck and fix](docs/hardware-performance.md) for
+the concise findings and acceptance results.
+
 A console performance overlay is enabled for testing: **L** on controller port 1
 shows/hides it; **R** resets its counters. `FPS` shows newly presented frames per
 second followed by measured video refresh rate. `MISS` counts repeated refreshes
@@ -1606,7 +1616,8 @@ recommends separating busy buffers to reduce page misses. See the
 [buffer-placement guidance](https://ultra64.ca/files/documentation/online-manuals/man/pro-man/pro04/04-03.html),
 and [memory-detection requirements](https://ultra64.ca/files/documentation/online-manuals/man-v5-1/caution/caution/index12.htm).
 
-`EXPANSION_BANKS=1` is a small optional experiment, disabled in the playable build.
+`EXPANSION_BANKS=1` began as an optional experiment and is now enabled in the
+playable build following the hardware validation recorded below.
 When libdragon detects an Expansion Pak, a linker allocation wrapper aligns each
 640 × 480 16-bit framebuffer to 1 MiB. Each 614,400-byte buffer then occupies one
 distinct bank, keeping scanned and rendered buffers separate. The observed
@@ -1828,3 +1839,565 @@ log are retained locally in `build/hires2p/`. For the next console comparison,
 select high res and 2P, reset the overlay with R after entering PLAY, then exercise
 jets, suction and each flow effect. Compare both the presented FPS and `MISS`/
 `GAP`; the refresh number after the slash should remain approximately 60.
+
+### SummerCart64 hardware benchmarks
+
+`just benchmark-hardware` builds a separate USB-logging ROM that boots into
+the 640×480 particles menu with a fixed emitter seed, regardless of saved
+options. Controller input remains available; leave the menu idle for matched
+baseline runs. This build preserves the ordinary asynchronous renderer and
+reports simulation, draw submission, frame intervals, VI presentation counters
+and audio debt every 150 rendered frames. USB logging adds some overhead.
+
+Load the ROM into cartridge RAM and start capture. Let `sc64deployer` determine
+whether the current console state permits the upload; switch off only if it
+reports that this is required:
+
+```sh
+just benchmark-hardware
+python3 tools/benchmark-hardware.py plasmapong-hardware.z64 build/hardware/menu-01.log --upload
+```
+
+Turn on the N64 after the debugger says it is listening. Capture ends after ten
+windows (about 36 seconds at 42 rendered FPS). The SD-card ROM and EEPROM file
+are not overwritten; the benchmark uses the cartridge's EEPROM and normal
+save behavior if you change options. Use a new log filename for each run.
+`--port serial:///dev/ttyUSB0` selects a device explicitly; `--timeout 600`
+allows extra time for power-on. To attach without uploading, omit `--upload`.
+Capture saves the raw log and a JSON summary including ROM SHA-256, device
+information and completion status, including partial results on timeout.
+The deployer uses `--no-writeback`, so capture does not write a host save file.
+
+For stage timings and completed-frame work quantiles, use a separate run:
+
+```sh
+just benchmark-hardware-profile
+python3 tools/benchmark-hardware.py plasmapong-hardware-profile.z64 build/hardware/menu-profile-01.log --upload
+```
+
+Power off before each upload. The diagnostic build adds fluid timers and an
+RSP/RDP completion fence; its FPS cannot be treated as the ordinary renderer's
+baseline. Menu simulation is included in the fluid profile for these menu
+benchmark builds. `render_fps` in JSON measures render-loop cadence; actual
+displayed frames are recorded by the cumulative VI `presentation` counters,
+which reset on scene/video changes or controller R. Keep modes and scenes
+fixed during each capture. Audio time within fluid stages remains included.
+Replay a saved capture without connecting hardware using `--replay`.
+Default builds do not enable USB logging or force benchmark menu options.
+
+For fluid-stage timings while retaining ordinary asynchronous rendering, use
+`just benchmark-hardware-stages` and capture `plasmapong-hardware-stages.z64`.
+Compare this run against the baseline before interpreting individual stage
+costs: RDP activity can contend with simulation, and the completed-frame fence
+changes that overlap. Chained operations report inclusive times: for example,
+`pressure_solve` includes the queued divergence and gradient work in the default
+projection chain; zero separate call counts do not mean those operations are
+absent. Likewise, the confinement chain includes curl preparation.
+
+First real-hardware baseline (2026-10-04): SummerCart64 firmware v2.20.2,
+NTSC console with 8 MiB RDRAM, high-res particles menu, ordinary renderer,
+USB logging enabled. Ten 150-render windows measured **44.181 rendered FPS**
+(22.634 ms mean frame interval), **15.753 ms simulation per step** across
+13 simulation windows, and **1.140 ms draw submission per render**. The final
+VI counters recorded 1,499 new framebuffers over 2,035 fields, 536 repeated
+fields and a maximum gap of two fields. All ten audio windows reported zero
+underrun observations. Raw evidence is `build/hardware/menu-baseline-01.log`
+and its `.json` summary. These are measured hardware results; draw submission
+does not include all asynchronous RSP/RDP completion time. Stage diagnosis
+requires the separate diagnostic run before selecting an optimisation.
+
+The first completed-frame diagnostic (`build/hardware/menu-profile-01.log`)
+measured **28.308 rendered FPS**, **11.254 ms simulation per step** and
+**11.102 ms completed drawing per render** over ten frame windows. Inclusive
+fluid stage averages were projection **3.307 ms**, dye advection **1.782 ms**,
+splats **1.596 ms**, velocity advection **1.436 ms**, and confinement **0.842 ms**.
+The fence changes overlap and this run had 663 audio underrun observations;
+these timings are not a clean attribution of the ordinary renderer's cost.
+A stage-only run is needed to compare simulation with the normal overlap.
+The initial capture omitted the final flow/audio timer lines (nine windows
+for those trailing metrics); the capture tool now waits for the final timer
+line, including when USB packets arrive separately.
+
+The ordinary-overlap stage run (`build/hardware/menu-stages-01.log` and `.json`)
+completed all ten frame and trailing diagnostic windows. It measured
+**41.817 rendered FPS**, **15.631 ms simulation per step** across 14 simulation
+windows, and **1.208 ms draw submission per render**. Its first audio window
+had two underrun observations; the remaining nine had zero.
+
+| Inclusive stage | Ordinary overlap (ms/step) | Completed-frame fence (ms/step) |
+| --- | ---: | ---: |
+| Velocity advection | 5.642 | 1.436 |
+| Pressure/projection | 3.314 | 3.307 |
+| Dye advection | 1.786 | 1.782 |
+| Splats | 1.720 | 1.596 |
+| Curl/confinement | 0.842 | 0.842 |
+
+The velocity timer covers trace/advection queue submission and syncpoint
+completion, so it includes waiting behind previously queued work. Approximately
+**4.206 ms/step** of the overlap-dependent difference appears in that first RSP
+stage; later RSP stages are nearly unchanged. This points to render/queue
+interaction as the next investigation, but does not distinguish RSP queue
+blocking from RDRAM contention. The stage build's added timing/logging overhead
+also changes cadence relative to the 44.181 FPS unprofiled baseline. Preserve
+that baseline for optimisation comparisons rather than summing these inclusive
+stage measurements into an assumed standalone execution cost.
+
+Next diagnostic: `just benchmark-hardware-queue` builds
+`plasmapong-hardware-queue.z64`. `QUEUE_PROFILE=1` inserts and times an RSP
+syncpoint before each velocity-advection call, attributing earlier queued work
+to `queue_wait`. It does not request full RDP completion. The extra syncpoint
+changes scheduling, so compare total simulation time and queue-wait plus
+advection against the ordinary stage build. A large queue wait and advection
+near the fenced 1.436 ms would support queue backlog as the main contributor;
+continued slow advection after the queue split would require investigating
+concurrent RDP/VI bandwidth pressure. Keep normal rendering in the eventual
+unprofiled candidate and validate displayed FPS, repeated fields, and audio on
+hardware before retaining any optimisation.
+
+The queue-split run (`build/hardware/menu-queue-01.log` and `.json`) measured
+**4.221 ms/step queue wait** and **1.436 ms/step velocity advection**, with
+projection **3.310 ms/step**. This attributes the ordinary-overlap slowdown to
+earlier queued commands rather than a slower advection kernel in this test.
+The extra diagnostic synchronization changed cadence to **40.373 rendered
+FPS** and produced 35 audio underrun observations, so it remains diagnostic.
+
+First candidate: `just benchmark-hardware-batch` builds
+`plasmapong-hardware-batch.z64` with `FRAME_BLOCK=1` and no fluid profiling or
+completion fence. It records texture drawing, particles, static geometry and
+text together each frame, bypassing the separate per-element block caches.
+Particle rectangles use RDPQ while recording (raw `rdpq_exec` cannot run inside
+a block). Pixel generation stays outside recording, and previous-frame
+completion still protects shared texture and block memory. The candidate aims
+to reduce command-buffer transitions behind which simulation waits. It adds
+CPU recording/allocation cost and requires hardware comparison before becoming
+the default. Its high-res particles menu completed two Ares measurement windows
+with RDP validation and no command errors; validation timing is diagnostic only.
+
+Hardware rejected the frame-recording candidate: the ten-window
+`build/hardware/menu-batch-01.log` run averaged **29.703 FPS**, **14.118 ms
+simulation per step**, **5.049 ms draw submission per render**, and 586 audio
+underrun observations. CPU recording cost exceeded the saved queue time.
+`FRAME_BLOCK` remains an opt-in experiment and is not enabled by default.
+
+Next candidate: `just benchmark-hardware-highpri` builds
+`plasmapong-hardware-highpri.z64`, keeping cached drawing while placing
+simulation's RSP commands in the high-priority queue (`FLUID_HIGHPRI=1`).
+All simulation overlays are registered before entering that queue. The ordinary
+pixel-producer guard still releases fluid source data before simulation.
+High-priority batches cannot use ordinary syncpoints, so each existing DMA
+completion point closes/synchronizes the high-priority batch before CPU reads,
+then resumes its queue context. Boot fixtures and pixel production keep normal
+queue waits. This changes scheduling and still requires hardware validation;
+the RSP can switch priority only after its current command finishes.
+Empty simulation batches (for example lobby steps) also enqueue a no-op before
+closing, so the pinned library's checked write path handles buffer rollover
+before its directly appended high-priority epilogue. The first stress run
+caught this assertion; the corrected candidate completed two 4P high-res tails
+stress windows with RDP validation, no queue assertions or RDP errors, and zero
+audio underrun observations (`build/hardware/highpri-4p-validate-02.log`).
+
+Hardware did not retain the high-priority candidate: ten menu windows measured
+**43.704 FPS**, **12.448 ms simulation per step**, and **5.690 ms draw submission
+including the previous-frame completion wait**, with zero audio underrun
+observations (`build/hardware/menu-highpri-01.log` and `.json`). Simulation
+finished earlier, but the additional wait moved into drawing and total
+presentation did not beat the 44.181 FPS baseline. This historical
+`FLUID_HIGHPRI=1 FLUID_HIGHPRI_YIELD=0` variant remains rejected; the yielding
+variant validated later is now the default.
+
+`just benchmark-hardware-banks` builds `plasmapong-hardware-banks.z64` to test
+the pre-existing `EXPANSION_BANKS=1` allocation wrapper on the detected 8 MiB
+console. It uses the ordinary renderer and simulation queue, without frame
+recording or high-priority work. Each 640×480 framebuffer is aligned to a
+distinct 1 MiB bank; startup logs record the allocation addresses. Compare
+against the original menu baseline; no change in resolution or pixels is
+intended.
+
+The ten-window bank-placement run (`build/hardware/menu-banks-01.log` and
+`.json`) measured **45.589 FPS**, a **3.188% increase** over 44.181 FPS.
+Simulation remained **15.755 ms/step**, draw submission averaged **1.110 ms/frame**,
+and all ten audio windows reported zero underrun observations. The framebuffers
+were allocated at physical addresses 0x00100000, 0x00200000 and 0x00300000.
+This is a modest hardware improvement, not a 60 FPS result; repeat and gameplay
+validation remain necessary before enabling the placement policy by default.
+
+`just benchmark-hardware-ink16` adds `INK16=1` to that bank-placement control.
+It keeps the established RGBA32 pixel producer, waits for it, then packs its
+48×33 output to RGBA5551 on the CPU and uploads a 16-bit texture. The actual
+3168-byte texture fits within TMEM, unlike the 6336-byte RGBA32 source. This
+experiment measures the upload/tiling benefit before investing in RSP packing.
+Display resolution stays 640×480; colors are quantized before bilinear filtering,
+so subtle gradient differences need visual review. It adds CPU conversion and
+producer synchronization cost and stays opt-in pending hardware results.
+
+The CPU-packed run (`build/hardware/menu-ink16-01.log` and `.json`) regressed
+to **37.840 FPS**, with **15.189 ms simulation per step**, **2.250 ms draw
+submission per render** and 53 audio underrun observations. This rejects CPU
+conversion as an optimisation; it does not isolate the direct-packed texture's
+benefit from conversion and synchronization costs.
+
+`just benchmark-hardware-ink16-rsp` builds the direct-packing version. New
+preparation-overlay commands generate RGBA5551 dye pixels directly and fetch
+SPEED colors from a once-packed palette. The established RGBA32 commands remain
+available. Both formats are checked against CPU references across 80 fields,
+including source integrity, padded destination rows, command interleaving and
+DMA guards. The candidate keeps asynchronous pixel production and the ordinary
+source-ownership syncpoint, avoiding CPU conversion and its early completion
+wait. Exact pixel/velocity/gradient/projection fixtures and two 4P high-res
+SPEED stress windows with RDP validation passed in Ares
+(`build/hardware/ink16-rsp-validate.log`). Hardware timing is still required.
+
+Direct RSP packing measured **46.031 FPS** with zero audio underrun observations
+over ten hardware windows (`build/hardware/menu-ink16-rsp-01.log` and `.json`).
+Simulation averaged **15.787 ms/step** and draw submission **1.054 ms/frame**.
+This is only **0.969%** faster than the 45.589 FPS bank-placement result; verify
+repeatability and the color tradeoff before retaining it as a default.
+
+`just benchmark-hardware-menu-stamps` tests `MENU_STAMPS=1` against the
+bank-placement control, using the original RGBA32 texture. The 26 stationary
+label emitters cache their splat/gold grid footprints and weights, rebuilding
+when their positions change. Application retains emitter order, fixed-storage
+rounding, zero-weight velocity/blue clamps and gold limits. A 26,000-case
+differential test matches the original scalar operations exactly, including
+cache hits/invalidation and both source banks (`tests/menu_stamp_test.c`, also
+run by `tools/check.sh`). Gameplay emitters retain their existing path. This
+was initially opt-in pending repeat measurements and gameplay validation;
+those checks passed later, and menu source caching is now the default.
+
+The cached-menu candidate measured **46.561 FPS**, simulation **15.751 ms/step**
+and draw submission **1.089 ms/frame**, with zero audio underrun observations
+over ten hardware windows (`build/hardware/menu-stamps-01.log` and `.json`).
+That is 2.13% above bank placement alone and 5.39% above the original baseline.
+
+`just benchmark-hardware-vi-point` adds `HIRES_VI_POINT=1` to that candidate.
+It disables VI resampling only at 640x480; 320x240 retains resampling because
+libdragon prohibits unfiltered NTSC 16-bit scanout at widths at or below 320.
+RDP texture filtering, color precision and simulation remain unchanged. This
+may sharpen the scanout image and needs a visual check as well as hardware
+timing before deciding whether to retain it.
+
+The VI point-sampling candidate measured **46.103 FPS**, simulation
+**15.762 ms/step** and draw submission **1.087 ms/frame**, with zero audio
+underrun observations (`build/hardware/menu-vi-point-01.log` and `.json`).
+It did not improve on the 46.561 FPS cached-menu control; retain VI resampling.
+
+The cached-menu repeat measured **46.578 FPS**, simulation **15.751 ms/step**
+and draw submission **1.087 ms/frame**, with zero audio underrun observations
+(`build/hardware/menu-stamps-02.log` and `.json`). The two runs differ by only
+0.036%, supporting the observed menu gain. Four-player hardware validation is
+still required before enabling the candidate by default.
+
+The retained candidate's scripted four-player 640x480 particle-tail stress run
+measured **51.174 FPS**, simulation **14.562 ms/step** and draw submission
+**2.277 ms/frame**, with zero audio underrun observations over ten hardware
+windows (`build/hardware/gameplay-candidate-01.log` and `.json`). The longest
+presentation gap was two VI refreshes. Ares also completed two matching
+four-player windows with 4 MiB RAM, confirming the framebuffer allocation
+fallback works without an Expansion Pak (`build/hardware/gameplay-4mib-ares.log`).
+This is stability evidence; a matched hardware control is needed to establish
+the gameplay performance effect.
+
+The matched four-player hardware control measured **50.477 FPS**, simulation
+**14.558 ms/step** and draw submission **2.300 ms/frame**, with zero audio
+underrun observations (`build/hardware/gameplay-baseline-01.log` and `.json`).
+The candidate's 51.174 FPS is a 1.38% gain in this replay; menu caching does not
+change the PLAY path, so the gameplay difference tests framebuffer placement.
+
+`just benchmark-hardware-menu-labels` adds `MENU_LABEL_BLOCK=1`. Instead of
+switching between cached title and individual shadow/text buffers, it records
+the entire menu foreground once and replays it as one block. The cache key
+covers selection, player count and connected-controller count; changing video
+mode frees the cache. Drawing order and glyphs remain unchanged. This is a
+separate experiment from recording every frame: steady-state frames do not
+rebuild the block. Hardware measurement is required to judge the benefit.
+
+The menu-foreground refactor preserves byte-identical host draw output across
+15 scenes. Its validation ROM exercised low/high/low/high video changes through
+Options, returned to the menu, selected four players and entered gameplay, with
+RDP validation enabled and no reported warnings/errors
+(`build/hardware/menu-labels-validate.log`).
+
+The single menu-foreground buffer measured **47.142 FPS** with zero audio
+underrun observations (`build/hardware/menu-labels-01.log` and `.json`). Draw
+submission averaged **0.837 ms/frame**, down from 1.087 ms in the retained
+control, while simulation averaged **15.939 ms/step**. It gains 1.21% over that
+control, about 6.70% over the original baseline; this still misses 60 FPS.
+`just benchmark-hardware-retained-stages` profiles this version, separating
+earlier RSP queue waits from actual velocity advection without a full RDP fence.
+As with the earlier queue diagnostic, the extra syncpoint can affect scheduling;
+use it to attribute cost, not as the uninstrumented FPS result.
+
+The retained stage ROM in Ares measured **10.918 ms/step**, with queue wait
+**0.034 ms**, velocity advection **1.232 ms**, confinement **0.692 ms**,
+projection **3.049 ms** and dye advection **1.532 ms**
+(`build/hardware/menu-retained-stages-ares.log`). The earlier hardware queue
+diagnostic waited 4.221 ms before advection; the retained hardware comparison
+is pending because the first capture received no ROM output. Rendering lateness
+also causes additional fixed 60 Hz simulation steps per render: the best menu
+run averages 21.212 ms per rendered frame even though its individual simulation
+steps average 15.939 ms. Do not add per-step timings to per-frame timings
+without accounting for the number of simulation steps.
+
+`just benchmark-hardware-flat-fluid` is a diagnostic, requiring `BENCH_MENU=1`.
+It retains simulation, particle drawing and asynchronous texture generation,
+but replaces the fluid texture blit with an opaque flat fill. Compare it with
+the unprofiled menu-labels ROM to isolate the textured backdrop's RDP cost.
+Its missing fluid backdrop is intentional and is not a proposed visual change.
+
+An exact-ROM comparison of the original queue diagnostic now isolates the
+dominant emulator/hardware difference (`build/hardware/menu-queue-ares-01.log`
+versus `menu-queue-01.log`): Ares simulation **11.377 ms/step**, hardware
+**15.630 ms/step**; Ares pre-advection queue wait **0.030 ms**, hardware
+**4.221 ms**. The additional queue wait accounts for about 98.5% of the net
+simulation-time difference in these profiled runs. Projection is 3.057 vs
+3.310 ms, velocity advection 1.258 vs 1.436 ms, confinement 0.691 vs 0.844 ms,
+and dye advection 1.586 vs 1.784 ms. This points to earlier queued rendering
+blocking simulation as the main difference; the flat-backdrop diagnostic is
+intended to distinguish the textured draw's cost. These instrumented runs are
+attribution evidence, not the ordinary renderer's FPS measurements.
+
+The fresh retained-stage hardware capture completed
+(`build/hardware/menu-retained-stages-03.log` and `.json`): simulation
+**15.890 ms/step**, pre-advection queue wait **4.977 ms**, velocity advection
+**1.422 ms**, confinement **0.842 ms**, projection **3.310 ms**, dye advection
+**1.766 ms**, splats **1.375 ms**, gold injection **0.236 ms** and particle
+sampling **0.443 ms**. Its exact-ROM Ares comparison waits only 0.034 ms and
+simulates in 10.918 ms. About 99.4% of the net simulation-time difference is
+additional queue wait in this diagnostic. Two audio underrun observations
+occurred in the first window, zero thereafter. The profile renders at 42.510
+FPS; retain the ordinary unprofiled 47.142 FPS result as the candidate's
+performance number, because the added syncpoint changes scheduling.
+
+The flat-backdrop diagnostic reached **59.938 FPS on hardware**, simulation
+**10.621 ms/step** and draw submission **0.787 ms/frame**, with zero audio
+underrun observations (`build/hardware/menu-flat-fluid-01.log` and `.json`).
+There was one startup repeat; the cumulative missed count stayed at one through
+all ten windows. Retaining simulation, particles and texture generation while
+replacing the textured draw restores the target cadence. This isolates the
+textured backdrop and resulting queue backpressure rather than proving a
+production fix; retain the fluid image in any final candidate.
+
+`just benchmark-hardware-draw-stream` tests `DRAW_STREAM=1` with that image
+retained. It generates texture blit and particle rectangle commands in the
+ordinary stream, bypassing the cached texture block and raw particle buffer,
+while retaining cached menu foreground commands. The aim is fewer RDP buffer
+switches; repeated CPU command preparation is the tradeoff. Ares RDP validation
+reported no warnings/errors (`build/hardware/menu-draw-stream-validate.log`).
+
+Streaming alone measured **46.875 FPS**, simulation **15.781 ms/step** and
+draw submission **1.033 ms/frame**, with zero audio underrun observations
+(`build/hardware/menu-draw-stream-01.log` and `.json`). It did not beat the
+47.142 FPS cached-background control. Buffer switches within the foreground
+remain a possible source of backpressure.
+
+`just benchmark-hardware-menu-buffer` adds `MENU_BUFFER_KIB=32` to streaming.
+This isolated experiment includes the pinned libdragon internal header and
+sets the menu block's initial allocation capacity after `rspq_block_begin`.
+It changes neither global library defaults nor other blocks. The measured
+buffer-chain count is logged whenever the foreground is rebuilt. Ares confirms
+one RDP static buffer per foreground and reports no RDP warnings/errors
+(`build/hardware/menu-buffer-validate.log`). This depends on the pinned library's
+internal API; keep opt-in pending hardware benefit and broader validation.
+
+The one-buffer foreground measured **46.894 FPS**, simulation **15.779 ms/step**
+and draw submission **1.036 ms/frame**, with zero audio underrun observations
+(`build/hardware/menu-buffer-01.log` and `.json`). Hardware confirms one buffer,
+but this does not improve on the 47.142 FPS control. Do not retain the larger
+allocation or streaming by default based on these results.
+
+`just benchmark-hardware-tail-sync` restores the best cached renderer and tests
+`RDP_TAIL_SYNC=1`. The pinned library normally schedules SYNC_FULL and then
+queues detach target cleanup. Its hardware workaround blocks subsequent RDP
+transfers until SYNC_FULL completes, which can stall the shared RSP command
+stream. The opt-in attachment implementation queues cleanup first, then
+SYNC_FULL and flushes; the display callback still runs only after drawing
+completes. The other attachment operations are copied unchanged from pinned
+libdragon e356bf3, with its license alongside `src/rdpq_tail_sync.c`. This
+experiment relies on that library's internal header and needs hardware and
+mode-switch/gameplay validation. Ares RDP validation reported no warnings or
+errors (`build/hardware/tail-sync-validate.log`).
+
+The reordered completion candidate measured **46.998 FPS**, simulation
+**15.948 ms/step** and draw submission **0.827 ms/frame**, with zero audio
+underrun observations (`build/hardware/menu-tail-sync-01.log` and `.json`).
+It does not improve on the control, so keep this library override disabled.
+The proposed completion barrier does not explain the measured stall by itself.
+
+`just benchmark-hardware-queue-pc` now samples only SP halt
+status, and RDP command-busy/DMA-busy/end-valid status while waiting at the
+pre-advection syncpoint. Interrupts stay enabled during the 100-microsecond
+interval between samples, and the wait is bounded to two seconds. Reports
+contain status counts per 150 simulation steps; the capture JSON retains the
+sampling mode and counts. The legacy recipe/flag name remains for compatibility.
+This diagnostic intentionally changes polling and logging overhead.
+
+The initial live-PC capture (`build/hardware/menu-queue-pc-01.log` and `.json`)
+sampled 706,673 times. RDP command-busy was set in **99.914%** of samples,
+DMA-busy in **99.879%**, and end-valid in **99.223%**; the RSP was already
+halted in only **0.090%**. Its instruction addresses are unreliable because
+PC reads require the RSP to be halted; do not map those hotspots to code.
+The capture parser labels older unmarked PC reports as unreliable. Status flags
+support RDP backpressure; the instrumented 40.514 FPS is not a candidate
+performance result. The retained uninstrumented control remains 47.142 FPS.
+
+The halted-PC ROM passed two Ares windows with zero audio underruns
+(`build/hardware/menu-queue-pc-halt-ares.log`). Ares completed the queued work
+before the polling loop, so it collected zero PC samples; halt/read/resume
+was not exercised. On hardware it triggered libdragon's `Unexpected RDP
+interrupt` assertion before any timing window (`menu-queue-pc-halt-01.log`).
+The screenshot backtrace locates it in `queue_sample_wait`, with the RDP
+full-sync signal absent in the interrupt handler. The exact hardware interaction
+is unresolved. This diagnostic was rejected: the sampler no longer halts the
+RSP or reads PC, and the recovery ROM uses the previously measured cached
+renderer without queue instrumentation. Future instruction tracing must be
+implemented inside the RSP queue rather than halting it externally.
+
+The recovery control completed ten hardware windows at **47.195 FPS**, with
+simulation **15.941 ms/step**, draw submission **0.835 ms/frame**, and zero
+audio underrun observations (`build/hardware/menu-recovery-01.log` and `.json`).
+It retains the fluid image, bank-aligned framebuffers, cached menu splats and
+foreground. Removing the halted-PC sampler restored the prior behavior.
+
+`just benchmark-hardware-rdp-trace` builds an isolated tracing toolchain image
+through `tools/Dockerfile.trace`. Its asserted patch to the pinned
+`rsp_queue.inc` adds two resident DMEM words after the internal command table,
+outside the queue's C state and DMA input buffer. The RSP stores the caller
+and requested wait mask on entering `RSPQ_RdpWait`, and clears the mask on
+return. The original busy-poll loop is unchanged; the patch adds two entry
+instructions and replaces the return delay-slot NOP with a store. All library
+and game overlays are rebuilt against the same shared queue layout. Normal
+builds keep the original toolchain image.
+
+The build generates CPU marker addresses from the queue ELF and checks their
+DMEM range/alignment. The CPU reads these words during the existing 100-us
+status polling interval, without halting the RSP or masking interrupts.
+Reports distinguish mask `0` (outside this wait) from `0x040` (command busy),
+`0x100` (DMA busy), `0x200` (end valid), or combinations, and retain sampled
+callers. These are sampled wait occupancy, not instruction cycle counts;
+the caller is read separately and may race a transition. The matching queue
+disassembly is retained at `build/hardware/rsp-queue-trace-disassembly.txt`.
+
+The tracing ROM passed two Ares windows with zero audio underruns and no
+assertions (`build/hardware/menu-rdp-trace-ares.log`). The modified RSP queue
+executed rendering, but Ares again completed queued work before CPU polling,
+so hardware is needed to collect nonzero wait samples.
+
+The passive trace completed ten hardware windows without an assertion
+(`build/hardware/menu-rdp-trace-01.log` and `.json`). Of 100,990 queue-wait
+samples, **92,869 (91.959%)** were inside `RSPQ_RdpWait` with mask **0x200
+(END_VALID)**; every recorded caller was **0x194**, the return address within
+`RSPQCmd_RdpSetBuffer`. The remaining 8,121 samples had marker zero. No nonzero
+mask included command-busy or DMA-busy. Thus the observed wait is submission
+backpressure while switching command buffers, not that routine's explicit
+wait for DMA completion or pending full-sync completion. It does not prove
+that buffer switches alone cause the full rendering cost. The diagnostic
+averaged **4.958 ms/step** queue wait and **42.326 FPS**, with two startup audio
+underrun observations and zero thereafter; use the 47.195 FPS recovery control
+for performance comparison.
+
+`just benchmark-hardware-menu-template` tests `MENU_TEMPLATE=1`, a benchmark-only
+candidate that records the fluid blit, particle fill mode, and menu foreground
+into one reusable block with a 32-KiB initial RDP allocation. It reserves 520
+raw particle command slots aligned to complete 16-byte CPU cache lines.
+Each frame rebuilds the existing particle commands and copies them into those
+slots, padding the unused tail with RDP NOPs; the original previous-frame
+completion wait protects reuse. Title/labels rebuild on selection, player
+count, connected-controller count or flow-effect changes, and video changes
+release the template. The live performance overlay remains outside the block.
+Fluid RGBA32 generation, bilinear sampling, coordinates, particle colors/order
+and simulation are retained. This avoids the rejected per-frame recording
+cost of `FRAME_BLOCK=1`, while depending on the pinned RDP block internal API.
+
+Active-template RDP validation passed two Ares windows with one RDP buffer
+and no warnings, assertions or audio underruns
+(`build/hardware/menu-template-validate-ares-02.log`). The earlier unsuffixed
+validation log exercised the fallback because the initial guard excluded the
+visible performance overlay; it is not template validation evidence.
+
+The template capture listener expired before boot (`menu-template-01.log`);
+reconnecting without re-upload captured ten complete windows from the running
+ROM (`build/hardware/menu-template-02.log` and `.json`). It measured **44.998
+FPS**, simulation **15.843 ms/step**, draw submission **0.970 ms/frame**, and
+zero audio underrun observations. Audio debt remained roughly 2,200 samples.
+The cumulative seven-VI maximum gap predates this reconnected capture and
+cannot be attributed to a steady captured frame. This does not beat the
+47.195 FPS recovery control; keep the template disabled.
+
+`just benchmark-hardware-yield` tests `FLUID_HIGHPRI_YIELD=1` alongside
+`FLUID_HIGHPRI=1` on the retained cached renderer. The earlier high-priority
+experiment reopened its queue immediately after every completed batch and
+kept it open throughout CPU-only simulation. The pinned library requests RSP
+high priority at `rspq_highpri_begin`; an empty open batch prevents normal
+queued rendering from progressing until its epilogue is submitted. That can
+defer drawing instead of overlapping it with CPU work.
+
+The yielding candidate opens high priority immediately before enqueueing the
+first RSP job in a batch and closes/synchronizes at the existing output wait,
+without reopening. Chained jobs share a batch. CPU cache maintenance before
+the first job, splats and other CPU work leave normal rendering eligible.
+Step completion retires a remaining open batch; paused/lobby steps with no
+RSP work open none. Texture production after simulation remains on the
+ordinary queue. This changes scheduling rather than simulation or rendering
+content. Native high priority still switches only at command boundaries; it
+does not interrupt an RDP buffer wait already executing.
+
+Two Ares RDP-validation windows passed with no warnings/assertions or audio
+underruns (`build/hardware/menu-yield-validate-ares.log`). The unvalidated
+candidate held the expected 60-FPS cadence with zero missed fields and zero
+audio underruns over two windows (`build/hardware/menu-yield-ares.log`), at
+**10.164 ms/step** simulation and **0.720 ms/frame** draw submission. Hardware
+benefit remains to be measured.
+
+The yielding candidate reached **59.941 FPS on real NTSC hardware** across
+ten complete windows (`build/hardware/menu-yield-01.log` and `.json`), versus
+47.195 FPS for the recovery control. Simulation fell to **10.467 ms/step**
+from 15.941 ms/step, and draw submission was **0.782 ms/frame**. All ten
+windows contained exactly 150 steps per 150 frames. Audio underrun observations
+and sample debt stayed zero. There was one startup repeated field; cumulative
+misses remained one through the final 1,498 new frames / 1,499 VI. The full
+RGBA32 bilinear fluid image and particles are retained. This demonstrates the
+menu target cadence after changing queue scheduling; broader hardware gameplay
+still needs the matched capture below before treating it as a general fix.
+
+`just benchmark-hardware-yield-gameplay` applies the same scheduling to the
+existing deterministic four-player high-resolution tails/stress scenario,
+retaining bank placement and menu source stamps. Its matched prior hardware
+control measured 51.174 FPS (`gameplay-candidate-01.log`). The host suite
+(`./tools/check.sh`) passed after the scheduling change. Four-player Ares
+RDP-validation runs passed two windows with 8 MiB and 4 MiB RDRAM, zero
+warnings/assertions, zero missed fields in PLAY, and zero audio underruns
+(`build/hardware/gameplay-yield-validate-ares.log` and
+`build/hardware/gameplay-yield-4m-validate-ares.log`). The 4-MiB run confirms
+the non-bank-aligned allocation fallback. Validation adds CPU overhead; its
+draw timing is not the uninstrumented candidate's hardware timing.
+
+The matched four-player high-resolution tails/stress hardware capture reached
+**59.942 FPS** across ten render/presentation/audio windows
+(`build/hardware/gameplay-yield-01.log` and `.json`), versus 51.174 FPS for the
+prior bank-aligned control. Every window contained 150 simulation steps per
+150 rendered frames. PLAY presentation reached **1,490 new frames / 1,490 VI**,
+with zero repeats, zero misses and a maximum one-VI gap throughout. All audio
+windows reported zero underruns and zero sample debt. Simulation averaged
+**10.000 ms/step** across nine reported timing windows (the scene timing window
+starts later than the render counter); draw submission averaged **2.287 ms/frame**.
+
+The normal playable build now enables yielding high-priority scheduling for
+the complete RSP backend, bank-aligned high-resolution framebuffers when an
+Expansion Pak is available, exact menu source caching on the fixed backend,
+and cached menu foreground commands. Queue-wait profiling defaults to the
+ordinary queue, and CPU/comparison backends disable high priority automatically.
+`FLUID_HIGHPRI=0`, `EXPANSION_BANKS=0`, `MENU_STAMPS=0` and
+`MENU_LABEL_BLOCK=0` independently disable the retained changes. Archived
+hardware benchmark recipes specify the historical settings explicitly so
+promoting defaults does not silently change their controls. The rejected
+frame recording/template, streaming, 16-bit ink, VI point-sampling and library
+tail-sync overrides remain disabled.
+
+The playable `plasmapong.z64` was built with the new defaults and USB logging
+for manual console play. Default resolution switching passed low/high/low/high
+through Options with RDP validation on both 8 MiB and 4 MiB systems
+(`build/hardware/default-video-8m-validate-ares.log` and
+`build/hardware/default-video-4m-validate-ares.log`), without warnings/assertions
+or audio underrun observations. Mode transitions deliberately interrupt cadence;
+these are safety/behavior checks rather than steady hardware performance tests.
+The CPU comparison ROM also builds with the new conditional defaults.

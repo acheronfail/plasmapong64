@@ -3,6 +3,8 @@
 #include "fluid_profile.h"
 #include "fluid_pressure.h"
 #include "fluid_advection.h"
+#include <math.h>
+#include <string.h>
 #ifdef PLASMAPONG_CONFINEMENT_FIXED
 #include "fluid_confinement.h"
 #endif
@@ -15,8 +17,60 @@
 #ifdef PLASMAPONG_FLUID_PROFILE
 FluidProfile fluid_profile;
 #endif
-#include <math.h>
-#include <string.h>
+#ifdef PLASMAPONG_QUEUE_PC_PROFILE
+#ifdef PLASMAPONG_RDP_WAIT_TRACE
+#include <plasmapong_rdp_trace.h>
+static unsigned queue_wait_masks[1024],queue_wait_callers[1024];
+#endif
+static unsigned queue_samples,queue_halted;
+static unsigned queue_dp_busy,queue_dma_busy,queue_end_valid;
+static void queue_sample_wait(rspq_syncpoint_t point) {
+    uint64_t begin=get_ticks();
+    while(!rspq_syncpoint_check(point)) {
+        /* Do not halt a running RDP queue: it can disrupt full-sync handling.
+           Read only status here; active PC values are not reliable. */
+        unsigned sp=*SP_STATUS;
+        unsigned dp=*(volatile uint32_t *)0xa410000c;
+#ifdef PLASMAPONG_RDP_WAIT_TRACE
+        unsigned mask=*(volatile uint32_t *)PLASMAPONG_RDP_WAIT_MASK_ADDRESS;
+        unsigned caller=*(volatile uint32_t *)PLASMAPONG_RDP_WAIT_CALLER_ADDRESS;
+        queue_wait_masks[mask&0x3ff]++;
+        if(mask) queue_wait_callers[(caller&0xffc)>>2]++;
+#endif
+        queue_samples++;
+        queue_halted+=!!(sp&SP_STATUS_HALTED);
+        queue_dp_busy+=!!(dp&0x40);
+        queue_dma_busy+=!!(dp&0x100);
+        queue_end_valid+=!!(dp&0x200);
+        assertf(get_ticks()-begin<TICKS_FROM_US(2000000),"queue sampler timeout");
+        /* Leave interrupts enabled between samples to service audio. */
+        wait_ticks(TICKS_FROM_US(100));
+    }
+}
+void fluid_queue_pc_report(void) {
+    debugf("Queue PC sampler: status only, period 100 us\n");
+    debugf("Queue PC: total %u, halted %u, DP busy %u, DMA busy %u, end valid %u\n",
+        queue_samples,queue_halted,queue_dp_busy,queue_dma_busy,queue_end_valid);
+#ifdef PLASMAPONG_RDP_WAIT_TRACE
+    for(unsigned i=0;i<1024;i++) if(queue_wait_masks[i])
+        debugf("RSP wait mask: 0x%03x samples %u\n",i,queue_wait_masks[i]);
+    for(unsigned rank=0;rank<6;rank++) {
+        unsigned best=0;
+        for(unsigned i=1;i<1024;i++) if(queue_wait_callers[i]>queue_wait_callers[best]) best=i;
+        if(!queue_wait_callers[best]) break;
+        debugf("RSP wait caller: 0x%03x samples %u\n",best*4,queue_wait_callers[best]);
+        queue_wait_callers[best]=0;
+    }
+    memset(queue_wait_masks,0,sizeof(queue_wait_masks));
+    memset(queue_wait_callers,0,sizeof(queue_wait_callers));
+#endif
+    queue_samples=queue_halted=queue_dp_busy=queue_dma_busy=queue_end_valid=0;
+}
+#endif
+#ifdef PLASMAPONG_MENU_STAMPS
+#include <stdbool.h>
+#include <assert.h>
+#endif
 _Static_assert((FW-2)%2==0,"pressure loop handles two interior cells at a time");
 _Static_assert((-1>>1)==-1,"fixed-point pressure requires arithmetic right shift");
 /* Q12 pressure: max |divergence| <= 32760 * 4096. Starting from zero,
@@ -308,6 +362,19 @@ static inline void add_confinement(FluidFlowValue *v,float amount) {
 void fluid_velocity_step(Fluid *f,float dt) {
     FluidFlow *velocity=fluid_velocity(f);
     PROFILE_BEGIN();
+#ifdef PLASMAPONG_QUEUE_PROFILE
+    /* Diagnostic split: retire earlier RSP commands before timing advection.
+       A syncpoint does not request full RDP completion. This extra CPU wait
+       changes scheduling, so compare its total against the stage-only run. */
+    rspq_syncpoint_t queued=rspq_syncpoint_new();
+    rspq_flush();
+#ifdef PLASMAPONG_QUEUE_PC_PROFILE
+    queue_sample_wait(queued);
+#else
+    rspq_syncpoint_wait(queued);
+#endif
+    PROFILE_END(PROFILE_QUEUE_WAIT);
+#endif
     FluidFlow *next=&f->velocity[f->velocity_bank^1];
     const float grid_dt=dt/CELL,decay=1-FLUID_DAMPING*dt;
     /* Semi-Lagrangian advection: bounded even during a strong jet. */
@@ -406,6 +473,65 @@ static void ball_dye(Fluid *f,float x,float y,float amount,int hot) {
 }
 void fluid_ball_dye(Fluid *f,float x,float y,float amount) { ball_dye(f,x,y,amount,0); }
 void fluid_hot_ball_dye(Fluid *f,float x,float y,float amount) { ball_dye(f,x,y,amount,1); }
+#ifdef PLASMAPONG_MENU_STAMPS
+typedef struct {
+    unsigned count;
+    uint16_t index[25];
+    float weight[25];
+} MenuFootprint;
+static struct {
+    bool valid;
+    float x,y;
+    MenuFootprint velocity,gold;
+} menu_sources[26];
+static void menu_footprint(MenuFootprint *p,float x,float y,float radius,bool squared) {
+    int x0=(int)clampf((x-radius)/CELL,0,FW-1),x1=(int)clampf((x+radius)/CELL,0,FW-1);
+    int y0=(int)clampf((y-radius)/CELL,0,FH-1),y1=(int)clampf((y+radius)/CELL,0,FH-1);
+    const float inv_radius2=1/(radius*radius);
+    p->count=0;
+    for(int iy=y0;iy<=y1;iy++) for(int ix=x0;ix<=x1;ix++) {
+        float dx=(ix+.5f)*CELL-x,dy=(iy+.5f)*CELL-y;
+        /* Radius 8 division is an exact power-of-two scaling. Preserve
+           radius 12's original multiply by its precomputed reciprocal. */
+        float w=maxf(0,1-(squared?(dx*dx+dy*dy)*inv_radius2:(dx*dx+dy*dy)/(radius*radius)));
+        assert(p->count<25);
+        p->index[p->count]=iy*FW+ix;
+        p->weight[p->count++]=squared?w*w:w;
+    }
+}
+void fluid_menu_source(Fluid *f,unsigned slot,float x,float y,float u,float v,float gold) {
+    assert(slot<26);
+    if(!menu_sources[slot].valid || menu_sources[slot].x!=x || menu_sources[slot].y!=y) {
+        menu_footprint(&menu_sources[slot].velocity,x,y,12,true);
+        menu_footprint(&menu_sources[slot].gold,x,y,8,false);
+        menu_sources[slot].x=x; menu_sources[slot].y=y; menu_sources[slot].valid=true;
+    }
+    FluidFlow *velocity=fluid_velocity(f);
+    FluidInk *ink=fluid_dye(f);
+    u*=VELOCITY_SCALE; v*=VELOCITY_SCALE;
+    PROFILE_BEGIN();
+    const MenuFootprint *p=&menu_sources[slot].velocity;
+    for(unsigned i=0;i<p->count;i++) {
+        unsigned k=p->index[i]; float w=p->weight[i];
+        if(w==0) {
+            const int limit=420*VELOCITY_SCALE;
+            int a=velocity->u[k],b=velocity->v[k];
+            velocity->u[k]=a<-limit?-limit:a>limit?limit:a;
+            velocity->v[k]=b<-limit?-limit:b>limit?limit:b;
+        } else {
+            force_add(&velocity->u[k],u*w); force_add(&velocity->v[k],v*w);
+        }
+        /* The original zero-dye splat still clamps its blue channel. */
+        int b=ink->blue[k]; ink->blue[k]=b<0?0:b>3*DYE_SCALE?3*DYE_SCALE:b;
+    }
+    PROFILE_END(PROFILE_SPLAT);
+    p=&menu_sources[slot].gold;
+    for(unsigned i=0;i<p->count;i++) {
+        float w=p->weight[i]; ink_add(&ink->gold[p->index[i]],gold*w*w,.65f);
+    }
+    PROFILE_END(PROFILE_BALL_DYE);
+}
+#endif
 static inline uint32_t dye_color(const FluidInk *ink_grid,int k) {
 #ifdef PLASMAPONG_DYE_FIXED
     int r=ink_grid->red[k],b=ink_grid->blue[k],g=ink_grid->gold[k];

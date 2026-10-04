@@ -1,11 +1,15 @@
 #include <libdragon.h>
 #include <assert.h>
 #include "fluid_dye_fixed.h"
+#include "fluid_queue.h"
 #ifdef PLASMAPONG_VELOCITY_FIXED
 #include "fluid_velocity_fixed.h"
 #endif
 DEFINE_RSP_UCODE(rsp_dye);
 static uint32_t overlay_id;
+void fluid_dye_rsp_init(void) {
+    if(!overlay_id) { rspq_init(); overlay_id=rspq_overlay_register(&rsp_dye); }
+}
 _Static_assert(FW==48 && FH==33 && FN%48==0,"RSP dye grid/chunk layout");
 _Static_assert(DYE_SCALE==8192 && DYE_WEIGHT_SCALE==32768,"RSP dye Q13/Q15 layout");
 _Static_assert(sizeof(FluidDyeFixed)%16==0 && FLUID_TRACE_BATCHES*sizeof(FluidDyeTrace)%16==0,
@@ -15,10 +19,7 @@ void fluid_channels_rsp(int16_t *next,const int16_t *source,const FluidDyeTrace 
         unsigned channels,const unsigned *decays,unsigned rounding) {
     assert(((uintptr_t)next&15)==0 && ((uintptr_t)source&15)==0 && ((uintptr_t)trace&15)==0);
     assert(channels>=1 && channels<=3 && rounding<=65535);
-    if(!overlay_id) {
-        rspq_init();
-        overlay_id=rspq_overlay_register(&rsp_dye);
-    }
+    fluid_dye_rsp_init();
     unsigned bytes=channels*FN*sizeof(int16_t);
     data_cache_hit_writeback(source,bytes);
     /* CPU traces may be dirty. RSP-generated traces were invalidated before
@@ -26,14 +27,13 @@ void fluid_channels_rsp(int16_t *next,const int16_t *source,const FluidDyeTrace 
        syncpoint also completes any trace command queued by our caller. */
     data_cache_hit_writeback(trace,FLUID_TRACE_BATCHES*sizeof(*trace));
     data_cache_hit_invalidate(next,bytes);
+    fluid_queue_begin();
     for(unsigned c=0;c<channels;c++) {
         assert(decays[c]<=DYE_WEIGHT_SCALE);
         rspq_write(overlay_id,0,PhysicalAddr((const char *)source+c*FN*sizeof(int16_t)),PhysicalAddr(trace),
             PhysicalAddr((char *)next+c*FN*sizeof(int16_t)),decays[c]|(rounding<<16));
     }
-    rspq_syncpoint_t done=rspq_syncpoint_new();
-    rspq_flush();
-    rspq_syncpoint_wait(done);
+    fluid_queue_wait();
     data_cache_hit_invalidate(next,bytes);
 }
 void fluid_dye_fixed_rsp(FluidDyeFixed *next,const FluidDyeFixed *ink,

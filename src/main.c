@@ -7,6 +7,13 @@
 #include "sound.h"
 #include "save.h"
 #include "fluid_profile.h"
+#ifdef PLASMAPONG_FLUID_HIGHPRI
+#include "fluid_queue.h"
+bool fluid_highpri_active;
+#ifdef PLASMAPONG_FLUID_HIGHPRI_YIELD
+bool fluid_highpri_open;
+#endif
+#endif
 #include "perf.h"
 #ifdef PLASMAPONG_PREPARE_RSP
 #include "fluid_velocity_fixed.h"
@@ -155,12 +162,31 @@ void audio_storage_service(void) {
 }
 #endif
 static surface_t ink;
+#ifdef PLASMAPONG_INK16
+static surface_t ink16;
+#endif
 static rspq_block_t *ink_blit;
 static float ink_x,ink_y,ink_w,ink_h;
 static bool fill_mode;
 static uint32_t fill_color;
 static _Alignas(16) uint64_t point_commands[5*(FLOW_TRACERS+8)];
 static unsigned point_commands_used;
+#ifdef PLASMAPONG_MENU_TEMPLATE
+#include "rdpq_internal.h"
+extern rdpq_block_state_t rdpq_block_state;
+static rspq_block_t *menu_template;
+static unsigned menu_template_key;
+static bool recording_menu_template,collecting_menu_points;
+static uint64_t *menu_template_points;
+static void menu_template_patch_points(void) {
+    unsigned capacity=sizeof(point_commands)/sizeof(*point_commands);
+    assert(menu_template_points && point_commands_used<=capacity);
+    memcpy(menu_template_points,point_commands,point_commands_used*sizeof(*point_commands));
+    for(unsigned i=point_commands_used;i<capacity;i++)
+        menu_template_points[i]=0xC000000000000000ull;
+    data_cache_hit_writeback(menu_template_points,sizeof(point_commands));
+}
+#endif
 /* Bounded text command cache. Entries used this frame cannot be evicted;
    frame-start rspq_wait guarantees older entries are no longer in flight. */
 static struct {
@@ -217,10 +243,57 @@ static void profile_frame_work(uint64_t begin,uint64_t buffer_wait,Phase phase) 
 }
 #endif
 static bool recording_static;
+#ifdef PLASMAPONG_MENU_BUFFER_KIB
+#include "rdpq_internal.h"
+extern rdpq_block_state_t rdpq_block_state;
+_Static_assert(PLASMAPONG_MENU_BUFFER_KIB>=8 && PLASMAPONG_MENU_BUFFER_KIB<=32,
+    "experimental menu buffer must be 8-32 KiB");
+#endif
+#ifdef PLASMAPONG_MENU_LABEL_BLOCK
+static rspq_block_t *menu_foreground;
+static unsigned menu_foreground_key;
+void draw_menu_foreground(const Game *g) {
+#ifdef PLASMAPONG_MENU_TEMPLATE
+    if(recording_menu_template) { ui_menu_foreground(g); return; }
+#endif
+    unsigned pads=0;
+    for(unsigned p=0;p<MAX_PLAYERS;p++) pads+=!!g->connected[p];
+    unsigned key=g->menu_selection|(g->players<<4)|(pads<<8);
+    if(!menu_foreground || key!=menu_foreground_key) {
+        /* The frame-start queue wait retires the previous use before rebuilding.
+           Record title, triangles, shadows and labels into one static RDP stream. */
+        if(menu_foreground) rspq_block_free(menu_foreground);
+        menu_foreground_key=key;
+        recording_static=true; fill_mode=false;
+        rspq_block_begin();
+#ifdef PLASMAPONG_MENU_BUFFER_KIB
+        rdpq_block_state.bufsize=PLASMAPONG_MENU_BUFFER_KIB*1024/sizeof(uint32_t);
+#endif
+        ui_menu_foreground(g);
+        menu_foreground=rspq_block_end();
+        recording_static=false;
+#ifdef PLASMAPONG_MENU_BUFFER_KIB
+        unsigned buffers=0;
+        for(rdpq_block_t *b=menu_foreground->rdp_block;b;b=b->next) buffers++;
+        debugf("Menu foreground: %u RDP buffers, initial capacity %u KiB\n",
+            buffers,PLASMAPONG_MENU_BUFFER_KIB);
+#endif
+    }
+    rspq_block_run(menu_foreground); fill_mode=false;
+}
+#endif
+#ifdef PLASMAPONG_FRAME_BLOCK
+static bool recording_frame;
+static rspq_block_t *frame_draw;
+#endif
 static rspq_block_t *static_draw[DRAW_STATIC_COUNT];
 void draw_static(unsigned id,void (*draw)(void)) {
     assert(id<DRAW_STATIC_COUNT);
     fill_mode=false;
+    if(recording_static) { draw(); fill_mode=false; return; }
+#ifdef PLASMAPONG_FRAME_BLOCK
+    if(recording_frame) { draw(); fill_mode=false; return; }
+#endif
     if(!static_draw[id]) {
         recording_static=true;
         rspq_block_begin(); draw(); static_draw[id]=rspq_block_end();
@@ -239,8 +312,28 @@ void rect(float x,float y,float w,float h,uint32_t c) {
 }
 void draw_points(const DrawPoint *points,unsigned count,uint32_t c) {
     if(!count) return;
+#if defined(PLASMAPONG_FRAME_BLOCK) || defined(PLASMAPONG_DRAW_STREAM)
+#ifdef PLASMAPONG_DRAW_STREAM
+    {
+#else
+    if(recording_frame) {
+#endif
+        rdpq_set_mode_fill(color(c));
+        for(unsigned i=0;i<count;i++) {
+            assert(points[i].x<320 && points[i].y<240);
+            unsigned x=points[i].x*draw_scale,y=points[i].y*draw_scale;
+            rdpq_fill_rectangle(x,y,x+draw_scale,y+draw_scale);
+        }
+        fill_mode=false;
+        return;
+    }
+#endif
     assert(point_commands_used+count+2<=sizeof(point_commands)/sizeof(*point_commands));
-    if(!point_commands_used) rdpq_set_mode_fill(RGBA32(0,0,0,255));
+    if(!point_commands_used
+#ifdef PLASMAPONG_MENU_TEMPLATE
+        && !collecting_menu_points
+#endif
+        ) rdpq_set_mode_fill(RGBA32(0,0,0,255));
     uint64_t *commands=point_commands+point_commands_used;
     /* Pipe sync before each color change; 16-bit fill repeats the same pixel. */
     uint32_t pixel=color_to_packed16(color(c));
@@ -258,6 +351,24 @@ void draw_points(const DrawPoint *points,unsigned count,uint32_t c) {
     point_commands_used+=count+2;
 }
 void draw_points_end(void) {
+#ifdef PLASMAPONG_MENU_TEMPLATE
+    if(collecting_menu_points) return;
+    if(recording_menu_template) {
+        if(!point_commands_used) rdpq_set_mode_fill(RGBA32(0,0,0,255));
+        unsigned words=2*(sizeof(point_commands)/sizeof(*point_commands));
+        while(!rdpq_block_state.wptr || rdpq_block_state.wptr+words+2>rdpq_block_state.wend)
+            __rdpq_block_next_buffer();
+        /* Isolate mutable slots on complete CPU cache lines, so writeback
+           cannot overwrite neighboring commands fixed up by the RSP. */
+        if(PhysicalAddr(rdpq_block_state.wptr)&15) __rdpq_write8(0,0,0);
+        volatile uint32_t *begin=rdpq_block_state.wptr;
+        menu_template_points=CachedAddr(begin);
+        menu_template_patch_points();
+        __rdpq_block_update(begin+words);
+        rdpq_sync_pipe(); fill_mode=false;
+        return;
+    }
+#endif
     if(!point_commands_used) return;
     data_cache_hit_writeback(point_commands,point_commands_used*sizeof(*point_commands));
     rdpq_exec(point_commands,point_commands_used*sizeof(*point_commands));
@@ -271,7 +382,11 @@ void label(float x,float y,int style,const char *s) {
        origin on a half pixel, where RDP coverage/point sampling clips strokes.
        Snap every text origin, including shadows and edge-aligned labels. */
     x=roundf(x); y=roundf(y);
-    if(!recording_static && strlen(s)<sizeof(text_cache[0].text)) {
+    if(!recording_static
+#ifdef PLASMAPONG_FRAME_BLOCK
+        && !recording_frame
+#endif
+        && strlen(s)<sizeof(text_cache[0].text)) {
         int oldest=-1;
         for(unsigned i=0;i<sizeof(text_cache)/sizeof(text_cache[0]);i++) {
             if(text_cache[i].block && text_cache[i].x==x && text_cache[i].y==y &&
@@ -321,12 +436,21 @@ float label_width(const char *s) {
     }
     return w;
 }
-void draw_fluid(const Fluid *f,float x,float y,float width,float height,bool speed) {
-    fill_mode=false;
+static void draw_pixels(const Fluid *f,bool speed) {
     /* Generate all pixels together so bank selection and call overhead stay
        outside the cell loop. Preserve the padded RGBA32 upload layout. */
 #ifdef PLASMAPONG_FLUID_PROFILE
     uint64_t pixel_begin=get_ticks();
+#endif
+#ifdef PLASMAPONG_INK16_RSP
+    if(speed) fluid_speed_pixels16_rsp_begin(f,ink16.buffer,ink16.stride/2);
+    else fluid_pixels16_rsp_begin(f,ink16.buffer,ink16.stride/2);
+    pixel_done=rspq_syncpoint_new(); pixel_pending=true;
+    rspq_flush();
+#ifdef PLASMAPONG_FLUID_PROFILE
+    pixel_ticks+=get_ticks()-pixel_begin;
+#endif
+    return;
 #endif
     if(speed) {
 #ifdef PLASMAPONG_SPEED_RSP
@@ -360,7 +484,64 @@ void draw_fluid(const Fluid *f,float x,float y,float width,float height,bool spe
     }
 #ifdef PLASMAPONG_FLUID_PROFILE
     pixel_ticks+=get_ticks()-pixel_begin;
+#endif
+}
+void draw_fluid(const Fluid *f,float x,float y,float width,float height,bool speed) {
+    fill_mode=false;
+#ifdef PLASMAPONG_FRAME_BLOCK
+    if(!recording_frame)
+#endif
+#ifdef PLASMAPONG_MENU_TEMPLATE
+    if(!recording_menu_template)
+#endif
+        draw_pixels(f,speed);
+#ifdef PLASMAPONG_BENCH_FLAT_FLUID
+    /* Diagnostic: retain producer/source synchronization, particles and UI,
+       replacing only the textured backdrop's RDP work with a flat fill. */
+    rect(x,y,width,height,0x070c17);
+    return;
+#endif
+    surface_t *texture=&ink;
+#if defined(PLASMAPONG_INK16) && !defined(PLASMAPONG_INK16_RSP)
+    /* First measure the upload benefit using the established RGBA32 producer.
+       If retained, packing can move to RSP rather than this CPU conversion. */
+#ifdef PLASMAPONG_PIXELS_CHAIN
+    if(pixel_pending) {
+        rspq_flush(); rspq_syncpoint_wait(pixel_done); pixel_pending=false;
+    }
+#endif
+    uint32_t *source=CachedAddr(ink.buffer);
+    uint16_t *destination=CachedAddr(ink16.buffer);
+    data_cache_hit_invalidate(source,ink.stride*FH);
+    for(unsigned row=0;row<FH;row++) for(unsigned col=0;col<FW;col++) {
+        uint32_t p=source[row*(ink.stride/4)+col];
+        destination[row*(ink16.stride/2)+col]=((p>>16)&0xf800)|((p>>13)&0x07c0)|((p>>10)&0x003e)|1;
+    }
+    data_cache_hit_writeback(destination,ink16.stride*FH);
+    texture=&ink16;
+#elif defined(PLASMAPONG_INK16)
+    texture=&ink16;
+#endif
+#ifdef PLASMAPONG_FLUID_PROFILE
     uint64_t texture_begin=get_ticks();
+#endif
+#if defined(PLASMAPONG_FRAME_BLOCK) || defined(PLASMAPONG_DRAW_STREAM) || defined(PLASMAPONG_MENU_TEMPLATE)
+#ifdef PLASMAPONG_DRAW_STREAM
+    {
+#elif defined(PLASMAPONG_MENU_TEMPLATE)
+    if(recording_menu_template) {
+#else
+    if(recording_frame) {
+#endif
+        /* Keep the texture, particles and text in the same command stream. */
+        rdpq_set_mode_standard(); rdpq_mode_filter(FILTER_BILINEAR);
+        rdpq_tex_blit(texture,x*draw_scale,y*draw_scale,&(rdpq_blitparms_t){
+            .width=FW,.height=FH,.scale_x=width*draw_scale/FW,.scale_y=height*draw_scale/FH,.filtering=true});
+#ifdef PLASMAPONG_FLUID_PROFILE
+        texture_ticks+=get_ticks()-texture_begin;
+#endif
+        return;
+    }
 #endif
     /* Geometry and texture address are constant until switching menu/court.
        Record upload/tiling commands once; pixel contents remain dynamic. The
@@ -370,7 +551,7 @@ void draw_fluid(const Fluid *f,float x,float y,float width,float height,bool spe
         ink_x=x; ink_y=y; ink_w=width; ink_h=height;
         rspq_block_begin();
         rdpq_set_mode_standard(); rdpq_mode_filter(FILTER_BILINEAR);
-        rdpq_tex_blit(&ink,x*draw_scale,y*draw_scale,&(rdpq_blitparms_t){
+        rdpq_tex_blit(texture,x*draw_scale,y*draw_scale,&(rdpq_blitparms_t){
             .width=FW,.height=FH,.scale_x=width*draw_scale/FW,.scale_y=height*draw_scale/FH,.filtering=true});
         ink_blit=rspq_block_end();
     }
@@ -388,6 +569,18 @@ static void video_configure(FrameRate rate) {
     /* All cached commands contain physical coordinates and font/texture
        state. Finish queued work before replacing them or the framebuffers. */
     rspq_wait();
+#ifdef PLASMAPONG_MENU_TEMPLATE
+    if(menu_template) rspq_block_free(menu_template);
+    menu_template=NULL; menu_template_points=NULL;
+#endif
+#ifdef PLASMAPONG_MENU_LABEL_BLOCK
+    if(menu_foreground) rspq_block_free(menu_foreground);
+    menu_foreground=NULL;
+#endif
+#ifdef PLASMAPONG_FRAME_BLOCK
+    if(frame_draw) rspq_block_free(frame_draw);
+    frame_draw=NULL;
+#endif
 #ifdef PLASMAPONG_PIXELS_CHAIN
     pixel_pending=false;
 #endif
@@ -404,12 +597,21 @@ static void video_configure(FrameRate rate) {
     if(video_rate) display_close();
     draw_scale=rate==FPS_30?2:1;
     draw_font=draw_scale==2?2:1;
+    filter_options_t video_filter=FILTERS_RESAMPLE;
+#ifdef PLASMAPONG_HIRES_VI_POINT
+    /* libdragon forbids unfiltered NTSC 16-bit scanout at widths <= 320. */
+    if(draw_scale==2) video_filter=FILTERS_DISABLED;
+#endif
     display_init(draw_scale==2?RESOLUTION_640x480:RESOLUTION_320x240,
-        DEPTH_16_BPP,3,GAMMA_NONE,FILTERS_RESAMPLE);
+        DEPTH_16_BPP,3,GAMMA_NONE,video_filter);
     video_rate=rate;
     perf_reset();
     debugf("Plasma Pong 64: video %ux%u%s, %u FPS\n",320*draw_scale,240*draw_scale,
         draw_scale==2?" interlaced":" progressive",GAME_HZ);
+#ifdef PLASMAPONG_HIRES_VI_POINT
+    debugf("Plasma Pong 64: VI filter %s\n",
+        draw_scale==2?"disabled":"resample");
+#endif
 #ifdef PLASMAPONG_AUDIO_STREAM
     if(audio_clock) {
         audio_reserve();
@@ -419,10 +621,21 @@ static void video_configure(FrameRate rate) {
 }
 int main(void) {
     debug_init_isviewer(); debug_init_emulog(); timer_init(); joypad_init();
+#ifdef PLASMAPONG_USB_LOG
+    debug_init_usblog();
+#endif
     register_VI_handler(perf_vi);
     /* Pad rows so partial-width uploads use LoadTile. The pinned libdragon's
        RGBA32 LoadBlock path corrupts this non-power-of-two texture width. */
     rdpq_init(); ink=surface_alloc(FMT_RGBA32,64,FH);
+#ifdef PLASMAPONG_INK16
+    ink16=surface_alloc(FMT_RGBA16,64,FH);
+#endif
+#ifdef PLASMAPONG_FLUID_HIGHPRI
+    /* Register every simulation overlay before entering high-priority mode. */
+    fluid_pressure_rsp_init(); fluid_dye_rsp_init();
+    fluid_prepare_rsp_init(); fluid_confinement_rsp_init();
+#endif
 #ifdef PLASMAPONG_RDP_VALIDATE
     rdpq_debug_start();
 #endif
@@ -456,6 +669,11 @@ int main(void) {
     }
     rdpq_text_register_font(2,hi_font);
     rdpq_text_register_font(1,font); game_init(&game); scores_load(&game); game.menu_rng=(uint32_t)get_ticks();
+#ifdef PLASMAPONG_BENCH_MENU
+    /* Repeatable hardware/emulator menu baseline, independent of EEPROM. */
+    game.frame_rate=FPS_30; game.flow_effect=FLOW_PARTICLES;
+    game.menu_rng=0x76a51c93u;
+#endif
 #ifdef PLASMAPONG_SMOKE_FPS
     _Static_assert(PLASMAPONG_SMOKE_FPS==30 || PLASMAPONG_SMOKE_FPS==60,"valid legacy benchmark resolution selector");
     game.frame_rate=(FrameRate)PLASMAPONG_SMOKE_FPS;
@@ -502,6 +720,23 @@ int main(void) {
     bool perf_l=false,perf_r=false;
     perf_reset();
     debugf("Plasma Pong 64: ready, %u-byte game state, %u MiB RDRAM\n",(unsigned)sizeof(game),(unsigned)get_memory_size()/(1024*1024));
+#ifdef PLASMAPONG_USB_LOG
+    debugf("Hardware benchmark: TV %s, completed-frame fence %u, fluid profile %u\n",
+        get_tv_type()==TV_PAL?"PAL":get_tv_type()==TV_MPAL?"MPAL":"NTSC",
+#ifdef PLASMAPONG_FRAME_WORK_PROFILE
+        1u,
+#else
+        0u,
+#endif
+#ifdef PLASMAPONG_FLUID_PROFILE
+        1u);
+#else
+        0u);
+#endif
+#ifdef PLASMAPONG_QUEUE_PROFILE
+    debugf("Hardware benchmark: pre-advection RSP queue-wait split enabled\n");
+#endif
+#endif
     while(1) {
         /* Start NTSC/MPAL work after each real VI field. An estimated clock
            period can drift across a display deadline even when work fits.
@@ -575,7 +810,27 @@ int main(void) {
             memcpy(calls_before,fluid_profile.calls,sizeof(calls_before));
 #endif
             if(game.phase==MENU) ui_measure_menu(&game);
-            game_step(&game,input); accumulator-=frame_step;
+#ifdef PLASMAPONG_FLUID_HIGHPRI
+            /* The pixel-producer guard above has released fluid source data.
+               Simulation can now overtake queued drawing of its output texture. */
+#ifndef PLASMAPONG_FLUID_HIGHPRI_YIELD
+            rspq_highpri_begin();
+#endif
+            fluid_highpri_active=true;
+#endif
+            game_step(&game,input);
+#ifdef PLASMAPONG_FLUID_HIGHPRI
+            /* Lobby/paused steps may enqueue no commands. Force the normal
+               rollover check before libdragon appends the batch epilogue. */
+#ifdef PLASMAPONG_FLUID_HIGHPRI_YIELD
+            fluid_queue_highpri_finish();
+#else
+            rspq_noop();
+            rspq_highpri_end(); rspq_highpri_sync();
+#endif
+            fluid_highpri_active=false;
+#endif
+            accumulator-=frame_step;
             frame_steps++;
             disable_interrupts(); sound_update(&sound,&game); enable_interrupts();
             if(game.scores_dirty) {
@@ -585,12 +840,20 @@ int main(void) {
             }
 #ifdef PLASMAPONG_FLUID_PROFILE
             fluid_profile.enabled=false;
-            if(game.phase!=PLAY) {
+            if(game.phase!=PLAY
+#ifdef PLASMAPONG_BENCH_MENU
+                && game.phase!=MENU
+#endif
+            ) {
                 memcpy(fluid_profile.ticks,profile_before,sizeof(profile_before));
                 memcpy(fluid_profile.calls,calls_before,sizeof(calls_before));
             }
 #endif
-            if(game.phase==PLAY) {
+            if(game.phase==PLAY
+#ifdef PLASMAPONG_BENCH_MENU
+                || game.phase==MENU
+#endif
+            ) {
                 sim_ticks+=get_ticks()-begin;
                 if(++sim_steps==150) {
                     debugf("Plasma Pong 64: simulation average %llu us/step (budget %u us)\n",
@@ -599,13 +862,20 @@ int main(void) {
                     static const char *names[PROFILE_COUNT]={
                         "velocity_advection","velocity_swap","curl","confinement",
                         "divergence","pressure_solve","pressure_gradient",
-                        "dye_advection","dye_swap","splat","pump","ball_dye","sample"};
+                        "dye_advection","dye_swap","splat","pump","ball_dye","sample"
+#ifdef PLASMAPONG_QUEUE_PROFILE
+                        ,"queue_wait"
+#endif
+                    };
                     for(int i=0;i<PROFILE_COUNT;i++) {
                         debugf("Fluid profile: %s %llu us/step (%u calls)\n",names[i],
                             (unsigned long long)(TIMER_MICROS_LL(fluid_profile.ticks[i])/sim_steps),
                             fluid_profile.calls[i]);
                         fluid_profile.ticks[i]=0; fluid_profile.calls[i]=0;
                     }
+#ifdef PLASMAPONG_QUEUE_PC_PROFILE
+                    fluid_queue_pc_report();
+#endif
 #endif
                     sim_ticks=0; sim_steps=0;
                 }
@@ -640,6 +910,14 @@ int main(void) {
         wait_draw_ticks+=get_ticks()-draw_begin;
 #endif
         render_frame++;
+#ifdef PLASMAPONG_FRAME_BLOCK
+        if(frame_draw) rspq_block_free(frame_draw);
+        frame_draw=NULL;
+        /* Queue pixel production before recording: syncpoints cannot be
+           created inside a block. The source and destination are protected
+           by the ordinary previous-frame completion wait above. */
+        draw_pixels(&game.fluid,game.phase!=MENU && game.flow_effect==FLOW_SPEED);
+#endif
         /* The frame-start RSP/RDP wait also releases the raw point buffers. */
         point_commands_used=0;
         if(game.phase!=perf_phase || game.frame_rate!=perf_rate) {
@@ -648,11 +926,49 @@ int main(void) {
         perf_update();
         fill_mode=false;
         rdpq_attach(frame,NULL);
+#ifdef PLASMAPONG_FRAME_BLOCK
+        recording_frame=true;
+        rspq_block_begin();
+#endif
+#ifdef PLASMAPONG_MENU_TEMPLATE
+        if(game.phase==MENU &&
+                (game.flow_effect==FLOW_PARTICLES || game.flow_effect==FLOW_TAILS)) {
+            unsigned pads=0;
+            for(unsigned p=0;p<MAX_PLAYERS;p++) pads+=!!game.connected[p];
+            unsigned key=game.menu_selection|(game.players<<4)|(pads<<8)|(game.flow_effect<<12);
+            draw_pixels(&game.fluid,false);
+            if(!menu_template || key!=menu_template_key) {
+                if(menu_template) rspq_block_free(menu_template);
+                menu_template_key=key;
+                recording_menu_template=recording_static=true;
+                rspq_block_begin();
+                rdpq_block_state.bufsize=32*1024/sizeof(uint32_t);
+                ui_draw(&game);
+                menu_template=rspq_block_end();
+                recording_menu_template=recording_static=false;
+                unsigned buffers=0;
+                for(rdpq_block_t *b=menu_template->rdp_block;b;b=b->next) buffers++;
+                debugf("Menu template: %u RDP buffers, %u particle slots\n",buffers,
+                    (unsigned)(sizeof(point_commands)/sizeof(*point_commands)));
+            } else {
+                collecting_menu_points=true;
+                ui_menu_particles(&game);
+                collecting_menu_points=false;
+                menu_template_patch_points();
+            }
+            rspq_block_run(menu_template); fill_mode=false;
+        } else
+#endif
         ui_draw(&game);
         if(perf_visible) {
             rect(14,27,250,28,0x09111f);
             label(18,39,0,perf_text); label(18,51,0,perf_gap);
         }
+#ifdef PLASMAPONG_FRAME_BLOCK
+        frame_draw=rspq_block_end();
+        recording_frame=false;
+        rspq_block_run(frame_draw);
+#endif
         rdpq_detach_show();
 #if defined(PLASMAPONG_DRAW_SYNC_PROFILE) || defined(PLASMAPONG_FRAME_WORK_PROFILE)
         /* Diagnostic only: include RSP/RDP completion, not just submission. */

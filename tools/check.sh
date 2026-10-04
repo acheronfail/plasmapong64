@@ -40,6 +40,10 @@ cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -DPLASMAPONG_SPLAT_PLAN -DPLASMA
 cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -DPLASMAPONG_SPLAT_PLAN -DPLASMAPONG_DYE_FIXED -DPLASMAPONG_VELOCITY_FIXED -Isrc src/fluid.c src/fluid_advection.c src/fluid_dye_fixed.c src/fluid_velocity_fixed.c tests/force_test.c -lm -o build/force-test
 ./build/force-test
 
+# Fixed menu geometry must retain scalar splat/gold order, rounding and clamps.
+cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -DPLASMAPONG_MENU_STAMPS -DPLASMAPONG_SPLAT_PLAN -DPLASMAPONG_DYE_FIXED -DPLASMAPONG_VELOCITY_FIXED -Isrc src/fluid.c src/fluid_advection.c src/fluid_dye_fixed.c src/fluid_velocity_fixed.c tests/menu_stamp_test.c -lm -o build/menu-stamp-test
+./build/menu-stamp-test
+
 # Experimental velocity: signed interpolation plus quantization-aware gameplay.
 cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -Isrc src/fluid_advection.c src/fluid_dye_fixed.c src/fluid_velocity_fixed.c tests/velocity_test.c -lm -o build/velocity-test
 ./build/velocity-test

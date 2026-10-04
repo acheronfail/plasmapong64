@@ -10,6 +10,8 @@ RSPQ_BeginOverlayHeader
     RSPQ_DefineCommand Divergence,12
     RSPQ_DefineCommand Gradient,12
     RSPQ_DefineCommand SpeedPixels,16
+    RSPQ_DefineCommand Pixels16,16
+    RSPQ_DefineCommand SpeedPixels16,16
 RSPQ_EndOverlayHeader
     /* Embedded data can be only 8-byte aligned in RDRAM. Keep the command
        table's CPU cache line separate from the state saved by RSP DMA. */
@@ -182,6 +184,8 @@ trace_batch:
     j RSPQ_Loop
     nop
 /* a0=three planar dye channels, a1=RGBA32, a2=row byte stride, a3=unused. */
+Pixels16:
+    li a3,1
 Pixels:
     move s1,a0
     move s2,a1
@@ -191,6 +195,16 @@ Pixels:
     mtc2 t3,$v20.e0
     li t3,256
     mtc2 t3,$v21.e0
+    li t3,8192
+    mtc2 t3,$v22.e0
+    li t3,2048
+    mtc2 t3,$v22.e1
+    li t3,64
+    mtc2 t3,$v22.e2
+    li t3,2
+    mtc2 t3,$v22.e3
+    li t3,1
+    mtc2 t3,$v22.e4
     li t3,1680
     mtc2 t3,$v10.e0
     li t3,160
@@ -243,6 +257,8 @@ pixels_batch:
     component $v04,$v10.e0,$v10.e1,$v10.e2,$v13
     component $v05,$v11.e0,$v11.e1,$v11.e2,$v14
     component $v06,$v12.e0,$v12.e1,$v12.e2,$v15
+    bnez a3,pixels_pack16
+    nop
     vmudn $v04,$v04,$v21.e0
     vmudn $v06,$v06,$v21.e0
     vor $v04,$v04,$v05
@@ -255,11 +271,34 @@ pixels_batch:
     ssv $v06,lane*2,lane*4+2,t3
     .set lane,lane+1
     .endr
+    b pixels_next
+    nop
+pixels_pack16:
+    /* Truncate each already-clamped 8-bit component to five bits. */
+    vmudm $v04,$v04,$v22.e0
+    vmudm $v05,$v05,$v22.e0
+    vmudm $v06,$v06,$v22.e0
+    vmudn $v04,$v04,$v22.e1
+    vmudn $v05,$v05,$v22.e2
+    vmudn $v06,$v06,$v22.e3
+    vor $v04,$v04,$v05
+    vor $v04,$v04,$v06
+    vor $v04,$v04,$v22.e4
+    addiu t3,s6,%lo(result)
+    sqv $v04,0,t3
+pixels_next:
     addiu s6,s6,16
     slti t3,s6,96
     bnez t3,pixels_batch
     nop
+    bnez a3,pixels_dma16
+    nop
     transfer s2,result,192,DMA_OUT
+    b pixels_dma_done
+    nop
+pixels_dma16:
+    transfer s2,result,96,DMA_OUT
+pixels_dma_done:
     addiu s1,s1,96
     addu s2,s2,s3
     addiu s5,s5,-1
@@ -528,10 +567,12 @@ gradient_store:
     nop
 /* a0=velocity (u,v), a1=RGBA32 pixels, a2=row stride, a3=palette.
  * Exact integer max-plus-half-min magnitude and the shared CPU palette. */
+SpeedPixels16:
+    ori a2,a2,0x8000
 SpeedPixels:
     move s1,a0
     move s2,a1
-    move s3,a2
+    andi s3,a2,0x7fff
     li s5,33
     transfer a3,speed_palette,1040,DMA_IN
     li t3,32768
@@ -564,6 +605,9 @@ speed_batch:
     vmudn $v04,$v04,$v20.e3
     li t3,%lo(input2)
     sqv $v04,0,t3
+    andi t6,a2,0x8000
+    bnez t6,speed_pack16
+    nop
     sll t4,s6,1
     addiu t4,t4,%lo(result)
     .set lane,0
@@ -574,11 +618,32 @@ speed_batch:
     sw t5,lane*4(t4)
     .set lane,lane+1
     .endr
+    b speed_next
+    nop
+speed_pack16:
+    addiu t4,s6,%lo(result)
+    .set lane,0
+    .rept 8
+    lhu t5,lane*2(t3)
+    addiu t5,t5,%lo(speed_palette)
+    lw t5,0(t5)
+    sh t5,lane*2(t4)
+    .set lane,lane+1
+    .endr
+speed_next:
     addiu s6,s6,16
     slti t3,s6,96
     bnez t3,speed_batch
     nop
+    andi t6,a2,0x8000
+    bnez t6,speed_dma16
+    nop
     transfer s2,result,192,DMA_OUT
+    b speed_dma_done
+    nop
+speed_dma16:
+    transfer s2,result,96,DMA_OUT
+speed_dma_done:
     addiu s1,s1,96
     addu s2,s2,s3
     addiu s5,s5,-1

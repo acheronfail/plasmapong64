@@ -1,6 +1,24 @@
 #ifndef PREPARE_CASES_H
 #define PREPARE_CASES_H
 #include "../src/fluid_velocity_fixed.h"
+static void prepare_pixels16_case(const Fluid *f,bool speed,const uint32_t *expected) {
+    static struct { _Alignas(16) uint16_t before[8],value[64*FH],after[8]; } packed;
+    memset(&packed,0x5a,sizeof(packed));
+    data_cache_hit_writeback_invalidate(&packed,sizeof(packed));
+    if(speed) fluid_speed_pixels16_rsp_begin(f,packed.value,64);
+    else fluid_pixels16_rsp_begin(f,packed.value,64);
+    rdpq_set_fill_color(RGBA32(0,0,0,255));
+    rspq_wait(); data_cache_hit_invalidate(&packed,sizeof(packed));
+    for(unsigned y=0;y<FH;y++) for(unsigned x=0;x<64;x++) {
+        uint32_t p=expected[y*64+x];
+        uint16_t want=x<FW?((p>>16)&0xf800)|((p>>13)&0x07c0)|((p>>10)&0x003e)|1:0x5a5a;
+        if(packed.value[y*64+x]!=want) {
+            debugf("Packed pixels mismatch speed %u row %u col %u: %04x/%04x\n",speed,y,x,want,packed.value[y*64+x]);
+            assert(0);
+        }
+    }
+    for(unsigned i=0;i<8;i++) assert(packed.before[i]==0x5a5a && packed.after[i]==0x5a5a);
+}
 static void prepare_cases(void) {
     static Fluid f,saved;
     static struct { _Alignas(16) uint8_t before[16]; FluidDyeTrace value[FLUID_TRACE_BATCHES]; uint8_t after[16]; } actual;
@@ -73,6 +91,7 @@ static void prepare_cases(void) {
                 assert(0);
             }
         }
+        prepare_pixels16_case(&f,false,expected_pixels);
         memset(&pixels,0x5a,sizeof(pixels));
         memset(expected_pixels,0x5a,sizeof(expected_pixels));
         fluid_speed_pixels(&f,expected_pixels,64);
@@ -89,10 +108,12 @@ static void prepare_cases(void) {
                 assert(0);
             }
         }
+        prepare_pixels16_case(&f,true,expected_pixels);
         data_cache_hit_invalidate(&f,sizeof(f));
         assert(!memcmp(&f,&saved,sizeof(f)));
         for(unsigned k=0;k<4;k++) assert(pixels.before[k]==0x5a5a5a5a && pixels.after[k]==0x5a5a5a5a);
     }
     debugf("Prepare PASS: 80 exact trace/dye-color/speed-color/divergence fields, queued pixel producers, overlay switches, full timestep range, padded pixels and DMA guards\n");
+    debugf("Packed pixels PASS: 80 dye and SPEED fields exactly match RGBA5551 quantization, padding and DMA guards\n");
 }
 #endif
