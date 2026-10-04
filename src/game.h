@@ -80,6 +80,13 @@ typedef struct {
     FrameRate frame_rate;
     unsigned options_selection;
 } Game;
+static inline float game_bat_half(const Game *g,unsigned p) {
+    if(g->mode!=ARCADE || p!=0 || g->arcade.level<=1) return BAT_HALF;
+    /* Lose one pixel of total height per level, stopping at 16 pixels. */
+    unsigned shrink=g->arcade.level-1;
+    if(shrink>12) shrink=12;
+    return BAT_HALF-.5f*shrink;
+}
 static inline unsigned game_tick_units(const Game *g) { (void)g; return 1u; }
 static inline float game_dt(const Game *g) { (void)g; return STEP; }
 static inline float game_emission(const Game *g) { (void)g; return .5f; }

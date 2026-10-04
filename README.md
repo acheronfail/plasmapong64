@@ -97,6 +97,11 @@ life without removing your goals. Clear every fifth level for an extra life,
 up to five. Levels continue until you run out of lives. Transitions freeze the
 playfield briefly, followed by the usual serve countdown.
 
+The player's paddle shrinks by one arena pixel of total height per level,
+from 28 pixels at level 1 to a minimum of 16 at level 13. Its drawing, collision
+height, movement limits and suction capture radius track the smaller size.
+The opponent's paddle and all multiplayer paddles retain their usual size.
+
 Each goal earns **100 × level**, each level clear earns **500 × level**, and
 clearing in under 60 seconds of active play adds up to **600 points** (10 per
 remaining second). Pauses, serves and transitions do not consume that bonus time.
@@ -108,9 +113,16 @@ Difficulty rises with diminishing increments: reactions improve from 0.40 toward
 0.08 seconds, aiming error decreases, and movement approaches the human limit.
 Every serve starts at rest in the centre; after the countdown, fluid currents
 and players' jets set the ball in motion. There is no automatic low-speed boost.
-The ball-speed cap remains 290. The opponent unlocks jets at level 2 and suction/catches at level
-4. It generates ordinary controller inputs and obeys the same physics and catch
-rules as the player; it does not run another fluid simulation. From level 6,
+The ball's response to currents also increases each level: 1× at level 1,
+1.5× at level 5, 2× at level 13, approaching 3× at high levels. This makes
+both player-generated and ambient currents accelerate and deflect it more
+strongly, while still-water drag stays the same. The ball-speed cap remains 290.
+The opponent unlocks jets at level 2 and suction/catches at level
+4. Its jet force increases with difficulty: 1.25× the player's at level 5,
+1.5× at level 13, approaching 2× at high levels. Player and multiplayer jets
+retain their usual strength. It generates ordinary controller inputs and obeys
+the same physics and catch rules as the player; it does not run another fluid
+simulation. From level 6,
 cross, rising and swirling currents rotate each level and strengthen with the
 difficulty curve. Runs use the same initial AI random seed for repeatability.
 

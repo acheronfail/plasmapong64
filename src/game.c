@@ -163,11 +163,13 @@ static void ball_step(Game *g) {
     }
     /* Four short collision steps prevent tunnelling through bats at jet speed. */
     const float dt=step/4;
+    /* Arcade currents accelerate the ball more as levels rise, approaching
+       three times the opening response. Keep still-water drag unchanged. */
+    const float current_response=1.7f*(g->mode==ARCADE?1+2*arcade_difficulty(g):1);
     for(int step=0;step<4;step++) {
         float u,v; fluid_sample(&g->fluid,g->bx,g->by,&u,&v);
-        /* Stronger current response, with the same drag in still water. */
-        g->bvx+=(u*1.7f-g->bvx*.297f)*dt;
-        g->bvy+=(v*1.7f-g->bvy*.297f)*dt;
+        g->bvx+=(u*current_response-g->bvx*.297f)*dt;
+        g->bvy+=(v*current_response-g->bvy*.297f)*dt;
         limit_ball(g);
         /* Deposit a little dye along the travelled path, never during a serve
            countdown or while held. It will be carried by the same current. */
@@ -191,14 +193,15 @@ static void ball_step(Game *g) {
             float dx=g->bx-b->x,dy=g->by-b->y;
             float rvx=g->bvx-b->vx,rvy=g->bvy-b->vy;
             float normal=dx*nx+dy*ny,tangent=p<2?dy:dx;
-            if(b->sucking && normal>=0 && dx*dx+dy*dy<18*18 &&
+            float half=game_bat_half(g,p),capture=half+4;
+            if(b->sucking && normal>=0 && dx*dx+dy*dy<capture*capture &&
                rvx*rvx+rvy*rvy<145*145 && u*u+v*v<210*210) {
                 g->held=p; attach_ball(g,p,8); return;
             }
             float oldnormal=(oldx-b->x)*nx+(oldy-b->y)*ny;
             bool crossed=oldnormal>=6 && normal<=6;
             bool overlap=fabsf(normal)<6;
-            if((crossed||overlap) && fabsf(tangent)<BAT_HALF+BALL_RADIUS && rvx*nx+rvy*ny<0) {
+            if((crossed||overlap) && fabsf(tangent)<half+BALL_RADIUS && rvx*nx+rvy*ny<0) {
                 g->sound_events|=p==0?SOUND_BAT1:p==1?SOUND_BAT2:SOUND_BAT_OTHER;
                 float bounce=maxf(108,fabsf(g->bvx*nx+g->bvy*ny)*1.04f);
                 if(p<2) { g->bx=b->x+nx*6; g->bvx=nx*bounce; g->bvy+=tangent*3.8f+b->vy*.3f; }
@@ -365,7 +368,7 @@ void game_step(Game *g,const Input physical[MAX_PLAYERS]) {
         if(!game_alive(g,p)) continue;
         Bat *b=&g->bat[p]; float nx=normal_x(p),ny=normal_y(p);
         float x=b->x,y=b->y;
-        float end=game_square(g)?CORNER_SIZE+BAT_HALF+2:BAT_HALF+2;
+        float end=game_bat_half(g,p)+2+(game_square(g)?CORNER_SIZE:0);
         float depth=game_square(g)?SQUARE_BAT_DEPTH:64;
         if(p<2) {
             b->x=clampf(x+axis(in[p].x)*92*step,p?game_right(g)-depth:game_left(g)+12,p?game_right(g)-12:game_left(g)+depth);
@@ -379,7 +382,9 @@ void game_step(Game *g,const Input physical[MAX_PLAYERS]) {
                     (fabsf(b->vx)+fabsf(b->vy))*step*.008f,p);
         b->burst=maxf(0,b->burst-step);
         if(in[p].z) {
-            fluid_splat(&g->fluid,b->x+nx*14,b->y+ny*14,22,nx*1150*step+(p<2?0:b->vx*.08f*emission),ny*1150*step+(p<2?b->vy*.08f*emission:0),2.6f*step,p);
+            /* The arcade opponent's jet approaches twice the human strength. */
+            float jet=1150*step*(g->mode==ARCADE && p==1?1+arcade_difficulty(g):1);
+            fluid_splat(&g->fluid,b->x+nx*14,b->y+ny*14,22,nx*jet+(p<2?0:b->vx*.08f*emission),ny*jet+(p<2?b->vy*.08f*emission:0),2.6f*step,p);
         }
     }
     if(g->mode==ARCADE) arcade_currents(g);

@@ -383,6 +383,7 @@ void ui_draw(const Game *g) {
     for(unsigned p=0;p<game_players(g);p++) {
         if(!game_alive(g,p)) continue;
         const Bat *b=&g->bat[p]; uint32_t c=player_colors[p];
+        float half=game_bat_half(g,p);
         bool broken=b->cooldown_ticks>0;
         if(broken) c=0x737d8a;
         float x=OX+b->x,y=OY+b->y;
@@ -390,17 +391,17 @@ void ui_draw(const Game *g) {
             if(!radius_ready) { suction_radius=24+2*sinf(g->elapsed*7); radius_ready=true; }
             ring(g,x,y,suction_radius,c);
             if(g->held==(int)p)
-                bat_rect(p,x,y,-9,BAT_HALF+5,18*b->charge,2,b->charge>=1?0x40ff70:c);
+                bat_rect(p,x,y,-9,half+5,18*b->charge,2,b->charge>=1?0x40ff70:c);
         }
         if(b->burst>0) ring(g,x,y,12+(1-b->burst/.25f)*30,c);
-        bat_rect(p,x,y,-5,-BAT_HALF-2,10,BAT_HALF*2+4,broken?0x36323c:p==0?0x164658:p==1?0x642739:p==2?0x245b50:0x49345f);
-        bat_rect(p,x,y,-3,-BAT_HALF,6,BAT_HALF*2,c);
-        bat_rect(p,x,y,-1,-BAT_HALF+2,2,BAT_HALF*2-4,broken?0x434753:WHITE);
+        bat_rect(p,x,y,-5,-half-2,10,half*2+4,broken?0x36323c:p==0?0x164658:p==1?0x642739:p==2?0x245b50:0x49345f);
+        bat_rect(p,x,y,-3,-half,6,half*2,c);
+        bat_rect(p,x,y,-1,-half+2,2,half*2-4,broken?0x434753:WHITE);
         if(broken) {
             bat_rect(p,x,y,-3,-4,4,2,0xff3030); bat_rect(p,x,y,-1,-2,4,2,0xff3030);
             bat_rect(p,x,y,-3,0,4,2,0xff3030);
-            bat_rect(p,x,y,-9,BAT_HALF+5,18,2,0x36323c);
-            bat_rect(p,x,y,-9,BAT_HALF+5,18*(float)b->cooldown_ticks/SUCTION_COOLDOWN_TICKS,2,0xff3030);
+            bat_rect(p,x,y,-9,half+5,18,2,0x36323c);
+            bat_rect(p,x,y,-9,half+5,18*(float)b->cooldown_ticks/SUCTION_COOLDOWN_TICKS,2,0xff3030);
         }
     }
     if(!game_square(g)) {
