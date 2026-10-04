@@ -956,7 +956,7 @@ emulation. Logs, ROMs, per-frame CSVs and numeric summaries are retained in
 
 Choose **OPTIONS** from the main menu. Up/down selects **FLOW EFFECT** or
 **RESOLUTION**; left/right changes the selected value. Flow effects are **NONE**,
-**PARTICLES**, **PARTICLE TAILS**, and **SPEED**. **LOW RES** uses 320 × 240 at
+**PARTICLES**, **PARTICLE TAILS**, **SPEED**, **VORTEX**, **RELIEF**, **BANDS**, and **PRESSURE**. **LOW RES** uses 320 × 240 at
 60 FPS; **HIGH RES** uses 640 × 480 interlaced with 60 updates per second. B returns to the main menu. The animated background
 previews the selected effect. Each change automatically saves to cartridge EEPROM;
 missing storage or a failed write is shown in the options screen. Successful
@@ -977,6 +977,10 @@ smooth transitions, with wider high-speed bands to expose weaker currents.
 Colours depend only on velocity, so dye concentration cannot hide fast flow.
 SPEED uses the existing texture upload, with no contour overlay or extra texture.
 NONE preserves the original dye rendering.
+
+The new VORTEX, RELIEF, BANDS and PRESSURE prototypes share this texture path.
+Their screenshots, emulator performance results and hardware acceptance recipes
+are in [Fluid visualisation prototypes](docs/flow-visualizations.md).
 
 The version-2 EEPROM record preserves the two 144-byte slots and existing high
 scores. Version-1 saves load with flow effect NONE. Settings are retained when

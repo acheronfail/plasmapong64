@@ -82,6 +82,13 @@ void fluid_pump(Fluid *f, float x, float y, float radius, float strength, float 
 void fluid_speed_palette(uint32_t *rgba);
 void fluid_speed_pixels(const Fluid *f, uint32_t *pixels, unsigned stride);
 uint32_t fluid_speed_color(const Fluid *f, int i);
+typedef enum { FLUID_VIEW_DYE, FLUID_VIEW_SPEED, FLUID_VIEW_VORTEX,
+    FLUID_VIEW_RELIEF, FLUID_VIEW_BANDS, FLUID_VIEW_PRESSURE } FluidView;
+/* Visual-only colour producers. No changes to simulation fields. */
+void fluid_view_palette(FluidView view, uint32_t *rgba);
+void fluid_relief_shades(const Fluid *f, int16_t *shades);
+uint32_t fluid_view_color(const Fluid *f, int i, FluidView view);
+void fluid_view_pixels(const Fluid *f, uint32_t *pixels, unsigned stride, FluidView view);
 uint32_t fluid_color(const Fluid *f, int i);
 /* Write an RGBA32 texture; stride is in pixels and must be at least FW. */
 void fluid_pixels(const Fluid *f, uint32_t *pixels, unsigned stride);

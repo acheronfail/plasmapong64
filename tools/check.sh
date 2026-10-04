@@ -73,3 +73,14 @@ for backend in float dye velocity confinement; do
     cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic $flags -Isrc src/game.c src/arcade.c src/fluid.c src/fluid_advection.c $sources tests/fps_test.c -lm -o "build/fps-$backend-test"
     "./build/fps-$backend-test"
 done
+
+# New visual producers: signed fields, scratch ownership and texture guards.
+for backend in float fixed; do
+    flags=""; sources=""
+    if [ "$backend" = fixed ]; then
+        flags="-DPLASMAPONG_DYE_FIXED -DPLASMAPONG_VELOCITY_FIXED"
+        sources="src/fluid_dye_fixed.c src/fluid_velocity_fixed.c"
+    fi
+    cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic $flags -Isrc src/fluid.c src/fluid_advection.c $sources tests/view_test.c -lm -o "build/view-$backend-test"
+    "./build/view-$backend-test"
+done

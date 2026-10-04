@@ -292,7 +292,7 @@ static void flow_points(const Game *g,float x,float y,float w,float h,int layers
 static void flow_background(const Game *g,float x,float y,float w,float h) {
     /* Separate the two fixed layer counts so the compiler can specialise
        the history and point loops while preserving every dot and its order. */
-    draw_fluid(&g->fluid,x,y,w,h,g->phase!=MENU && g->flow_effect==FLOW_SPEED);
+    draw_fluid(&g->fluid,x,y,w,h,g->flow_effect);
     if(g->flow_effect==FLOW_TAILS) flow_points(g,x,y,w,h,4);
     else if(g->flow_effect==FLOW_PARTICLES) flow_points(g,x,y,w,h,0);
 }
@@ -317,7 +317,7 @@ void ui_draw(const Game *g) {
         menu_label(87,4,"OPTIONS");
         rect(20,g->options_selection?124:98,280,20,0x142c3b);
         rect(20,g->options_selection?124:98,2,20,CYAN);
-        const char *effects[]={"NONE","PARTICLES","PARTICLE TAILS","SPEED"};
+        const char *effects[]={"NONE","PARTICLES","PARTICLE TAILS","SPEED","VORTEX","RELIEF","BANDS","PRESSURE"};
         char setting[64]; snprintf(setting,sizeof(setting),"< FLOW EFFECT: %s >",effects[g->flow_effect]);
         menu_label(113,g->options_selection==0?2:1,setting);
         snprintf(setting,sizeof(setting),"< RESOLUTION: %s >",g->frame_rate==FPS_60?"LOW RES":"HIGH RES");

@@ -600,3 +600,118 @@ void fluid_speed_pixels(const Fluid *f,uint32_t *pixels,unsigned stride) {
     for(int y=0;y<FH;y++) for(int x=0;x<FW;x++)
         pixels[y*stride+x]=(speed_color(flow,y*FW+x)<<8)|255;
 }
+
+/* These views only replace colour conversion; the simulation is untouched.
+   Work stays at FW*FH, with fixed exposure and bounded neighbour stencils. */
+static uint32_t view_mix(uint32_t a,uint32_t b,unsigned t) {
+    unsigned r=(((a>>16)&255)*(256-t)+((b>>16)&255)*t)>>8;
+    unsigned g=(((a>>8)&255)*(256-t)+((b>>8)&255)*t)>>8;
+    unsigned blue=((a&255)*(256-t)+(b&255)*t)>>8;
+    return (r<<16)|(g<<8)|blue;
+}
+static uint32_t view_palette_color(FluidView view,unsigned index) {
+    if(view==FLUID_VIEW_BANDS) {
+        /* Broad repeating ribbons, not geometric contour overlays. */
+        unsigned t=(index&63)*8;
+        if(t>256) t=512-t;
+        return view_mix(0x102b53,0x6ef3cf,t);
+    }
+    /* Signed fields: neutral navy, negative cyan, positive coral. */
+    int n=(int)index-128;
+    unsigned t=(unsigned)(n<0?-n:n)*2;
+    uint32_t end=n<0?0x24cde0:0xff6956;
+    return view_mix(0x070c1c,end,t);
+}
+void fluid_view_palette(FluidView view,uint32_t *rgba) {
+    for(unsigned i=0;i<FLUID_SPEED_PALETTE_SIZE;i++) {
+        unsigned index=i>256?256:i;
+        if(view==FLUID_VIEW_BANDS && index>224) index=224;
+        rgba[i]=(view_palette_color(view,index)<<8)|255;
+    }
+}
+static const uint32_t *view_palette(FluidView view) {
+    static uint32_t signed_colors[257],bands[257];
+    static int ready;
+    if(!ready) {
+        for(unsigned i=0;i<=256;i++) {
+            signed_colors[i]=view_palette_color(FLUID_VIEW_VORTEX,i);
+            bands[i]=view_palette_color(FLUID_VIEW_BANDS,i);
+        }
+        ready=1;
+    }
+    return view==FLUID_VIEW_BANDS?bands:signed_colors;
+}
+static int view_flow(FluidFlowValue value) {
+#ifdef PLASMAPONG_VELOCITY_FIXED
+    return value;
+#else
+    return (int)(value*VELOCITY_SCALE);
+#endif
+}
+static int view_density(const FluidInk *ink,int k) {
+#ifdef PLASMAPONG_DYE_FIXED
+    return ink->red[k]+ink->blue[k]+ink->gold[k];
+#else
+    return (int)((ink->red[k]+ink->blue[k]+ink->gold[k])*DYE_SCALE);
+#endif
+}
+static uint32_t view_color(const Fluid *f,int k,FluidView view,const uint32_t *palette) {
+    const FluidFlow *v=fluid_velocity(f);
+    if(view==FLUID_VIEW_DYE) return dye_color(fluid_dye(f),k);
+    if(view==FLUID_VIEW_SPEED) return speed_color(v,k);
+    if(view==FLUID_VIEW_BANDS) {
+        int u=view_flow(v->u[k]),w=view_flow(v->v[k]);
+        u=u<0?-u:u; w=w<0?-w:w;
+        unsigned speed=(unsigned)(u>w?u+w/2:w+u/2)/VELOCITY_SCALE;
+        /* Keep the strongest flows on a bright plateau to avoid aliasing. */
+        return palette[speed>224?224:speed];
+    }
+    int x=k%FW,y=k/FW;
+    int left=x?k-1:k,right=x<FW-1?k+1:k;
+    int above=y?k-FW:k,below=y<FH-1?k+FW:k;
+    if(view==FLUID_VIEW_RELIEF) {
+        const FluidInk *ink=fluid_dye(f);
+        int dx=view_density(ink,right)/4-view_density(ink,left)/4;
+        int dy=view_density(ink,below)/4-view_density(ink,above)/4;
+        /* Fixed upper-left light. Approximate relief, no normalisation/sqrt. */
+        int shade=224+(dx-dy)/32;
+        shade=shade<72?72:shade>352?352:shade;
+        uint32_t c=dye_color(ink,k);
+        unsigned r=((c>>16)&255)*shade>>10;
+        unsigned g=((c>>8)&255)*shade>>10;
+        unsigned b=(c&255)*shade>>10;
+        r*=4; g*=4; b*=4;
+        r=r>255?255:r; g=g>255?255:g; b=b>255?255:b;
+        return (r<<16)|(g<<8)|b;
+    }
+    int n;
+    if(view==FLUID_VIEW_VORTEX) {
+        /* Recompute from current projected velocity: confinement scratch has
+           already been overwritten by divergence. Screen y increases down. */
+        n=(view_flow(v->v[right])-view_flow(v->v[left])-
+           view_flow(v->u[below])+view_flow(v->u[above]))/16;
+    } else n=f->pressure[k]/8192; /* Q12 solver pressure; fixed visual gain. */
+    n=n<-128?-128:n>128?128:n;
+    return palette[n+128];
+}
+uint32_t fluid_view_color(const Fluid *f,int k,FluidView view) {
+    return view_color(f,k,view,view_palette(view));
+}
+void fluid_view_pixels(const Fluid *f,uint32_t *pixels,unsigned stride,FluidView view) {
+    const uint32_t *palette=view_palette(view);
+    for(int y=0;y<FH;y++) for(int x=0;x<FW;x++)
+        pixels[y*stride+x]=(view_color(f,y*FW+x,view,palette)<<8)|255;
+}
+
+void fluid_relief_shades(const Fluid *f,int16_t *shades) {
+    int16_t density[FN];
+    const FluidInk *ink=fluid_dye(f);
+    for(int k=0;k<FN;k++) density[k]=(int16_t)(view_density(ink,k)/4);
+    for(int y=0;y<FH;y++) for(int x=0;x<FW;x++) {
+        int k=y*FW+x;
+        int dx=density[x<FW-1?k+1:k]-density[x?k-1:k];
+        int dy=density[y<FH-1?k+FW:k]-density[y?k-FW:k];
+        int shade=224+(dx-dy)/32;
+        shades[k]=(int16_t)((shade<72?72:shade>352?352:shade)*64);
+    }
+}

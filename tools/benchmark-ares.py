@@ -2,6 +2,7 @@
 """Run a scripted ROM until complete emulated-time measurement windows exist."""
 import argparse
 import json
+import os
 import pathlib
 import re
 import selectors
@@ -15,11 +16,15 @@ parser.add_argument('log', type=pathlib.Path)
 parser.add_argument('--ares', default='../ares/build/rundir/bin/ares')
 parser.add_argument('--windows', type=int, default=10)
 parser.add_argument('--timeout', type=float, default=240)
+parser.add_argument('--screenshot', type=pathlib.Path, help='capture the Ares rendering window (X11/ImageMagick)')
+parser.add_argument('--screenshot-window', type=int, default=2, help='timing window to capture (PLAY, or draw with --draw-only), default 2')
 parser.add_argument('--draw-only', action='store_true', help='measure menus without waiting for PLAY simulation logs')
 parser.add_argument('--memory-mib', type=int, choices=(4, 8), help='test with or without the Expansion Pak; changes only this run')
 args = parser.parse_args()
-if args.windows < 1 or args.timeout <= 0:
-    parser.error('windows and timeout must be positive')
+if args.windows < 1 or args.timeout <= 0 or args.screenshot_window < 1:
+    parser.error('windows, screenshot-window and timeout must be positive')
+if args.screenshot and args.screenshot_window > args.windows:
+    parser.error('screenshot-window must not exceed windows')
 if not args.rom.is_file():
     parser.error(f'ROM does not exist: {args.rom}')
 args.log.parent.mkdir(parents=True, exist_ok=True)
@@ -36,7 +41,11 @@ presentation = []
 audio_stream = []
 start = time.monotonic()
 with args.log.open('w') as log:
-    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    environment = os.environ.copy()
+    if args.screenshot:
+        environment['GDK_BACKEND'] = 'x11'
+    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=environment)
+    captured = False
     selector = selectors.DefaultSelector()
     selector.register(process.stdout, selectors.EVENT_READ)
     pending = b''
@@ -86,6 +95,14 @@ with args.log.open('w') as log:
                             measurements.setdefault(name, []).append(int(value))
                     if re.search(r'assertion failed|mismatch trial|RDPQ.*(?:ERROR|WARNING)|missing cache (?:invalidation|writeback)|DMA.*(?:cached|dirty)', line, re.I):
                         raise RuntimeError(line)
+            if args.screenshot and not captured and len(measurements.get('draw average' if args.draw_only else 'simulation average', [])) >= args.screenshot_window:
+                tree = subprocess.check_output(['xwininfo', '-root', '-tree'], text=True)
+                window = re.search(r'(0x[0-9a-f]+) "' + re.escape(args.rom.stem) + r'":', tree)
+                if not window:
+                    raise RuntimeError('Cannot find the Ares game window for screenshot')
+                args.screenshot.parent.mkdir(parents=True, exist_ok=True)
+                subprocess.run(['import', '-window', window[1], str(args.screenshot)], check=True)
+                captured = True
             required = ['draw average', 'frame interval']
             if not args.draw_only:
                 required.append('simulation average')
@@ -101,6 +118,8 @@ with args.log.open('w') as log:
             if (all(len(measurements.get(k, [])) >= args.windows for k in required)
                     and (not presentation or len(presentation) >= args.windows)
                     and (not audio_stream or len(audio_stream) >= args.windows)):
+                if args.screenshot and not captured:
+                    raise RuntimeError('Requested screenshot window exceeds completed PLAY windows')
                 break
         else:
             raise RuntimeError('Timed out before the requested complete measurement windows')

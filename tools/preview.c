@@ -27,9 +27,9 @@ float label_width(const char *s) { return strlen(s)*4.2f; }
 void label_edge(float x,float y,int style,const char *s,bool right) {
     label(right?x-label_width(s):x,y,style,s);
 }
-void draw_fluid(const Fluid *f,float ox,float oy,float width,float height,bool speed) {
+void draw_fluid(const Fluid *f,float ox,float oy,float width,float height,FlowEffect effect) {
     puts("<g shape-rendering='crispEdges'>");
-    for(int y=0;y<FH;y++) for(int x=0;x<FW;x++) rect(ox+x*width/FW,oy+y*height/FH,width/FW,height/FH,(speed?fluid_speed_color(f,y*FW+x):fluid_color(f,y*FW+x)));
+    for(int y=0;y<FH;y++) for(int x=0;x<FW;x++) rect(ox+x*width/FW,oy+y*height/FH,width/FW,height/FH,fluid_view_color(f,y*FW+x,flow_view(effect)));
     puts("</g>");
 }
 int main(int argc,char **argv) {

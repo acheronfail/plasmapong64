@@ -436,12 +436,48 @@ float label_width(const char *s) {
     }
     return w;
 }
-static void draw_pixels(const Fluid *f,bool speed) {
-    /* Generate all pixels together so bank selection and call overhead stay
-       outside the cell loop. Preserve the padded RGBA32 upload layout. */
+static void draw_pixels(const Fluid *f,FlowEffect effect) {
 #ifdef PLASMAPONG_FLUID_PROFILE
     uint64_t pixel_begin=get_ticks();
 #endif
+    bool speed=effect==FLOW_SPEED;
+#if defined(PLASMAPONG_PREPARE_RSP) && !defined(PLASMAPONG_INK16)
+    if(effect==FLOW_BANDS || effect==FLOW_RELIEF) {
+        if(effect==FLOW_BANDS) fluid_bands_pixels_rsp_begin(f,ink.buffer,ink.stride/4);
+        else fluid_relief_pixels_rsp_begin(f,ink.buffer,ink.stride/4);
+#ifdef PLASMAPONG_PIXELS_CHAIN
+        pixel_done=rspq_syncpoint_new(); pixel_pending=true;
+        rspq_flush();
+#else
+        fluid_queue_wait();
+#endif
+#ifdef PLASMAPONG_FLUID_PROFILE
+        pixel_ticks+=get_ticks()-pixel_begin;
+#endif
+        return;
+    }
+#endif
+    if(effect>=FLOW_VORTEX) {
+        FluidView view=flow_view(effect);
+        void *pixels=CachedAddr(ink.buffer);
+        fluid_view_pixels(f,pixels,ink.stride/sizeof(uint32_t),view);
+        data_cache_hit_writeback(pixels,ink.stride*FH);
+#ifdef PLASMAPONG_INK16_RSP
+        /* The optional 16-bit renderer still consumes ink16 for CPU views. */
+        uint16_t *destination=CachedAddr(ink16.buffer);
+        for(unsigned row=0;row<FH;row++) for(unsigned col=0;col<FW;col++) {
+            uint32_t p=((uint32_t *)pixels)[row*(ink.stride/4)+col];
+            destination[row*(ink16.stride/2)+col]=((p>>16)&0xf800)|((p>>13)&0x07c0)|((p>>10)&0x003e)|1;
+        }
+        data_cache_hit_writeback(destination,ink16.stride*FH);
+#endif
+#ifdef PLASMAPONG_FLUID_PROFILE
+        pixel_ticks+=get_ticks()-pixel_begin;
+#endif
+        return;
+    }
+    /* Generate all pixels together so bank selection and call overhead stay
+       outside the cell loop. Preserve the padded RGBA32 upload layout. */
 #ifdef PLASMAPONG_INK16_RSP
     if(speed) fluid_speed_pixels16_rsp_begin(f,ink16.buffer,ink16.stride/2);
     else fluid_pixels16_rsp_begin(f,ink16.buffer,ink16.stride/2);
@@ -486,7 +522,7 @@ static void draw_pixels(const Fluid *f,bool speed) {
     pixel_ticks+=get_ticks()-pixel_begin;
 #endif
 }
-void draw_fluid(const Fluid *f,float x,float y,float width,float height,bool speed) {
+void draw_fluid(const Fluid *f,float x,float y,float width,float height,FlowEffect effect) {
     fill_mode=false;
 #ifdef PLASMAPONG_FRAME_BLOCK
     if(!recording_frame)
@@ -494,7 +530,7 @@ void draw_fluid(const Fluid *f,float x,float y,float width,float height,bool spe
 #ifdef PLASMAPONG_MENU_TEMPLATE
     if(!recording_menu_template)
 #endif
-        draw_pixels(f,speed);
+        draw_pixels(f,effect);
 #ifdef PLASMAPONG_BENCH_FLAT_FLUID
     /* Diagnostic: retain producer/source synchronization, particles and UI,
        replacing only the textured backdrop's RDP work with a flat fill. */
@@ -916,7 +952,7 @@ int main(void) {
         /* Queue pixel production before recording: syncpoints cannot be
            created inside a block. The source and destination are protected
            by the ordinary previous-frame completion wait above. */
-        draw_pixels(&game.fluid,game.phase!=MENU && game.flow_effect==FLOW_SPEED);
+        draw_pixels(&game.fluid,game.flow_effect);
 #endif
         /* The frame-start RSP/RDP wait also releases the raw point buffers. */
         point_commands_used=0;
@@ -936,7 +972,7 @@ int main(void) {
             unsigned pads=0;
             for(unsigned p=0;p<MAX_PLAYERS;p++) pads+=!!game.connected[p];
             unsigned key=game.menu_selection|(game.players<<4)|(pads<<8)|(game.flow_effect<<12);
-            draw_pixels(&game.fluid,false);
+            draw_pixels(&game.fluid,game.flow_effect);
             if(!menu_template || key!=menu_template_key) {
                 if(menu_template) rspq_block_free(menu_template);
                 menu_template_key=key;

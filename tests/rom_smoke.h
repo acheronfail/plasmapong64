@@ -4,6 +4,26 @@
 #endif
 static void smoke_input(Game *g,Input in[MAX_PLAYERS]) {
     static unsigned steps;
+#ifdef PLASMAPONG_SMOKE_OPTIONS
+    /* Enter the actual Options screen and visit every saved effect using
+       controller edges. Keep normal menu simulation and preview rendering. */
+    static unsigned option_ticks;
+    static bool option_started;
+    memset(in,0,sizeof(Input)*MAX_PLAYERS);
+    in[0].connected=true;
+    if(!option_started) { g->flow_effect=FLOW_NONE; option_started=true; }
+    if(g->phase==MENU) {
+        if(g->menu_selection!=3) in[0].y=steps%2==0?-1:0;
+        else in[0].start=steps%2==0;
+    } else if(g->phase==OPTIONS) {
+        if(option_ticks && option_ticks%(3*GAME_HZ)==0) in[0].x=1;
+        if(option_ticks%(3*GAME_HZ)==1)
+            debugf("OPTIONS SMOKE: effect %u\n",(unsigned)g->flow_effect);
+        option_ticks+=game_tick_units(g);
+    }
+    steps+=game_tick_units(g);
+    return;
+#endif
 #ifdef PLASMAPONG_SMOKE_VIDEO
     /* Use real menu inputs to switch both ways while rendering, save the
        choice, then return to ordinary scripted gameplay in high res. */

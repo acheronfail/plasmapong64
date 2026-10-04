@@ -300,6 +300,9 @@ endif
 $(BUILD_DIR)/src/fluid.o $(BUILD_DIR)/src/fluid_advection.o $(BUILD_DIR)/src/fluid_dye_fixed.o $(BUILD_DIR)/src/fluid_velocity_fixed.o $(BUILD_DIR)/src/fluid_confinement.o: CFLAGS += -O3
 $(BUILD_DIR)/src/game.o $(BUILD_DIR)/src/ui.o: CFLAGS += -O3
 $(BUILD_DIR)/src/main.o: CFLAGS += -O3
+ifeq ($(SMOKE_OPTIONS),1)
+N64_CFLAGS += -DPLASMAPONG_SMOKE -DPLASMAPONG_SMOKE_OPTIONS
+endif
 ifeq ($(SMOKE_FLOW),1)
 N64_CFLAGS += -DPLASMAPONG_SMOKE -DPLASMAPONG_SMOKE_FLOW
 endif

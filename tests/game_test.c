@@ -45,12 +45,16 @@ static void flow_tests(void) {
     input[0].y=1; game_step(&a,input); assert(a.menu_selection==3);
     input[0].y=0; input[0].a=true; game_step(&a,input); assert(a.phase==OPTIONS);
     input[0].a=false; input[0].x=-1; game_step(&a,input);
-    assert(a.flow_effect==FLOW_SPEED && a.scores_dirty);
+    assert(a.flow_effect==FLOW_PRESSURE && a.scores_dirty);
     a.scores_dirty=false; game_step(&a,input); assert(!a.scores_dirty);
     input[0].x=0; game_step(&a,input); input[0].x=1; game_step(&a,input);
     assert(a.flow_effect==FLOW_NONE);
     input[0].x=0; game_step(&a,input); input[0].x=1; game_step(&a,input);
     assert(a.flow_effect==FLOW_PARTICLES);
+    for(int i=0;i<FLOW_COUNT;i++) {
+        input[0].x=0; game_step(&a,input); input[0].x=1; game_step(&a,input);
+        assert(a.flow_effect==(FlowEffect)((FLOW_PARTICLES+i+1)%FLOW_COUNT));
+    }
     input[0].x=0; input[0].b=true; game_step(&a,input); assert(a.phase==MENU);
     a.phase=LOBBY; input[0].b=false; input[0].start=true; game_step(&a,input);
     assert(a.phase==PLAY && a.flow_effect==FLOW_PARTICLES);
