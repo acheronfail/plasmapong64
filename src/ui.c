@@ -205,14 +205,18 @@ static void flow_points(const Game *g,float x,float y,float w,float h,int layers
 #ifdef PLASMAPONG_FLUID_PROFILE
     uint64_t flow_begin=get_ticks();
 #endif
-    /* A small, saturated palette preserves batching: at most four color
+    /* A small, saturated palette preserves batching: at most six color
        changes per layer, rather than one per particle. Read nearest-cell dye
-       once per head; tails share its tint. Mixed/clear fluid stays neutral. */
-    static const uint32_t colors[4][5]={
+       once per head; tails share its tint. Recognise the mint and violet ink
+       blends as well as the three base pigments. Clear fluid stays neutral. */
+    enum { TINT_NEUTRAL, TINT_CYAN, TINT_CORAL, TINT_GOLD, TINT_MINT, TINT_VIOLET, TINT_COUNT };
+    static const uint32_t colors[TINT_COUNT][5]={
         {0x526d82,0x465d70,0x3b4e5e,0x30404c,0x25313a}, /* neutral */
         {0x29afd2,0x2397b5,0x1d7f99,0x18677c,0x124f60}, /* cyan */
         {0xdb506b,0xbd455c,0x9f3a4e,0x812f3f,0x632430}, /* coral */
-        {0xc7a333,0xac8d2c,0x917725,0x75611e,0x5a4a17}  /* gold */
+        {0xc7a333,0xac8d2c,0x917725,0x75611e,0x5a4a17}, /* gold */
+        {0x50d6ad,0x45b995,0x3a9b7e,0x2f7e66,0x24604e}, /* mint */
+        {0xa16dd6,0x8b5eb9,0x75509b,0x5f417e,0x493160}  /* violet */
     };
     unsigned head=g->tracer_head,history[5];
     for(unsigned j=0;j<5;j++) history[j]=(head+j*FLOW_SAMPLE_TICKS)%FLOW_HISTORY;
@@ -228,8 +232,8 @@ static void flow_points(const Game *g,float x,float y,float w,float h,int layers
     const int top=(int)ceilf(y),bottom=(int)ceilf(y+h);
     /* Prepare every dot for one tracer while its history is in cache. Keep
        the existing back-to-front, color-grouped draw order in compact batches. */
-    static DrawPoint points[5][4][FLOW_TRACERS];
-    unsigned counts[5][4]={{0}};
+    static DrawPoint points[5][TINT_COUNT][FLOW_TRACERS];
+    unsigned counts[5][TINT_COUNT]={{0}};
     /* Tail offsets are capped at 24 world units. A one-unit guard covers
        float rounding: beyond this halo every dot is hidden by the side mask. */
     const float halo=layers?25:1;
@@ -242,10 +246,16 @@ static void flow_points(const Game *g,float x,float y,float w,float h,int layers
         if(cropped && (hx<hidden_left || hx>hidden_right)) continue;
         int k=(int)(hy/CELL)*FW+(int)(hx/CELL);
         FluidInkValue r=ink->red[k],b=ink->blue[k],gold=ink->gold[k];
-        unsigned tint=0;
-        if(b>minimum && b>r+r/2 && b>gold+gold/2) tint=1;
-        else if(r>minimum && r>b+b/2 && r>gold+gold/2) tint=2;
-        else if(gold>minimum && gold>r+r/2 && gold>b+b/2) tint=3;
+        unsigned tint=TINT_NEUTRAL;
+        /* Mint is blue plus gold; violet is comparable red and blue. Follow
+           the actual dye so previous-level trails keep their fading colour. */
+        if(b>minimum && gold>minimum && b>gold && gold>b/4 &&
+           b>r+r/2 && gold>r+r/2) tint=TINT_MINT;
+        else if(b>minimum && r>minimum && b<r+r/2 && r<b+b/2 &&
+                b>gold+gold/2 && r>gold+gold/2) tint=TINT_VIOLET;
+        else if(b>minimum && b>r+r/2 && b>gold+gold/2) tint=TINT_CYAN;
+        else if(r>minimum && r>b+b/2 && r>gold+gold/2) tint=TINT_CORAL;
+        else if(gold>minimum && gold>r+r/2 && gold>b+b/2) tint=TINT_GOLD;
         float dx[5],dy[5],length[5];
         dx[0]=dy[0]=0;
         float extent=0;
@@ -283,7 +293,7 @@ static void flow_points(const Game *g,float x,float y,float w,float h,int layers
     flow_prepare_ticks+=get_ticks()-flow_begin; flow_begin=get_ticks();
 #endif
     for(int j=layers;j>=0;j--)
-        for(unsigned tint=0;tint<4;tint++)
+        for(unsigned tint=0;tint<TINT_COUNT;tint++)
             draw_points(points[j][tint],counts[j][tint],colors[tint][j]);
     draw_points_end();
 #ifdef PLASMAPONG_FLUID_PROFILE
