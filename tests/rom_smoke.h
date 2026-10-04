@@ -4,6 +4,30 @@
 #endif
 static void smoke_input(Game *g,Input in[MAX_PLAYERS]) {
     static unsigned steps;
+#ifdef PLASMAPONG_SMOKE_MENU_VIEW
+    /* Select through Options, then B back to the real main menu. The test
+       holds there for visual QA, including cached foreground rendering. */
+    _Static_assert(PLASMAPONG_SMOKE_MENU_VIEW>=0 && PLASMAPONG_SMOKE_MENU_VIEW<FLOW_COUNT,"valid menu view");
+    static unsigned menu_wait;
+    static bool menu_returned,menu_reported;
+    memset(in,0,sizeof(Input)*MAX_PLAYERS);
+    in[0].connected=true;
+    if(g->phase==MENU) {
+        if(menu_returned) {
+            assert(g->flow_effect==PLASMAPONG_SMOKE_MENU_VIEW);
+            if(!menu_reported) {
+                debugf("Menu view PASS: effect %u retained after Options return\n",(unsigned)g->flow_effect);
+                menu_reported=true;
+            }
+        } else if(g->menu_selection!=3) in[0].y=steps%2==0?-1:0;
+        else in[0].start=steps%2==0;
+    } else if(g->phase==OPTIONS) {
+        if(g->flow_effect!=PLASMAPONG_SMOKE_MENU_VIEW) in[0].x=steps%2==0?1:0;
+        else if(++menu_wait>=GAME_HZ) { in[0].b=true; menu_returned=true; }
+    }
+    steps+=game_tick_units(g);
+    return;
+#endif
 #ifdef PLASMAPONG_SMOKE_OPTIONS
     /* Enter the actual Options screen and visit every saved effect using
        controller edges. Keep normal menu simulation and preview rendering. */

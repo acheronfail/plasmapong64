@@ -123,3 +123,21 @@ windows, then manually inspect low/high-resolution gameplay and Options,
 including pause/resume and cartridge settings persistence. Require target
 cadence, no sustained presentation repeats/misses and no audio debt. No ROM has
 been uploaded to the console as part of this prototype work.
+
+## Returning to the main menu
+
+The main menu, Options preview and court all pass the selected `FlowEffect`
+through the same `flow_background`/`draw_fluid` path. The menu has no dye-only
+fallback, including for SPEED. The cached menu foreground contains only labels
+and title geometry; it does not freeze the fluid texture or selected view.
+
+The controller-driven `just smoke-menu-view 7` test enters Options, selects
+PRESSURE, presses B and holds on the actual main menu. `just smoke-menu-view 3`
+exercises SPEED, which previously had the explicit menu-only dye fallback.
+Both transitions pass in Ares with RDP validation enabled. Separate ordinary
+renderer runs retained 150 steps/150 frames at approximately 16.683 ms/frame
+in the two complete main-menu windows, with zero presentation misses/repeats.
+The first timing window includes Options navigation and EEPROM save pauses.
+
+Ordinary-renderer captures: [PRESSURE on the main menu](flow-views/main-menu-pressure.png)
+and [SPEED on the main menu](flow-views/main-menu-speed.png).

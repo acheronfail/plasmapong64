@@ -261,3 +261,7 @@ validate-views:
 # Navigate the actual Options selector and preview every mode for three seconds.
 smoke-view-options:
     ./tools/build-rom.sh -j4 SMOKE_OPTIONS=1 SMOKE_HIGH_RES=1 RDP_VALIDATE=1 ROM=plasmapong-views-options BUILD_DIR=build/views_options
+
+# Select an effect in Options, press B, then hold the matching main-menu preview.
+smoke-menu-view effect="7":
+    ./tools/build-rom.sh -j4 SMOKE_MENU_VIEW={{effect}} SMOKE_HIGH_RES=1 RDP_VALIDATE=1 ROM=plasmapong-menu-view-{{effect}} BUILD_DIR=build/menu_view_{{effect}}
