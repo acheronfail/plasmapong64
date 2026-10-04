@@ -210,7 +210,8 @@ static void flow_points(const Game *g,float x,float y,float w,float h,int layers
        once per head; tails share its tint. Recognise the mint and violet ink
        blends as well as the three base pigments. Clear fluid stays neutral. */
     enum { TINT_NEUTRAL, TINT_CYAN, TINT_CORAL, TINT_GOLD, TINT_MINT, TINT_VIOLET, TINT_COUNT };
-    static const uint32_t colors[TINT_COUNT][5]={
+    _Static_assert((unsigned)TINT_COUNT==DRAW_POINT_TINTS,"point command capacity must cover every tint");
+    static const uint32_t colors[TINT_COUNT][DRAW_POINT_LAYERS]={
         {0x526d82,0x465d70,0x3b4e5e,0x30404c,0x25313a}, /* neutral */
         {0x29afd2,0x2397b5,0x1d7f99,0x18677c,0x124f60}, /* cyan */
         {0xdb506b,0xbd455c,0x9f3a4e,0x812f3f,0x632430}, /* coral */
@@ -218,8 +219,8 @@ static void flow_points(const Game *g,float x,float y,float w,float h,int layers
         {0x50d6ad,0x45b995,0x3a9b7e,0x2f7e66,0x24604e}, /* mint */
         {0xa16dd6,0x8b5eb9,0x75509b,0x5f417e,0x493160}  /* violet */
     };
-    unsigned head=g->tracer_head,history[5];
-    for(unsigned j=0;j<5;j++) history[j]=(head+j*FLOW_SAMPLE_TICKS)%FLOW_HISTORY;
+    unsigned head=g->tracer_head,history[DRAW_POINT_LAYERS];
+    for(unsigned j=0;j<DRAW_POINT_LAYERS;j++) history[j]=(head+j*FLOW_SAMPLE_TICKS)%FLOW_HISTORY;
     const float sx=w/ARENA_W,sy=h/ARENA_H;
     /* Gameplay masks the side strips after drawing the fluid. Do not submit
        tracer dots that will be completely covered. Menus remain full width. */
@@ -232,8 +233,8 @@ static void flow_points(const Game *g,float x,float y,float w,float h,int layers
     const int top=(int)ceilf(y),bottom=(int)ceilf(y+h);
     /* Prepare every dot for one tracer while its history is in cache. Keep
        the existing back-to-front, color-grouped draw order in compact batches. */
-    static DrawPoint points[5][TINT_COUNT][FLOW_TRACERS];
-    unsigned counts[5][TINT_COUNT]={{0}};
+    static DrawPoint points[DRAW_POINT_LAYERS][TINT_COUNT][FLOW_TRACERS];
+    unsigned counts[DRAW_POINT_LAYERS][TINT_COUNT]={{0}};
     /* Tail offsets are capped at 24 world units. A one-unit guard covers
        float rounding: beyond this halo every dot is hidden by the side mask. */
     const float halo=layers?25:1;
@@ -256,7 +257,7 @@ static void flow_points(const Game *g,float x,float y,float w,float h,int layers
         else if(b>minimum && b>r+r/2 && b>gold+gold/2) tint=TINT_CYAN;
         else if(r>minimum && r>b+b/2 && r>gold+gold/2) tint=TINT_CORAL;
         else if(gold>minimum && gold>r+r/2 && gold>b+b/2) tint=TINT_GOLD;
-        float dx[5],dy[5],length[5];
+        float dx[DRAW_POINT_LAYERS],dy[DRAW_POINT_LAYERS],length[DRAW_POINT_LAYERS];
         dx[0]=dy[0]=0;
         float extent=0;
         for(int j=1;j<=layers;j++) {
@@ -304,7 +305,7 @@ static void flow_background(const Game *g,float x,float y,float w,float h) {
     /* Separate the two fixed layer counts so the compiler can specialise
        the history and point loops while preserving every dot and its order. */
     draw_fluid(&g->fluid,x,y,w,h,g->flow_effect);
-    if(g->flow_effect==FLOW_TAILS) flow_points(g,x,y,w,h,4);
+    if(g->flow_effect==FLOW_TAILS) flow_points(g,x,y,w,h,DRAW_POINT_LAYERS-1);
     else if(g->flow_effect==FLOW_PARTICLES) flow_points(g,x,y,w,h,0);
 }
 void ui_menu_foreground(const Game *g) {
@@ -318,7 +319,7 @@ void ui_menu_foreground(const Game *g) {
     }
 }
 void ui_menu_particles(const Game *g) {
-    if(g->flow_effect==FLOW_TAILS) flow_points(g,0,0,320,240,4);
+    if(g->flow_effect==FLOW_TAILS) flow_points(g,0,0,320,240,DRAW_POINT_LAYERS-1);
     else if(g->flow_effect==FLOW_PARTICLES) flow_points(g,0,0,320,240,0);
 }
 void ui_draw(const Game *g) {

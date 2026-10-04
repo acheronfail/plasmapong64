@@ -17,6 +17,16 @@ cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic -Isrc src/game.c src/arcade.c sr
 ./build/arcade-test
 cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic -Isrc src/save.c tests/save_test.c -o build/save-test
 ./build/save-test
+# Saturate every particle tint/layer to cover the hardware command-buffer panic.
+for backend in float fixed; do
+    flags=""; sources=""
+    if [ "$backend" = fixed ]; then
+        flags="-DPLASMAPONG_DYE_FIXED"
+        sources="src/fluid_dye_fixed.c"
+    fi
+    cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic $flags -Isrc src/game.c src/arcade.c src/fluid.c src/fluid_advection.c $sources src/ui.c tests/point_capacity_test.c -lm -o "build/point-capacity-$backend-test"
+    "./build/point-capacity-$backend-test"
+done
 cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic -Isrc src/game.c src/arcade.c src/fluid.c src/fluid_advection.c src/ui.c tools/preview.c -lm -o build/preview
 for state in menu menu-4p menu-options options play lobby paused finished arcade gameover scores level overcharge 3p 4p; do
     ./build/preview "$state" > "build/preview-$state.svg"

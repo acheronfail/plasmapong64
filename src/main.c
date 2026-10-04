@@ -169,7 +169,7 @@ static rspq_block_t *ink_blit;
 static float ink_x,ink_y,ink_w,ink_h;
 static bool fill_mode;
 static uint32_t fill_color;
-static _Alignas(16) uint64_t point_commands[5*(FLOW_TRACERS+8)];
+static _Alignas(16) uint64_t point_commands[DRAW_POINT_COMMAND_CAPACITY];
 static unsigned point_commands_used;
 #ifdef PLASMAPONG_MENU_TEMPLATE
 #include "rdpq_internal.h"

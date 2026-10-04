@@ -9,6 +9,12 @@ extern uint64_t flow_prepare_ticks,flow_emit_ticks;
 #endif
 void rect(float x,float y,float w,float h,uint32_t c);
 typedef struct { uint16_t x,y; } DrawPoint;
+enum {
+    DRAW_POINT_LAYERS=5,
+    DRAW_POINT_TINTS=6,
+    /* Each nonempty tint batch adds a pipe sync and fill-color command. */
+    DRAW_POINT_COMMAND_CAPACITY=DRAW_POINT_LAYERS*(FLOW_TRACERS+2*DRAW_POINT_TINTS)
+};
 /* At most five layers of FLOW_TRACERS in a frame; screen-clipped pixels. */
 void draw_points(const DrawPoint *points,unsigned count,uint32_t c);
 void draw_points_end(void);
