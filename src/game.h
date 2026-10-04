@@ -84,6 +84,13 @@ typedef struct {
     FrameRate frame_rate;
     unsigned options_selection;
 } Game;
+/* Share the level palette between paddles, labels and new fluid emissions. */
+static inline unsigned game_player_palette(const Game *g,unsigned p) {
+    static const unsigned pairs[4][2]={{0,1},{2,3},{1,0},{3,2}};
+    if(g->mode!=ARCADE || p>=2) return p;
+    unsigned level=g->arcade.level?g->arcade.level-1:0;
+    return pairs[level%4][p];
+}
 static inline float game_bat_half(const Game *g,unsigned p) {
     if(g->mode!=ARCADE || p!=0 || g->arcade.level<=1) return BAT_HALF;
     /* Lose one pixel of total height per level, stopping at 16 pixels. */

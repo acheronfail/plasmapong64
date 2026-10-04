@@ -207,7 +207,7 @@ static void ball_step(Game *g) {
                 if(p<2) { g->bx=b->x+nx*6; g->bvx=nx*bounce; g->bvy+=tangent*3.8f+b->vy*.3f; }
                 else { g->by=b->y+ny*6; g->bvy=ny*bounce; g->bvx+=tangent*3.8f+b->vx*.3f; }
                 limit_ball(g);
-                fluid_splat(&g->fluid,g->bx,g->by,13,nx*35+(p<2?0:b->vx*.2f),ny*35+(p<2?b->vy*.2f:0),.35f,p);
+                fluid_splat(&g->fluid,g->bx,g->by,13,nx*35+(p<2?0:b->vx*.2f),ny*35+(p<2?b->vy*.2f:0),.35f,game_player_palette(g,p));
             }
         }
         corner_bounce(g);
@@ -379,12 +379,12 @@ void game_step(Game *g,const Input physical[MAX_PLAYERS]) {
         }
         b->vx=(b->x-x)*ticks_per_second; b->vy=(b->y-y)*ticks_per_second;
         fluid_splat(&g->fluid,b->x,b->y,20,b->vx*.40f*emission,b->vy*.40f*emission,
-                    (fabsf(b->vx)+fabsf(b->vy))*step*.008f,p);
+                    (fabsf(b->vx)+fabsf(b->vy))*step*.008f,game_player_palette(g,p));
         b->burst=maxf(0,b->burst-step);
         if(in[p].z) {
             /* The arcade opponent's jet approaches twice the human strength. */
             float jet=1150*step*(g->mode==ARCADE && p==1?1+arcade_difficulty(g):1);
-            fluid_splat(&g->fluid,b->x+nx*14,b->y+ny*14,22,nx*jet+(p<2?0:b->vx*.08f*emission),ny*jet+(p<2?b->vy*.08f*emission:0),2.6f*step,p);
+            fluid_splat(&g->fluid,b->x+nx*14,b->y+ny*14,22,nx*jet+(p<2?0:b->vx*.08f*emission),ny*jet+(p<2?b->vy*.08f*emission:0),2.6f*step,game_player_palette(g,p));
         }
     }
     if(g->mode==ARCADE) arcade_currents(g);
@@ -411,15 +411,15 @@ void game_step(Game *g,const Input physical[MAX_PLAYERS]) {
                 continue;
             }
             b->sucking=true; b->charge=minf(1,(float)b->suction_ticks/SUCTION_CHARGE_TICKS);
-            fluid_pump(&g->fluid,b->x+nx*7,b->y+ny*7,35,-1150,step,p);
+            fluid_pump(&g->fluid,b->x+nx*7,b->y+ny*7,35,-1150,step,game_player_palette(g,p));
         } else if(b->sucking) {
             b->sucking=false;
             if(g->held==(int)p) {
                 b->burst=.25f;
                 /* Spend stored charge only when releasing a caught ball. */
-                fluid_pump(&g->fluid,b->x,b->y,40,2800,.13f*b->charge,p);
+                fluid_pump(&g->fluid,b->x,b->y,40,2800,.13f*b->charge,game_player_palette(g,p));
                 fluid_splat(&g->fluid,b->x+nx*12,b->y+ny*12,27,(nx*240+(p<2?0:b->vx*.35f))*b->charge,
-                            (ny*240+(p<2?b->vy*.35f:0))*b->charge,b->charge,p);
+                            (ny*240+(p<2?b->vy*.35f:0))*b->charge,b->charge,game_player_palette(g,p));
                 g->held=-1; attach_ball(g,p,9);
                 /* Perfect timing earns a clear jump to the ball's speed cap. */
                 float speed=b->charge>=1?290:200*b->charge;

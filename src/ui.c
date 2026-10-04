@@ -11,6 +11,7 @@
 #define MINT 0x70ffd0
 #define VIOLET 0xc28aff
 static const uint32_t player_colors[]={CYAN,CORAL,MINT,VIOLET};
+static const uint32_t player_outlines[]={0x164658,0x642739,0x245b50,0x49345f};
 static const int player_styles[]={2,3,7,8};
 /* Match the ball dye's RGB contribution in fluid_color(). */
 #define GOLD MENU_GOLD
@@ -366,7 +367,7 @@ void ui_draw(const Game *g) {
     if(g->mode==ARCADE) {
         snprintf(s,sizeof(s),"SCORE %u",(unsigned)g->arcade.points); label(16,20,0,s);
         snprintf(s,sizeof(s),"LV %u",(unsigned)g->arcade.level); label(167,20,0,s);
-        snprintf(s,sizeof(s),"LIVES %u",g->arcade.lives); label_edge(304,20,2,s,true);
+        snprintf(s,sizeof(s),"LIVES %u",g->arcade.lives); label_edge(304,20,player_styles[game_player_palette(g,0)],s,true);
     } else if(game_square(g)) {
         for(unsigned p=0;p<g->players;p++) {
             snprintf(s,sizeof(s),g->lives[p]?"P%u %u":"P%u OUT",p+1,g->lives[p]);
@@ -382,7 +383,8 @@ void ui_draw(const Game *g) {
     bool radius_ready=false;
     for(unsigned p=0;p<game_players(g);p++) {
         if(!game_alive(g,p)) continue;
-        const Bat *b=&g->bat[p]; uint32_t c=player_colors[p];
+        unsigned palette=game_player_palette(g,p);
+        const Bat *b=&g->bat[p]; uint32_t c=player_colors[palette];
         float half=game_bat_half(g,p);
         bool broken=b->cooldown_ticks>0;
         if(broken) c=0x737d8a;
@@ -394,7 +396,7 @@ void ui_draw(const Game *g) {
                 bat_rect(p,x,y,-9,half+5,18*b->charge,2,b->charge>=1?0x40ff70:c);
         }
         if(b->burst>0) ring(g,x,y,12+(1-b->burst/.25f)*30,c);
-        bat_rect(p,x,y,-5,-half-2,10,half*2+4,broken?0x36323c:p==0?0x164658:p==1?0x642739:p==2?0x245b50:0x49345f);
+        bat_rect(p,x,y,-5,-half-2,10,half*2+4,broken?0x36323c:player_outlines[palette]);
         bat_rect(p,x,y,-3,-half,6,half*2,c);
         bat_rect(p,x,y,-1,-half+2,2,half*2-4,broken?0x434753:WHITE);
         if(broken) {
@@ -405,8 +407,8 @@ void ui_draw(const Game *g) {
         }
     }
     if(!game_square(g)) {
-        label_edge(OX+5,46,2,"P1",false);
-        label_edge(OX+ARENA_W-5,46,3,g->mode==ARCADE?"CPU":"P2",true);
+        label_edge(OX+5,46,player_styles[game_player_palette(g,0)],"P1",false);
+        label_edge(OX+ARENA_W-5,46,player_styles[game_player_palette(g,1)],g->mode==ARCADE?"CPU":"P2",true);
     }
     if(g->mode==ARCADE) {
         snprintf(s,sizeof(s),"GOALS %u / 3",g->arcade.goals); label(130,46,0,s);

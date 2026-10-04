@@ -57,14 +57,14 @@ void arcade_currents(Game *g) {
     float force=35*arcade_difficulty(g),wave=sinf(g->elapsed*.8f);
     switch((g->arcade.level-6)%3) {
     case 0:
-        fluid_splat(&g->fluid,ARENA_W*.5f,ARENA_H*.5f,24,force*wave,0,.018f,0);
+        fluid_splat(&g->fluid,ARENA_W*.5f,ARENA_H*.5f,24,force*wave,0,.018f,game_player_palette(g,0));
         break;
     case 1:
-        fluid_splat(&g->fluid,ARENA_W*.5f,ARENA_H*.7f,24,0,-force,.018f,1);
+        fluid_splat(&g->fluid,ARENA_W*.5f,ARENA_H*.7f,24,0,-force,.018f,game_player_palette(g,1));
         break;
     default:
-        fluid_splat(&g->fluid,ARENA_W*.4f,ARENA_H*.35f,20,force,force*.4f,.012f,0);
-        fluid_splat(&g->fluid,ARENA_W*.6f,ARENA_H*.65f,20,-force,-force*.4f,.012f,1);
+        fluid_splat(&g->fluid,ARENA_W*.4f,ARENA_H*.35f,20,force,force*.4f,.012f,game_player_palette(g,0));
+        fluid_splat(&g->fluid,ARENA_W*.6f,ARENA_H*.65f,20,-force,-force*.4f,.012f,game_player_palette(g,1));
         break;
     }
 }
