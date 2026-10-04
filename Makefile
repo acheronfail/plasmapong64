@@ -1,4 +1,8 @@
 ADVECTION_CHAIN ?= 1
+ADVECTION_PIPELINE ?= 1
+GRADIENT_PIPELINE ?= 1
+CPU_LTO ?= 1
+TRACE_ROWS ?= 3
 CONFINEMENT_CHAIN ?= 1
 PROJECTION_CHAIN ?= 1
 PIXELS_CHAIN ?= 1
@@ -35,6 +39,11 @@ endif
 include $(N64_INST)/include/n64.mk
 ifeq ($(PIXELS_CHAIN),1)
 N64_CFLAGS += -DPLASMAPONG_PIXELS_CHAIN
+endif
+ifeq ($(CPU_LTO),1)
+N64_CFLAGS += -flto
+# n64.mk links through g++; keep these as driver flags, not -Wl options.
+N64_CXXFLAGS += -flto
 endif
 src := src/main.c src/game.c src/arcade.c src/fluid.c src/fluid_advection.c src/ui.c src/sound.c src/save.c src/save_n64.c
 ifeq ($(EXPANSION_BANKS),1)
@@ -141,6 +150,16 @@ N64_CFLAGS += -Wall -Wextra -Werror
 ifeq ($(AUDIO_STREAM),1)
 N64_CFLAGS += -DPLASMAPONG_AUDIO_STREAM
 endif
+ifneq ($(filter $(TRACE_ROWS),1 3),$(TRACE_ROWS))
+$(error TRACE_ROWS must be 1 or 3)
+endif
+N64_RSPASFLAGS += -DPLASMAPONG_TRACE_ROWS=$(TRACE_ROWS)
+ifeq ($(ADVECTION_PIPELINE),1)
+N64_RSPASFLAGS += -DPLASMAPONG_ADVECTION_PIPELINE
+endif
+ifeq ($(GRADIENT_PIPELINE),1)
+N64_RSPASFLAGS += -DPLASMAPONG_GRADIENT_PIPELINE
+endif
 ifeq ($(PRESSURE_VECTOR_SUM),1)
 N64_RSPASFLAGS += -DPLASMAPONG_PRESSURE_VECTOR_SUM
 endif
@@ -212,6 +231,8 @@ $(BUILD_DIR)/filesystem/at01-2x.font64: assets/fonts/at01-2x.fnt assets/fonts/at
 	$(N64_MKFONT) --format $(HIRES_FONT_FORMAT) -o $(BUILD_DIR)/filesystem $<
 $(BUILD_DIR)/$(ROM).dfs: $(BUILD_DIR)/filesystem/at01-2x.font64
 	$(N64_MKDFS) $@ $(BUILD_DIR)/filesystem
+# Rebuild cached objects when default compiler/ucode switches change.
+$(src:%.c=$(BUILD_DIR)/%.o) $(rsp_obj): Makefile
 $(BUILD_DIR)/$(ROM).elf: $(src:%.c=$(BUILD_DIR)/%.o) $(rsp_obj)
 $(ROM).z64: $(BUILD_DIR)/$(ROM).dfs
 $(ROM).z64: N64_ROM_SAVETYPE=eeprom4k

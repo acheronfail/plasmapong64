@@ -15,7 +15,7 @@ automatically to cartridge EEPROM alongside flow effects and high scores. Older
 save records retain their scores/effect and default to low res. Existing records
 with the former 30 FPS setting select high res; 60 FPS selects low res.
 Both resolutions use the same 60 Hz physics, emission and timer settings.
-On NTSC, high res presents a new framebuffer each field: roughly 60 fields,
+On NTSC, high res targets a new framebuffer each field: roughly 60 fields,
 or 30 complete interlaced scans, per second.
 
 A console performance overlay is enabled for testing: **L** on controller port 1
@@ -1747,3 +1747,84 @@ python3 tools/benchmark-ares.py plasmapong-hires-effects.z64 build/hires-effects
 Raw logs, distributions, source hashes and a comparison manifest are retained
 locally in `build/hires60/`. Percentiles are 250 us histogram upper bounds per
 150-update window; averages and maxima retain microsecond precision.
+
+### NTSC console follow-up: high-res 2P (2026-10-04)
+
+The user tested commit `fae1c76` on an NTSC console and reported consistently
+**49–51 presented FPS** in high-resolution 2P, with otherwise good gameplay.
+A fresh Ares control still presents at 60 fields/s. Optimisation therefore uses
+matched Ares work measurements to compare changes, while treating console frame
+rate as a separate result requiring another playtest. In this Ares checkout,
+RDP commands are rendered through the GPU and full sync raises completion without
+modelling the console's pixel-by-pixel execution time. Its completed-work figures
+cannot establish real-console RDP fill or shared-memory bandwidth headroom.
+
+The ordinary replay uses two players, high resolution and particle tails, with
+normal cooldowns. Both builds collect 12 windows of 150 updates on 4 MiB. A second replay uses
+continuous 2P powers and cycles all four effects over 24 windows (3,600 updates):
+
+| High-res 2P replay | Mean active work | Worst active work |
+| --- | ---: | ---: |
+| Unchanged `fae1c76` control | 11.157 ms | 11.873 ms |
+| Retained optimisations | 10.303 ms | 10.945 ms |
+| Unchanged control, continuous powers/all effects | 10.611 ms | 12.465 ms |
+| Retained optimisations, continuous powers/all effects | 9.719 ms | 11.499 ms |
+
+This is **7.7% less average work** and **7.8% less worst observed work**, with
+no reported repeated fields, presentation misses or audio underrun observations.
+The all-effects stress replay reduces mean work by **8.4%** and worst observed
+work by **7.7%**, also with zero reported repeats, misses and audio starvation
+observations. Detailed profiling is a separate diagnostic build because it adds overhead.
+Combined velocity/dye advection falls from about **3.453 ms to 2.777 ms** per
+step; chained divergence/pressure/gradient falls from **3.148 ms to 3.053 ms**.
+Projection and advection remain the largest measured simulation costs. Tracer
+preparation/emission remains around 1.5 ms, followed by confinement around 0.7 ms.
+
+Retained changes:
+
+- `ADVECTION_PIPELINE=1` alternates vector register banks so interpolation of
+  one eight-cell batch overlaps the next batch's scalar-addressed gathers.
+  Four independent addresses hide scalar load latency. Signed interpolation,
+  zero/unity decay, rounding and all source/output layouts remain unchanged.
+- `GRADIENT_PIPELINE=1` loads the independent vertical pressure source bank
+  during horizontal gradient arithmetic, preserving carry/control ordering
+  and exact rounded division and clamping.
+- `TRACE_ROWS=3` batches three backtrace rows per DMA setup, reducing trace
+  transfers from 99 to 33 per backtrace command (two commands per physics
+  update). Commands share scratch layouts because
+  they execute serially and reload their inputs; preparation scratch shrinks
+  from 2,384 to 1,904 bytes. Initial x coordinates are cached within the command.
+  `TRACE_ROWS=1` remains available for comparison.
+- `CPU_LTO=1` enables cross-file CPU optimisation with the existing floating
+  point rules. Default-option changes now rebuild cached objects through their
+  Makefile dependency; use separate build directories when changing overrides.
+- Tails already within the 24-unit cap skip multiplies by one. The court clear
+  touches only border strips because the fluid blit opaquely replaces the court.
+  At 640 × 480 this removes **228,096 redundant clear pixels** per frame:
+  79,104 instead of 307,200 (**74.25% less clear area**). This directly reduces
+  framebuffer writes; its console timing benefit is not measured by Ares.
+
+The 48 × 33 grid, eight pressure passes, 96 tracers, five tail layers, bilinear
+fluid rendering, audio mixer and video refresh configuration are retained.
+Exact dye/velocity/backtrace/gradient/projection/confinement fixtures pass,
+including overlay switches, source integrity and DMA guards. The portable suite
+passes, and 36 host UI rasters covering 12 scenes and three effects are
+pixel-identical to the control. A separate 1,800-update 4P continuous-powers/tails
+regression averages 12.395 ms with a 12.956 ms maximum, with no repeated fields
+or observed audio underruns. The normal playable ROM is `plasmapong.z64`;
+the new console frame rate has not yet been measured.
+
+Reproduce the matched 2P replays:
+
+```sh
+just benchmark-hires-2p
+python3 tools/benchmark-ares.py plasmapong-hires-2p.z64 build/hires-2p.log --windows 12 --memory-mib 4
+just benchmark-hires-2p-effects
+python3 tools/benchmark-ares.py plasmapong-hires-2p-effects.z64 build/hires-2p-effects.log --windows 24 --memory-mib 4 --timeout 360
+```
+
+Raw controls, candidate measurements, validation logs and the normal ROM build
+log are retained locally in `build/hires2p/`. For the next console comparison,
+select high res and 2P, reset the overlay with R after entering PLAY, then exercise
+jets, suction and each flow effect. Compare both the presented FPS and `MISS`/
+`GAP`; the refresh number after the slash should remain approximately 60.

@@ -253,15 +253,29 @@ static void flow_points(const Game *g,float x,float y,float w,float h,int layers
             length[j]=maxf(fabsf(dx[j]),fabsf(dy[j]));
             extent=maxf(extent,length[j]);
         }
-        float scale=extent>24?24/extent:1;
-        for(int j=0;j<=layers;j++) {
-            if(j && length[j]*scale<1) continue;
-            /* Histories and their convex combinations stay in the positive
-               screen domain. Integer truncation is therefore floor. */
-            int px=(int)(x+(hx+dx[j]*scale)*sx);
-            int py=(int)(y+(hy+dy[j]*scale)*sy);
-            if(px>=left && py>=top && px<right && py<bottom)
-                points[j][tint][counts[j][tint]++]=(DrawPoint){px,py};
+        /* Most tails fit the cap. Specialise that case so every visible
+           dot avoids three multiplies by one, with identical float rounding. */
+        if(extent<=24) {
+            for(int j=0;j<=layers;j++) {
+                if(j && length[j]<1) continue;
+                /* Histories and their convex combinations stay in the positive
+                   screen domain. Integer truncation is therefore floor. */
+                int px=(int)(x+(hx+dx[j])*sx);
+                int py=(int)(y+(hy+dy[j])*sy);
+                if(px>=left && py>=top && px<right && py<bottom)
+                    points[j][tint][counts[j][tint]++]=(DrawPoint){px,py};
+            }
+        } else {
+            float scale=24/extent;
+            for(int j=0;j<=layers;j++) {
+                if(j && length[j]*scale<1) continue;
+                /* Histories and their convex combinations stay in the positive
+                   screen domain. Integer truncation is therefore floor. */
+                int px=(int)(x+(hx+dx[j]*scale)*sx);
+                int py=(int)(y+(hy+dy[j]*scale)*sy);
+                if(px>=left && py>=top && px<right && py<bottom)
+                    points[j][tint][counts[j][tint]++]=(DrawPoint){px,py};
+            }
         }
     }
 #ifdef PLASMAPONG_FLUID_PROFILE
@@ -310,7 +324,16 @@ void ui_draw(const Game *g) {
         }
         return;
     }
-    rect(0,0,320,240,0x070c17);
+    /* The opaque fluid blit replaces every court pixel. Clear only its
+       surrounding strips, avoiding a redundant full-screen framebuffer write.
+       Scores have no fluid background and still need the complete clear. */
+    if(g->phase==SCORES) rect(0,0,320,240,0x070c17);
+    else {
+        rect(0,0,320,OY,0x070c17);
+        rect(0,OY+ARENA_H,320,240-OY-ARENA_H,0x070c17);
+        rect(0,OY,OX,ARENA_H,0x070c17);
+        rect(OX+ARENA_W,OY,320-OX-ARENA_W,ARENA_H,0x070c17);
+    }
     char s[64];
     if(g->phase==SCORES) {
         menu_label(26,4,"HIGH SCORES");

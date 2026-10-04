@@ -109,6 +109,14 @@ smoke-video:
 benchmark-hires:
     ./tools/build-rom.sh -j4 SMOKE=1 SMOKE_PLAYERS=4 SMOKE_HIGH_RES=1 SMOKE_EFFECT=2 FRAME_WORK_PROFILE=1 ROM=plasmapong-hires-work BUILD_DIR=build/hires_work
 
+# Matched high-res 2P replay for console-driven optimisation comparisons.
+benchmark-hires-2p:
+    ./tools/build-rom.sh -j4 SMOKE=1 SMOKE_PLAYERS=2 SMOKE_HIGH_RES=1 SMOKE_EFFECT=2 FRAME_WORK_PROFILE=1 ROM=plasmapong-hires-2p BUILD_DIR=build/hires_2p
+
+# 2P continuous powers while cycling every flow effect; collect at least 24 windows.
+benchmark-hires-2p-effects:
+    ./tools/build-rom.sh -j4 SMOKE=1 SMOKE_PLAYERS=2 SMOKE_HIGH_RES=1 SMOKE_FLOW=1 SMOKE_STRESS=1 FRAME_WORK_PROFILE=1 ROM=plasmapong-hires-2p-effects BUILD_DIR=build/hires_2p_effects
+
 # Test-only continuous powers, keeping every player alive and bypassing cooldowns.
 benchmark-hires-stress:
     ./tools/build-rom.sh -j4 SMOKE=1 SMOKE_PLAYERS=4 SMOKE_HIGH_RES=1 SMOKE_EFFECT=2 SMOKE_STRESS=1 FRAME_WORK_PROFILE=1 ROM=plasmapong-hires-stress BUILD_DIR=build/hires_stress

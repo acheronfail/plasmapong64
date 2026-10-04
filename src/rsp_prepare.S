@@ -19,16 +19,23 @@ RSPQ_EmptySavedState
     .quad 0
     .bss
     .align 4
-input0: .ds.b 96
-input1: .ds.b 96
-input2: .ds.b 96
-result: .ds.b 288
-grad_above: .ds.b 192
-grad_middle: .ds.b 192
-grad_below: .ds.b 192
-grad_u: .ds.b 96
-grad_v: .ds.b 96
-speed_palette: .ds.b 1040
+/* Commands execute serially and reload all consumed scratch. Alias their
+   different layouts instead of reserving every command's buffers together. */
+#ifndef PLASMAPONG_TRACE_ROWS
+#define PLASMAPONG_TRACE_ROWS 3
+#endif
+#define TRACE_ROWS PLASMAPONG_TRACE_ROWS
+scratch: .ds.b 1904
+    .set input0,scratch
+    .set input1,scratch+288
+    .set input2,scratch+576
+    .set result,scratch+672
+    .set grad_above,scratch
+    .set grad_middle,scratch+192
+    .set grad_below,scratch+384
+    .set grad_u,scratch+576
+    .set grad_v,scratch+672
+    .set speed_palette,scratch+864
     .text
 .macro transfer base, buffer, size, direction
     move s0,\base
@@ -69,12 +76,8 @@ Trace:
     mtc2 t3,$v23.e6
     li s5,0
     ctc2 zero,COP2_CTRL_VCO
-trace_row:
-    transfer s1,input0,96,DMA_IN
-    transfer s2,input1,96,DMA_IN
-    move s6,zero
-    mtc2 s5,$v25.e0
-    vxor $v25,vzero,$v25.e0
+    /* Retain initial x coordinates in Trace's otherwise unused third input.
+       This command reloads them after every overlay/command transition. */
     /* Eight adjacent x coordinates, incremented after each batch. */
     li t3,0
     mtc2 t3,$v24.e0
@@ -92,8 +95,22 @@ trace_row:
     mtc2 t3,$v24.e6
     li t3,7
     mtc2 t3,$v24.e7
+    li t3,%lo(input2)
+    sqv $v24,0,t3
+trace_chunk:
+    /* Share each DMA setup across rows; the selected count divides 33. */
+    transfer s1,input0,96*TRACE_ROWS,DMA_IN
+    transfer s2,input1,96*TRACE_ROWS,DMA_IN
+    move s7,zero
+trace_row:
+    move s6,zero
+    mtc2 s5,$v25.e0
+    vxor $v25,vzero,$v25.e0
+    li t3,%lo(input2)
+    lqv $v24,0,t3
 trace_batch:
     sll t3,s6,1
+    addu t3,t3,s7
     addiu t4,t3,%lo(input0)
     addiu t5,t3,%lo(input1)
     lqv $v01,0,t4
@@ -137,6 +154,9 @@ trace_batch:
     sll t3,s6,1
     addu t3,t3,s6
     sll t3,t3,1
+    addu t3,t3,s7
+    sll t4,s7,1
+    addu t3,t3,t4
     addiu t3,t3,%lo(result)
     /* Planar eight-cell trace blocks avoid scalar interleaving. */
     sqv $v08,0,t3
@@ -147,13 +167,17 @@ trace_batch:
     slti t3,s6,48
     bnez t3,trace_batch
     nop
-    transfer s3,result,288,DMA_OUT
-    addiu s1,s1,96
-    addiu s2,s2,96
-    addiu s3,s3,288
     addiu s5,s5,1
-    slti t3,s5,33
+    addiu s7,s7,96
+    slti t3,s7,96*TRACE_ROWS
     bnez t3,trace_row
+    nop
+    transfer s3,result,288*TRACE_ROWS,DMA_OUT
+    addiu s1,s1,96*TRACE_ROWS
+    addiu s2,s2,96*TRACE_ROWS
+    addiu s3,s3,288*TRACE_ROWS
+    slti t3,s5,33
+    bnez t3,trace_chunk
     nop
     j RSPQ_Loop
     nop
@@ -359,43 +383,101 @@ gradient_batch:
     .set lane,lane+1
     .endr
     addiu t4,s6,%lo(grad_u)
-.macro gradient_axis
-    /* Difference v03:v04 - v01:v02. Only the low half wraps. */
-    vsubc $v04,$v04,$v02
-    vsub $v03,$v03,$v01
-    vlt $v05,$v03,vzero
-    vmrg $v06,$v21,vzero
-    vand $v07,$v06,K1
-    vxor $v03,$v03,$v06
-    vxor $v04,$v04,$v06
-    vaddc $v04,$v04,$v07
-    vadd $v03,$v03,vzero
-    vor $v06,$v06,K1        /* restore sign later with +/-1 */
-    vaddc $v04,$v04,$v20.e0
-    vadd $v03,$v03,vzero
-    /* Low 16 bits of n; the 17th bit is high>=1024. */
-    vmudn $v08,$v03,$v20.e1
-    vmudl $v09,$v04,$v20.e1
-    vor $v08,$v08,$v09
-    vmudl $v08,$v08,$v20.e2
-    vge $v05,$v03,$v20.e4
-    vxor $v09,vzero,$v20.e2
-    vmrg $v09,$v09,vzero
-    vaddc $v08,$v08,$v09
-    vmudl $v08,$v08,$v20.e3
-    ctc2 zero,COP2_CTRL_VCO
-    /* high>=1536 means n>=98304 and a guaranteed saturated result. */
-    vge $v05,$v03,$v20.e0
-    vxor $v09,vzero,$v20.e5
-    vmrg $v08,$v09,$v08
-    vabs $v08,$v06,$v08
-    lqv $v10,0,t4
-    vsub $v10,$v10,$v08
-    vge $v10,$v10,$v20.e6
-    vlt $v10,$v10,$v20.e7
-    sqv $v10,0,t4
+.macro gradient_gather enabled
+    .if \enabled
+    .if (gradient_lane % 4)==0
+    lsv $v11,(gradient_lane/4)*2,(gradient_lane/4)*4,t5
+    .elseif (gradient_lane % 4)==1
+    lsv $v12,(gradient_lane/4)*2,(gradient_lane/4)*4+2,t5
+    .elseif (gradient_lane % 4)==2
+    lsv $v13,(gradient_lane/4)*2,(gradient_lane/4)*4,t6
+    .else
+    lsv $v14,(gradient_lane/4)*2,(gradient_lane/4)*4+2,t6
+    .endif
+    .set gradient_lane,gradient_lane+1
+    .endif
 .endm
-    gradient_axis
+.macro gradient_axis left_hi,left_lo,right_hi,right_lo,prefetch=0
+    .set gradient_lane,0
+    /* Difference v03:v04 - v01:v02. Only the low half wraps. */
+    vsubc \right_lo,\right_lo,\left_lo
+    gradient_gather \prefetch
+    vsub \right_hi,\right_hi,\left_hi
+    gradient_gather \prefetch
+    vlt $v05,\right_hi,vzero
+    gradient_gather \prefetch
+    vmrg $v06,$v21,vzero
+    gradient_gather \prefetch
+    vand $v07,$v06,K1
+    gradient_gather \prefetch
+    vxor \right_hi,\right_hi,$v06
+    gradient_gather \prefetch
+    vxor \right_lo,\right_lo,$v06
+    gradient_gather \prefetch
+    vaddc \right_lo,\right_lo,$v07
+    gradient_gather \prefetch
+    vadd \right_hi,\right_hi,vzero
+    gradient_gather \prefetch
+    vor $v06,$v06,K1        /* restore sign later with +/-1 */
+    gradient_gather \prefetch
+    vaddc \right_lo,\right_lo,$v20.e0
+    gradient_gather \prefetch
+    vadd \right_hi,\right_hi,vzero
+    gradient_gather \prefetch
+    /* Low 16 bits of n; the 17th bit is high>=1024. */
+    vmudn $v08,\right_hi,$v20.e1
+    gradient_gather \prefetch
+    vmudl $v09,\right_lo,$v20.e1
+    gradient_gather \prefetch
+    vor $v08,$v08,$v09
+    gradient_gather \prefetch
+    vmudl $v08,$v08,$v20.e2
+    gradient_gather \prefetch
+    vge $v05,\right_hi,$v20.e4
+    gradient_gather \prefetch
+    vxor $v09,vzero,$v20.e2
+    gradient_gather \prefetch
+    vmrg $v09,$v09,vzero
+    gradient_gather \prefetch
+    vaddc $v08,$v08,$v09
+    gradient_gather \prefetch
+    vmudl $v08,$v08,$v20.e3
+    gradient_gather \prefetch
+    ctc2 zero,COP2_CTRL_VCO
+    gradient_gather \prefetch
+    /* high>=1536 means n>=98304 and a guaranteed saturated result. */
+    vge $v05,\right_hi,$v20.e0
+    gradient_gather \prefetch
+    vxor $v09,vzero,$v20.e5
+    gradient_gather \prefetch
+    vmrg $v08,$v09,$v08
+    gradient_gather \prefetch
+    vabs $v08,$v06,$v08
+    gradient_gather \prefetch
+    lqv $v10,0,t4
+    gradient_gather \prefetch
+    vsub $v10,$v10,$v08
+    gradient_gather \prefetch
+    vge $v10,$v10,$v20.e6
+    gradient_gather \prefetch
+    vlt $v10,$v10,$v20.e7
+    gradient_gather \prefetch
+    sqv $v10,0,t4
+    gradient_gather \prefetch
+    gradient_gather \prefetch
+.endm
+#ifdef PLASMAPONG_GRADIENT_PIPELINE
+    /* Fill the independent vertical source bank during horizontal arithmetic.
+       Vector loads use the scalar pipe; accumulator/control order is unchanged. */
+    sll t3,s6,1
+    addu t5,t3,fp
+    addu t6,t3,k1
+    gradient_axis $v01,$v02,$v03,$v04,1
+    addiu t4,s6,%lo(grad_v)
+    gradient_axis $v11,$v12,$v13,$v14
+#else
+
+    gradient_axis $v01,$v02,$v03,$v04
     sll t3,s6,1
     addu t4,t3,k1
     addu t3,t3,fp
@@ -408,7 +490,8 @@ gradient_batch:
     .set lane,lane+1
     .endr
     addiu t4,s6,%lo(grad_v)
-    gradient_axis
+    gradient_axis $v01,$v02,$v03,$v04
+#endif
     addiu s6,s6,16
     slti t3,s6,96
     bnez t3,gradient_batch
