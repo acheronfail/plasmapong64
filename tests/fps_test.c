@@ -16,7 +16,7 @@ int main(void) {
         assert(game_tick_units(&g)==1 && game_dt(&g)==STEP && game_emission(&g)==.5f);
         const int hz=GAME_HZ;
         float x=g.bat[0].x; in[0].x=1; game_step(&g,in);
-        assert(fabsf(g.bat[0].x-x-92.0f/hz)<.001f);
+        assert(fabsf(g.bat[0].x-x-210.0f/hz)<.001f);
         ready((FrameRate)fps); g.held=0; in[0].a=true;
         for(int i=0;i<hz;i++) game_step(&g,in);
         assert(g.bat[0].charge==1 && g.bat[0].suction_ticks==60);

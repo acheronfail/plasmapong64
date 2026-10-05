@@ -2,7 +2,15 @@
 #include "game.h"
 #include <math.h>
 #include <string.h>
-static float axis(float a) { return fabsf(a)<.12f?0:clampf(a,-1,1); }
+static const float bat_side_speed=140.0f;
+static const float bat_depth_speed=210.0f;
+static const float jet_force=1500.0f;
+static float axis(float a) {
+    /* Ignore stick drift, then use the remaining travel for a smooth ramp. */
+    const float deadzone=.12f;
+    float magnitude=clampf((fabsf(a)-deadzone)/(1-deadzone),0,1);
+    return a<0?-magnitude:magnitude;
+}
 /* Normal points into the court; tangent follows screen coordinates. */
 static float normal_x(int p) { return p<2?(p?-1:1):0; }
 static float normal_y(int p) { return p<2?0:(p==2?-1:1); }
@@ -203,7 +211,9 @@ static void ball_step(Game *g) {
             bool overlap=fabsf(normal)<6;
             if((crossed||overlap) && fabsf(tangent)<half+BALL_RADIUS && rvx*nx+rvy*ny<0) {
                 g->sound_events|=p==0?SOUND_BAT1:p==1?SOUND_BAT2:SOUND_BAT_OTHER;
-                float bounce=maxf(108,fabsf(g->bvx*nx+g->bvy*ny)*1.04f);
+                /* A forward stroke adds power along this paddle's normal. */
+                float push=maxf(0,b->vx*nx+b->vy*ny);
+                float bounce=maxf(108,fabsf(g->bvx*nx+g->bvy*ny)*1.04f)+push*.75f;
                 if(p<2) { g->bx=b->x+nx*6; g->bvx=nx*bounce; g->bvy+=tangent*3.8f+b->vy*.3f; }
                 else { g->by=b->y+ny*6; g->bvy=ny*bounce; g->bvx+=tangent*3.8f+b->vx*.3f; }
                 limit_ball(g);
@@ -371,11 +381,11 @@ void game_step(Game *g,const Input physical[MAX_PLAYERS]) {
         float end=game_bat_half(g,p)+2+(game_square(g)?CORNER_SIZE:0);
         float depth=game_square(g)?SQUARE_BAT_DEPTH:64;
         if(p<2) {
-            b->x=clampf(x+axis(in[p].x)*92*step,p?game_right(g)-depth:game_left(g)+12,p?game_right(g)-12:game_left(g)+depth);
-            b->y=clampf(y-axis(in[p].y)*125*step,end,ARENA_H-end);
+            b->x=clampf(x+axis(in[p].x)*bat_depth_speed*step,p?game_right(g)-depth:game_left(g)+12,p?game_right(g)-12:game_left(g)+depth);
+            b->y=clampf(y-axis(in[p].y)*bat_side_speed*step,end,ARENA_H-end);
         } else {
-            b->x=clampf(x+axis(in[p].x)*125*step,game_left(g)+end,game_right(g)-end);
-            b->y=clampf(y-axis(in[p].y)*92*step,p==2?ARENA_H-depth:12,p==2?ARENA_H-12:depth);
+            b->x=clampf(x+axis(in[p].x)*bat_side_speed*step,game_left(g)+end,game_right(g)-end);
+            b->y=clampf(y-axis(in[p].y)*bat_depth_speed*step,p==2?ARENA_H-depth:12,p==2?ARENA_H-12:depth);
         }
         b->vx=(b->x-x)*ticks_per_second; b->vy=(b->y-y)*ticks_per_second;
         fluid_splat(&g->fluid,b->x,b->y,20,b->vx*.40f*emission,b->vy*.40f*emission,
@@ -383,7 +393,7 @@ void game_step(Game *g,const Input physical[MAX_PLAYERS]) {
         b->burst=maxf(0,b->burst-step);
         if(in[p].z) {
             /* The arcade opponent's jet approaches twice the human strength. */
-            float jet=1150*step*(g->mode==ARCADE && p==1?1+arcade_difficulty(g):1);
+            float jet=jet_force*step*(g->mode==ARCADE && p==1?1+arcade_difficulty(g):1);
             fluid_splat(&g->fluid,b->x+nx*14,b->y+ny*14,22,nx*jet+(p<2?0:b->vx*.08f*emission),ny*jet+(p<2?b->vy*.08f*emission:0),2.6f*step,game_player_palette(g,p));
         }
     }

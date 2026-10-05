@@ -14,6 +14,56 @@ static void ready(void) {
     in[0].start=true; game_step(&g,in); in[0].start=false;
     assert(g.phase==PLAY); g.serve=0;
 }
+static void analog_movement_tests(void) {
+    const float tilt[]={0,.10f,.12f,.13f,.56f,1,1.25f};
+    float movement[sizeof(tilt)/sizeof(tilt[0])];
+    /* Check both axes and directions on all four sides, away from limits. */
+    for(unsigned p=0;p<MAX_PLAYERS;p++) for(unsigned axis=0;axis<2;axis++)
+        for(int sign=-1;sign<=1;sign+=2) {
+            for(unsigned i=0;i<sizeof(tilt)/sizeof(tilt[0]);i++) {
+                ready(); g.players=4;
+                for(unsigned q=0;q<MAX_PLAYERS;q++) in[q]=(Input){.connected=true};
+                g.bat[p].x=p<2?(p?game_right(&g)-16.5f:game_left(&g)+16.5f):ARENA_W*.5f;
+                g.bat[p].y=p<2?ARENA_H*.5f:(p==2?ARENA_H-16.5f:16.5f);
+                float before=axis?g.bat[p].y:g.bat[p].x;
+                if(axis) in[p].y=sign*tilt[i]; else in[p].x=sign*tilt[i];
+                game_step(&g,in);
+                float after=axis?g.bat[p].y:g.bat[p].x;
+                movement[i]=(after-before)*sign*(axis?-1:1);
+            }
+            assert(movement[0]==0 && movement[1]==0 && movement[2]==0);
+            assert(movement[3]>0 && movement[3]<movement[5]*.02f);
+            assert(fabsf(movement[4]-movement[5]*.5f)<.0001f);
+            assert(fabsf(movement[6]-movement[5])<.0001f);
+            float speed=movement[5]/STEP;
+            bool along_side=(p<2)==(axis==1);
+            assert(fabsf(speed-(along_side?140:210))<.001f);
+        }
+    memset(in,0,sizeof(in));
+    puts("PASS: analog dead zone, smooth ramp, half/full tilt, input clamp and four-side movement speeds");
+}
+static void forward_hit_tests(void) {
+    for(unsigned p=0;p<MAX_PLAYERS;p++) {
+        float rebound[2];
+        float nx=p<2?(p?-1:1):0,ny=p<2?0:(p==2?-1:1);
+        for(unsigned moving=0;moving<2;moving++) {
+            ready(); g.players=4;
+            for(unsigned q=0;q<MAX_PLAYERS;q++) in[q]=(Input){.connected=true};
+            g.bat[p].x=p<2?(p?game_right(&g)-16.5f:game_left(&g)+16.5f):ARENA_W*.5f;
+            g.bat[p].y=p<2?ARENA_H*.5f:(p==2?ARENA_H-16.5f:16.5f);
+            g.bx=g.bat[p].x+nx*5; g.by=g.bat[p].y+ny*5;
+            g.bvx=-nx*60; g.bvy=-ny*60;
+            if(moving) { in[p].x=nx; in[p].y=-ny; }
+            game_step(&g,in);
+            assert(g.sound_events&(p==0?SOUND_BAT1:p==1?SOUND_BAT2:SOUND_BAT_OTHER));
+            rebound[moving]=g.bvx*nx+g.bvy*ny;
+            assert(rebound[moving]>0 && hypotf(g.bvx,g.bvy)<=290.001f);
+        }
+        assert(rebound[1]>rebound[0]+100);
+    }
+    memset(in,0,sizeof(in));
+    puts("PASS: forward strokes add rebound power on all four sides within the ball-speed cap");
+}
 static float energy(const Fluid *f) {
     float e=0; for(int i=0;i<FN;i++) e+=fluid_velocity(f)->u[i]*fluid_velocity(f)->u[i]+fluid_velocity(f)->v[i]*fluid_velocity(f)->v[i]; return e;
 }
@@ -140,6 +190,8 @@ static void menu_confirm_tests(void) {
     puts("PASS: A/Z/START main-menu selection, held-button debounce, disconnected input and multiplayer gating");
 }
 int main(void) {
+    analog_movement_tests();
+    forward_hit_tests();
     menu_confirm_tests();
     flow_tests();
     /* A serve stays at rest through the countdown and in still water. */

@@ -111,7 +111,7 @@ int main(void) {
     g.bx=180; g.by=25; g.bvx=120; g.bvy=0; g.arcade.ai_wait=0;
     for(int t=0;t<8;t++) tick();
     assert(g.bat[1].y<y);
-    assert(fabsf(g.bat[1].vy)<=125);
+    assert(fabsf(g.bat[1].vy)<=140);
     g.arcade.ai_wait=.3f; float target=g.arcade.ai_y;
     g.by=160; (void)arcade_ai(&g); assert(g.arcade.ai_y==target);
 

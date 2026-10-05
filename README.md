@@ -68,6 +68,11 @@ Press START in the lobby to begin.
 | Up/down, then A, Z, or START on the main menu | Choose a mode, view high scores, or open options |
 | B in the lobby, pause, or winner screen | Return to the main menu |
 
+Stick movement ramps smoothly from zero outside a 12% dead zone to full speed
+at full tilt. Paddles move up to 140 arena pixels per second along their side
+and 210 forwards/backwards; the D-pad moves at full speed. Moving towards the
+centre as you hit the ball adds power to the rebound, up to the 290 ball-speed cap.
+
 Suction reaches about 35 arena pixels; actual capture requires the ball to be
 within 18 pixels on the playing side of the bat. Fast shots and strong currents
 can beat a grab. You can move while holding the ball and aim a release with the
