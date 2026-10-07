@@ -1,3 +1,7 @@
 /build/
 *.z64
 *.eeprom
+__pycache__/
+.env
+.env.*
+!.env.example

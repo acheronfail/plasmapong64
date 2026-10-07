@@ -11,6 +11,7 @@ import re
 import selectors
 import subprocess
 import time
+from n64_power import PowerSwitch, configured_power_url
 
 
 def summarize(lines):
@@ -74,12 +75,24 @@ def main():
     parser.add_argument('log', type=pathlib.Path)
     parser.add_argument('--port', help='SC64 port, e.g. serial:///dev/ttyUSB0')
     parser.add_argument('--upload', action='store_true', help='upload to cartridge RAM; deployer checks console state')
+    parser.add_argument('--power-url', help='ESPHome outlet URL: power off, upload, listen, power on, capture, power off')
+    parser.add_argument('--power-control', action='store_true', help='automatically control outlet using N64_POWER_URL from environment or .env')
+    parser.add_argument('--power-entity', default='switch')
+    parser.add_argument('--leave-on', action='store_true', help='leave console on after a successful automatic capture')
     parser.add_argument('--windows', type=int, default=10)
     parser.add_argument('--timeout', type=float, default=300, help='includes waiting for power-on')
     parser.add_argument('--replay', action='store_true', help='summarize an existing capture without hardware')
     args = parser.parse_args()
+    if args.power_control and not args.power_url:
+        args.power_url = configured_power_url()
+        if not args.power_url:
+            parser.error('set N64_POWER_URL in .env or the environment, or provide --power-url')
     if args.windows < 1 or args.timeout <= 0 or not args.rom.is_file():
         parser.error('provide an existing ROM and positive windows/timeout')
+    if args.power_url and (not args.upload or args.replay):
+        parser.error('--power-url requires --upload and cannot be used with --replay')
+    if args.leave_on and not args.power_url:
+        parser.error('--leave-on requires --power-url')
     args.log.parent.mkdir(parents=True, exist_ok=True)
     command = ['sc64deployer'] + (['--port', args.port] if args.port else [])
     metadata = dict(rom=str(args.rom.resolve()), sha256=hashlib.sha256(args.rom.read_bytes()).hexdigest(), requested_windows=args.windows)
@@ -91,13 +104,19 @@ def main():
         # Never overwrite an earlier run; raw evidence should remain available.
         if args.log.exists() or args.log.with_suffix('.json').exists():
             parser.error('capture already exists; choose a new log path')
-        info = subprocess.run(command + ['info'], capture_output=True, text=True, check=True)
+        power = PowerSwitch(args.power_url, args.power_entity) if args.power_url else None
+        if power:
+            metadata['power_url'] = args.power_url
+            metadata['initial_power'] = power.state()
+            power.set(False)
+            time.sleep(2)  # Release console reset and the cartridge's PI/SD lock.
+        info = subprocess.run(command + ['info'], capture_output=True, text=True, check=True, timeout=15)
         metadata['device_info'] = info.stdout + info.stderr
         if 'Firmware version:' not in metadata['device_info']:
             parser.error('SC64 did not return device information: ' + metadata['device_info'])
         if args.upload:
             # Let the deployer decide whether the console state permits upload.
-            uploaded = subprocess.run(command + ['upload', str(args.rom)], capture_output=True, text=True, check=True)
+            uploaded = subprocess.run(command + ['upload', '--direct', str(args.rom)], capture_output=True, text=True, check=True, timeout=60)
             metadata['upload'] = uploaded.stdout + uploaded.stderr
             if re.search(r'\berror\b', metadata['upload'], re.I):
                 parser.error('upload failed: ' + metadata['upload'])
@@ -110,9 +129,12 @@ def main():
         selector.register(master, selectors.EVENT_READ)
         pending = b''
         started = time.monotonic()
-        print('Debugger listening. Turn on the N64 and leave the menu idle.', flush=True)
+        print('Debugger listening.' + (' Automatic power-on follows.' if power else ' Turn on the N64 to start the ROM.'), flush=True)
         try:
             with args.log.open('x') as log:
+                if power:
+                    power.set(True)
+                    print('N64 powered on; capturing scripted ROM.', flush=True)
                 while time.monotonic() - started < args.timeout:
                     for _, _ in selector.select(1):
                         try:
@@ -136,11 +158,14 @@ def main():
                     # Profiled batches end after draw/flow/audio diagnostics,
                     # not at Presentation. USB may split each line/packet.
                     if (sum('Presentation:' in line for line in lines) >= args.windows
+                            and sum('simulation average' in line for line in lines) >= args.windows
+                            and sum('draw average' in line for line in lines) >= args.windows
+                            and sum('Audio stream:' in line for line in lines) >= args.windows
                             and (not profiled or sum('Plasma Pong 64: audio ' in line for line in lines) >= args.windows)):
                         break
                 else:
                     raise RuntimeError('Timed out waiting for hardware measurement windows')
-        except (RuntimeError, KeyboardInterrupt) as exc:
+        except (RuntimeError, OSError, ValueError, KeyboardInterrupt) as exc:
             error = str(exc) or 'Capture interrupted'
         finally:
             process.terminate()
@@ -149,6 +174,14 @@ def main():
             except subprocess.TimeoutExpired:
                 process.kill(); process.wait()
             selector.close(); os.close(master)
+            if power and (error or not args.leave_on):
+                try:
+                    power.set(False)
+                    metadata['final_power'] = False
+                except (OSError, RuntimeError, ValueError) as exc:
+                    error = (error + '; ' if error else '') + 'Could not verify console power-off: ' + str(exc)
+            elif power:
+                metadata['final_power'] = True
     result = dict(metadata=metadata, complete=error is None, error=error, measurements=summarize(lines))
     args.log.with_suffix('.json').write_text(json.dumps(result, indent=2) + '\n')
     print(json.dumps(result['measurements'], indent=2))

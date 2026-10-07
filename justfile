@@ -17,6 +17,15 @@ emulate ares="../ares/build/rundir/bin/ares": build
 clean:
     ./tools/build-rom.sh clean
 
+# Complete reproducible loop: host checks, Ares validation (8/4 MiB), console capture.
+# Experiment names are unique; logs and the uploaded ROM are retained in build/dev-loop/.
+dev-loop name="baseline" *args:
+    python3 tools/dev-loop.py {{name}} {{args}}
+
+# Explicit remote outlet control; never toggle an unknown state.
+n64-power action="status":
+    python3 tools/n64_power.py {{action}}
+
 # Build a separate, scripted two-player ROM for emulator/performance testing.
 smoke:
     ./tools/build-rom.sh -j4 SMOKE=1 ROM=plasmapong-smoke BUILD_DIR=build/smoke_rsp_confinement

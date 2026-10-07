@@ -142,6 +142,12 @@ behavior still needs a SummerCart64 hardware playtest.
 
 ## Build and SummerCart64
 
+For automated Ares validation, SummerCart RAM upload, remote console power and
+reproducible hardware performance captures, see the
+[development loop](docs/development-loop.md). Run `just dev-loop NAME` with a new
+experiment name; the loop uses test-ROM controller replays without desktop input
+injection and leaves the console powered off after capture.
+
 Dependencies: Docker, `just`, and `sc64deployer` for deployment. The pinned
 libdragon Docker image and library commit match `../n64-util-rom`.
 
