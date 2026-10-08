@@ -111,12 +111,19 @@ static void prepare_cases(void) {
             }
             for(unsigned k=0;k<4;k++) assert(pixels.before[k]==0x5a5a5a5a && pixels.after[k]==0x5a5a5a5a);
         }
+        memset(&pixels,0x5a,sizeof(pixels));
+        memset(expected_pixels,0x5a,sizeof(expected_pixels));
+        fluid_speed_field_pixels(&f,expected_pixels,64);
+        fluid_speed_field_rsp_begin(&f,pixels.value,64);
+        rspq_wait(); data_cache_hit_invalidate(&pixels,sizeof(pixels));
+        for(unsigned k=0;k<64*FH;k++) assert(expected_pixels[k]==pixels.value[k]);
         data_cache_hit_invalidate(&f,sizeof(f));
         assert(!memcmp(&f,&saved,sizeof(f)));
         for(unsigned k=0;k<4;k++) assert(pixels.before[k]==0x5a5a5a5a && pixels.after[k]==0x5a5a5a5a);
     }
     debugf("Prepare PASS: 80 exact dye-color/speed-color/divergence fields, queued pixel producers, overlay switches, full timestep range, padded pixels and DMA guards\n");
     debugf("View pixels PASS: 80 exact BANDS fields, queued uploads, stride/DMA guards and unchanged inputs\n");
+    debugf("Speed field PASS: 80 exact CPU/RSP grayscale fields, padding and DMA guards\n");
     debugf("Packed pixels PASS: 80 dye and SPEED fields exactly match RGBA5551 quantization, padding and DMA guards\n");
 }
 #endif

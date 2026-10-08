@@ -127,3 +127,22 @@ void fluid_bands_pixels_rsp_begin(const Fluid *f,uint32_t *pixels,unsigned strid
     fluid_queue_begin();
     rspq_write(overlay_id,2,PhysicalAddr(v),PhysicalAddr(pixels),stride*sizeof(*pixels),PhysicalAddr(palette));
 }
+
+void fluid_speed_field_rsp_begin(const Fluid *f,uint32_t *pixels,unsigned stride) {
+    static _Alignas(16) uint32_t palette[FLUID_SPEED_PALETTE_SIZE];
+    static bool ready;
+    assert(((uintptr_t)pixels&15)==0 && stride>=FW && stride%4==0);
+    prepare_init();
+    if(!ready) {
+        for(unsigned i=0;i<FLUID_SPEED_PALETTE_SIZE;i++) {
+            unsigned speed=i>255?255:i;
+            palette[i]=(speed*0x01010100u)|255;
+        }
+        data_cache_hit_writeback(palette,sizeof(palette)); ready=true;
+    }
+    const FluidVelocityFixed *v=fluid_velocity(f);
+    data_cache_hit_writeback(v,sizeof(*v));
+    data_cache_hit_writeback_invalidate(CachedAddr(pixels),stride*FH*sizeof(*pixels));
+    fluid_queue_begin();
+    rspq_write(overlay_id,2,PhysicalAddr(v),PhysicalAddr(pixels),stride*sizeof(*pixels),PhysicalAddr(palette));
+}

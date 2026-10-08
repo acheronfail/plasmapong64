@@ -6,6 +6,60 @@ Its ESPHome outlet URL is configured by `N64_POWER_URL`, entity `switch/switch`.
 The user authorizes ROM uploads and explicit outlet on/off commands for development.
 Use this interface instead of desktop automation to power the console.
 
+## Pre-palette Bands interpolation, 2026-10-08
+
+Bands now reconstructs the scalar approximate-speed field before colour mapping.
+The existing RSP speed kernel writes an opaque grayscale RGBA32 field, clamped
+to the 8-bit index range. Two cached RDP passes enlarge it horizontally and then
+vertically, using texel-centred sampling and clamped edges. Keeping one axis on
+integer coordinates in each pass avoids the three-point diagonal split and
+produces separable bilinear interpolation. Dithering is disabled while writing
+these scalar values. The 256x176 I8 result is viewed as CI8 with the repeating
+Bands RGBA16 palette; the palette is applied only during the final screen draw.
+
+This is finer **display** sampling, not a larger fluid simulation. It preserves
+ribbons between coarse cells that share a palette colour (e.g. speeds 0 and 64
+both map to dark, but speed 32 between them maps to bright). The previous two
+colour-blur passes, their surfaces, reference helper/test and `INK_SMOOTH` build
+flag are removed. Other effects, forces, velocity precision and ball sampling
+are unchanged. The new surfaces use 56,320 bytes (256x44 plus 256x176 I8), plus a
+512-byte palette and cached commands. Colour still has RGBA16 palette precision,
+and the final screen scaling still uses the hardware filter on the finer grid;
+this does not promise removal of every contour kink in the underlying field.
+
+Portable tests check scalar speed against a continuous-reference calculation,
+rounding, saturation, padding, unchanged inputs and the equal-colour endpoint
+case. Validation ROMs compare 80 RSP grayscale fields exactly with the CPU oracle,
+then check every upscaled scalar against separable bilinear interpolation within
+two intensity levels, including clamped edges and upload boundaries. Fixture
+buffers and readbacks are absent from ordinary console timing ROMs.
+
+The experimental `bands-field-candidate-01` passed all seven effects with music:
+8.814 ms/update, 59.942 FPS, 8,990 frames / 8,990 VI, zero misses and zero audio
+underrun observations. Its matched fresh blurred baseline
+`bands-field-baseline-01` measured 8.749 ms/update and 59.943 FPS with the same
+presentation/audio counts. Both ended with verified power OFF. The candidate
+manifest covers its emulator-only loop; its later hardware capture retains the
+matching ROM hash. The cleaned-up default is validated separately below.
+
+The cleaned-up `bands-field-final-02` passed portable tests and all 4/8 MiB
+Ares numerical/rendering fixtures. Separate replays passed all seven Options
+choices and low/high/low/high video switching. Its 60-window ordinary console
+run measured **8.810 ms/update, 59.942 FPS, 8,990 frames / 8,990 VI**, zero
+presentation misses and zero audio underrun observations, ending with verified
+power OFF. Compared with the fresh blurred baseline this is approximately
+0.061 ms/update higher (0.7%); neither simulation averages nor draw submission
+alone measure completed RDP headroom. `just build` rebuilt the playable ROM.
+
+Native Ares captures below use the same four-player replay at video field 900.
+The right image comes from the cleaned-up default. The sharper narrow ribbons
+support replacing the blur, but still images do not establish every aspect of
+motion quality. The scalar field remains an approximation of the coarse grid.
+
+| Previous colour blur | Speed interpolation before palette, no blur |
+| --- | --- |
+| ![Previous blurred Bands](screenshots/bands-field-before-900.png) | ![Pre-palette Bands](screenshots/bands-field-after-900.png) |
+
 ## Bands-only smoothing and Relief removal, 2026-10-08
 
 The user rejected Relief and preferred the original appearance of the other

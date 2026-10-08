@@ -82,6 +82,7 @@ void fluid_splat(Fluid *f, float x, float y, float radius, float u, float v, flo
 void fluid_pump(Fluid *f, float x, float y, float radius, float strength, float dt, int player);
 #define FLUID_SPEED_PALETTE_SIZE 260 /* 257 colors plus complete DMA cache-line padding. */
 void fluid_speed_palette(uint32_t *rgba);
+void fluid_speed_field_pixels(const Fluid *f,uint32_t *pixels,unsigned stride);
 void fluid_speed_pixels(const Fluid *f, uint32_t *pixels, unsigned stride);
 uint32_t fluid_speed_color(const Fluid *f, int i);
 typedef enum { FLUID_VIEW_DYE, FLUID_VIEW_SPEED, FLUID_VIEW_VORTEX,

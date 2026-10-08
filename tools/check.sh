@@ -5,9 +5,7 @@ mkdir -p build
 # Portable execution of the official fixed-point solver; RSP fixtures run in Ares.
 fluid_sources="src/fluid.c src/fluid_confinement.c src/fluid_upwind.c src/fluid_dye_fixed.c"
 flags="-std=c11 -O3 -Wall -Wextra -Werror -pedantic -Isrc"
-cc $flags tests/ink_scale_test.c -o build/ink-scale-test
-./build/ink-scale-test
-for scenario in game arcade multiplayer fps point_capacity view force suction_lookup; do
+for scenario in game arcade multiplayer fps point_capacity view bands_field force suction_lookup; do
     ui_sources=""
     if [ "$scenario" = point_capacity ]; then ui_sources="src/ui.c"; fi
     cc $flags src/game.c src/arcade.c $fluid_sources $ui_sources "tests/${scenario}_test.c" -lm -o "build/${scenario}-test"

@@ -387,6 +387,17 @@ void fluid_speed_pixels(const Fluid *f,uint32_t *pixels,unsigned stride) {
         pixels[y*stride+x]=(speed_color(flow,y*FW+x)<<8)|255;
 }
 
+void fluid_speed_field_pixels(const Fluid *f,uint32_t *pixels,unsigned stride) {
+    const FluidFlow *v=fluid_velocity(f);
+    for(int y=0;y<FH;y++) for(int x=0;x<FW;x++) {
+        int k=y*FW+x,u=v->u[k],w=v->v[k];
+        u=u<0?-u:u; w=w<0?-w:w;
+        unsigned speed=(unsigned)(u>w?u+w/2:w+u/2)/VELOCITY_SCALE;
+        if(speed>255) speed=255;
+        pixels[y*stride+x]=(speed*0x01010100u)|255;
+    }
+}
+
 /* These views only replace colour conversion; the simulation is untouched.
    Work stays at FW*FH, with fixed exposure and bounded neighbour stencils. */
 static uint32_t view_mix(uint32_t a,uint32_t b,unsigned t) {

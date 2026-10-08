@@ -1,8 +1,9 @@
 # Current fluid visualisations — 2026-10-08
 
 Options now contains seven views: NONE (dye), PARTICLES, PARTICLE TAILS, SPEED,
-VORTEX, BANDS and PRESSURE. Relief has been removed. Only Bands uses the added
-GPU blur; the other views retain ordinary N64 texture filtering.
+VORTEX, BANDS and PRESSURE. Relief has been removed. Bands now interpolates speed on a 256×176 display grid before applying its
+repeating palette. The earlier GPU blur has been removed; the other views retain
+their original rendering. The underlying fluid simulation remains 64×44.
 
 Runtime/test-ROM IDs are 0=dye, 1=particles, 2=tails, 3=speed, 4=vortex,
 5=bands and 6=pressure. EEPROM keeps its original wire IDs so existing Bands

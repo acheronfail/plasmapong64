@@ -7,7 +7,7 @@ Inspired by [Plasma Pong](https://en.wikipedia.org/wiki/Plasma_Pong) by Steve Ta
 - **Paddle powers:** fire jets, suck in the ball, and charge a powerful release.
 - **Multiplayer:** two- to four-player local matches.
 - **Endless arcade:** face an increasingly challenging AI and save your high scores.
-- **Visuals:** seven flow effects (with smoothing only for Bands), with low- and high-resolution modes.
+- **Visuals:** seven flow effects (with finer contour rendering for Bands), with low- and high-resolution modes.
 
 Download **plasmapong.z64** from the [latest release](https://github.com/acheronfail/plasmapong64/releases/latest).
 
