@@ -66,6 +66,74 @@ static void forward_hit_tests(void) {
     memset(in,0,sizeof(in));
     puts("PASS: forward strokes add rebound power on all four sides within the ball-speed cap");
 }
+static void contact_ready(int rate) {
+    memset(in,0,sizeof(in)); ready(); g.players=4; g.frame_rate=rate;
+    for(unsigned q=0;q<MAX_PLAYERS;q++) in[q]=(Input){.connected=true};
+    for(unsigned q=0;q<MAX_PLAYERS;q++) {
+        g.bat[q].x=q<2?(q?game_right(&g)-16.5f:game_left(&g)+16.5f):ARENA_W*.5f;
+        g.bat[q].y=q<2?ARENA_H*.5f:(q==2?ARENA_H-16.5f:16.5f);
+    }
+}
+static void paddle_contact_tests(void) {
+    const int rates[]={FPS_60,FPS_30};
+    for(unsigned rate=0;rate<2;rate++) for(unsigned p=0;p<MAX_PLAYERS;p++) {
+        float nx=p<2?(p?-1:1):0,ny=p<2?0:(p==2?-1:1);
+        float tx=p<2?0:1,ty=p<2?1:0;
+        unsigned sound=p==0?SOUND_BAT1:p==1?SOUND_BAT2:SOUND_BAT_OTHER;
+        /* Each physical face must repel toward its own side, on every bat. */
+        for(int face=0;face<4;face++) {
+            contact_ready(rates[rate]);
+            float cx=face<2?nx*(face?-1:1):tx*(face==2?-1:1);
+            float cy=face<2?ny*(face?-1:1):ty*(face==2?-1:1);
+            float extent=(face<2?3:game_bat_half(&g,p))+BALL_RADIUS;
+            g.bx=g.bat[p].x+cx*(extent+.25f);
+            g.by=g.bat[p].y+cy*(extent+.25f);
+            g.bvx=-cx*200; g.bvy=-cy*200;
+            game_step(&g,in);
+            assert(g.sound_events&sound);
+            assert(g.bvx*cx+g.bvy*cy>150);
+            assert(fabsf(g.bvx*cy-g.bvy*cx)<.01f);
+            assert((g.bx-g.bat[p].x)*cx+(g.by-g.bat[p].y)*cy>=extent-.001f);
+        }
+        /* A ball already behind and travelling away must never jump forward. */
+        contact_ready(rates[rate]);
+        g.bx=g.bat[p].x-nx*5.5f; g.by=g.bat[p].y-ny*5.5f;
+        g.bvx=-nx*20; g.bvy=-ny*20;
+        game_step(&g,in);
+        assert(!(g.sound_events&sound));
+        assert((g.bx-g.bat[p].x)*nx+(g.by-g.bat[p].y)*ny<=-6);
+        assert(g.bvx*nx+g.bvy*ny<0);
+        /* Round ball corners: rebound diagonally, but do not hit the empty
+           square outside the radius at the tip of the expanded rectangle. */
+        for(int back=-1;back<=1;back+=2) for(int end=-1;end<=1;end+=2) {
+            contact_ready(rates[rate]);
+            float cx=(nx*back+tx*end)*.70710678f;
+            float cy=(ny*back+ty*end)*.70710678f;
+            g.bx=g.bat[p].x+nx*back*3+tx*end*BAT_HALF+cx*3.25f;
+            g.by=g.bat[p].y+ny*back*3+ty*end*BAT_HALF+cy*3.25f;
+            g.bvx=-cx*100; g.bvy=-cy*100;
+            game_step(&g,in);
+            assert((g.sound_events&sound) && g.bvx*cx+g.bvy*cy>90);
+            assert(fabsf(g.bvx*cy-g.bvy*cx)<.05f);
+            contact_ready(rates[rate]);
+            g.bx=g.bat[p].x+nx*back*5.5f+tx*end*(BAT_HALF+2.5f);
+            g.by=g.bat[p].y+ny*back*5.5f+ty*end*(BAT_HALF+2.5f);
+            g.bvx=g.bvy=0;
+            game_step(&g,in);
+            assert(!(g.sound_events&sound) && g.bvx==0 && g.bvy==0);
+        }
+        /* A moving edge can strike a resting ball, transferring edge motion. */
+        contact_ready(rates[rate]);
+        g.bx=g.bat[p].x+tx*(BAT_HALF+3.25f);
+        g.by=g.bat[p].y+ty*(BAT_HALF+3.25f);
+        g.bvx=g.bvy=0; in[p].x=tx; in[p].y=-ty;
+        game_step(&g,in);
+        assert((g.sound_events&sound) && g.bvx*tx+g.bvy*ty>200);
+        assert(hypotf(g.bvx,g.bvy)<=290.001f);
+    }
+    memset(in,0,sizeof(in));
+    puts("PASS: all paddle faces, rear separation, rounded corners and moving edges in both video modes");
+}
 static float energy(const Fluid *f) {
     float e=0; for(int i=0;i<FN;i++) e+=fluid_velocity(f)->u[i]*fluid_velocity(f)->u[i]+fluid_velocity(f)->v[i]*fluid_velocity(f)->v[i]; return e;
 }
@@ -204,6 +272,7 @@ static void menu_confirm_tests(void) {
 int main(void) {
     analog_movement_tests();
     forward_hit_tests();
+    paddle_contact_tests();
     menu_confirm_tests();
     flow_tests();
     /* A serve stays at rest through the countdown and in still water. */

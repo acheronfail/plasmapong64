@@ -183,7 +183,6 @@ static void ball_step(Game *g) {
            countdown or while held. It will be carried by the same current. */
         if(game_ball_hot(g)) fluid_hot_ball_dye(&g->fluid,g->bx,g->by,.13f*emission);
         else fluid_ball_dye(&g->fluid,g->bx,g->by,.065f*emission);
-        float oldx=g->bx,oldy=g->by;
         g->bx+=g->bvx*dt; g->by+=g->bvy*dt;
         int side_player[MAX_PLAYERS]={-1,-1,-1,-1};
         for(unsigned p=0;p<game_players(g);p++)
@@ -202,7 +201,11 @@ static void ball_step(Game *g) {
             if(!game_alive(g,p)) continue;
             unsigned side=game_side(g,p);
             Bat *b=&g->bat[p]; float nx=normal_x(side),ny=normal_y(side);
-            float dx=g->bx-b->x,dy=g->by-b->y;
+            /* Bats have already advanced a full tick. Follow their motion at
+               the same substep time as the ball, including clamped movement. */
+            float remaining=(3-step)*dt;
+            float px=b->x-b->vx*remaining,py=b->y-b->vy*remaining;
+            float dx=g->bx-px,dy=g->by-py;
             float rvx=g->bvx-b->vx,rvy=g->bvy-b->vy;
             float normal=dx*nx+dy*ny,tangent=side<2?dy:dx;
             float half=game_bat_half(g,p),capture=half+4;
@@ -210,20 +213,39 @@ static void ball_step(Game *g) {
                rvx*rvx+rvy*rvy<145*145 && u*u+v*v<210*210) {
                 g->held=p; attach_ball(g,p,8); return;
             }
-            float oldnormal=(oldx-b->x)*nx+(oldy-b->y)*ny;
-            bool crossed=oldnormal>=6 && normal<=6;
-            bool overlap=fabsf(normal)<6;
-            if((crossed||overlap) && fabsf(tangent)<half+BALL_RADIUS && rvx*nx+rvy*ny<0) {
-                g->rumble_ticks[p]=g->rumble_ticks[p]>RUMBLE_HIT_TICKS?g->rumble_ticks[p]:RUMBLE_HIT_TICKS;
-                g->sound_events|=p==0?SOUND_BAT1:p==1?SOUND_BAT2:SOUND_BAT_OTHER;
-                /* A forward stroke adds power along this paddle's normal. */
-                float push=maxf(0,b->vx*nx+b->vy*ny);
-                float bounce=maxf(108,fabsf(g->bvx*nx+g->bvy*ny)*1.04f)+push*.75f;
-                if(side<2) { g->bx=b->x+nx*6; g->bvx=nx*bounce; g->bvy+=tangent*3.8f+b->vy*.3f; }
-                else { g->by=b->y+ny*6; g->bvy=ny*bounce; g->bvx+=tangent*3.8f+b->vx*.3f; }
-                limit_ball(g);
-                fluid_splat(&g->fluid,g->bx,g->by,13,nx*35+(side<2?0:b->vx*.2f),ny*35+(side<2?b->vy*.2f:0),.35f,game_player_palette(g,p));
+            /* Circle versus the solid paddle rectangle. The nearest point
+               gives rear/edge/corner hits their own outward contact normal. */
+            float hx=side<2?3:half,hy=side<2?half:3;
+            float cx=dx-clampf(dx,-hx,hx),cy=dy-clampf(dy,-hy,hy);
+            float distance2=cx*cx+cy*cy;
+            if(distance2>=BALL_RADIUS*BALL_RADIUS) continue;
+            float penetration;
+            if(distance2>0) {
+                float distance=sqrtf(distance2);
+                cx/=distance; cy/=distance; penetration=BALL_RADIUS-distance;
+            } else {
+                /* Recover an embedded centre through the nearest face. */
+                float ex=hx-fabsf(dx),ey=hy-fabsf(dy);
+                if(ex<ey) { cx=dx<0?-1:1; cy=0; penetration=BALL_RADIUS+ex; }
+                else { cx=0; cy=dy<0?-1:1; penetration=BALL_RADIUS+ey; }
             }
+            g->bx+=cx*penetration; g->by+=cy*penetration;
+            float approach=rvx*cx+rvy*cy;
+            /* Separating overlaps need correction, not another impulse. */
+            if(approach>=0) continue;
+            g->rumble_ticks[p]=g->rumble_ticks[p]>RUMBLE_HIT_TICKS?g->rumble_ticks[p]:RUMBLE_HIT_TICKS;
+            g->sound_events|=p==0?SOUND_BAT1:p==1?SOUND_BAT2:SOUND_BAT_OTHER;
+            if(cx==nx && cy==ny) {
+                /* Keep front-face aiming, with rebound in the moving bat's
+                   frame so a forward stroke cannot overtake its own hit. */
+                float bounce=maxf(108,-approach*1.04f)+b->vx*nx+b->vy*ny;
+                if(side<2) { g->bvx=nx*bounce; g->bvy+=tangent*3.8f+b->vy*.3f; }
+                else { g->bvy=ny*bounce; g->bvx+=tangent*3.8f+b->vx*.3f; }
+            } else {
+                g->bvx-=2*approach*cx; g->bvy-=2*approach*cy;
+            }
+            limit_ball(g);
+            fluid_splat(&g->fluid,g->bx,g->by,13,cx*35,cy*35,.35f,game_player_palette(g,p));
         }
         corner_bounce(g);
         int missed=g->bx<game_left(g)-BALL_RADIUS?0:g->bx>game_right(g)+BALL_RADIUS?1:
