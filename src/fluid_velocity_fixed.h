@@ -17,7 +17,6 @@ void fluid_pixels_rsp(const Fluid *f,uint32_t *pixels,unsigned stride);
    RSPQ queue; finish it before CPU access or reusing the destination. */
 void fluid_pixels_rsp_begin(const Fluid *f,uint32_t *pixels,unsigned stride);
 void fluid_bands_pixels_rsp_begin(const Fluid *f,uint32_t *pixels,unsigned stride);
-void fluid_relief_pixels_rsp_begin(const Fluid *f,uint32_t *pixels,unsigned stride);
 void fluid_speed_pixels_rsp_begin(const Fluid *f,uint32_t *pixels,unsigned stride);
 void fluid_pixels16_rsp_begin(const Fluid *f,uint16_t *pixels,unsigned stride);
 void fluid_speed_pixels16_rsp_begin(const Fluid *f,uint16_t *pixels,unsigned stride);

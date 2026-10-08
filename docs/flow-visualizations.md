@@ -1,3 +1,21 @@
+# Current fluid visualisations — 2026-10-08
+
+Options now contains seven views: NONE (dye), PARTICLES, PARTICLE TAILS, SPEED,
+VORTEX, BANDS and PRESSURE. Relief has been removed. Only Bands uses the added
+GPU blur; the other views retain ordinary N64 texture filtering.
+
+Runtime/test-ROM IDs are 0=dye, 1=particles, 2=tails, 3=speed, 4=vortex,
+5=bands and 6=pressure. EEPROM keeps its original wire IDs so existing Bands
+and Pressure selections remain intact; old Relief selections load as NONE.
+
+Use `just smoke-view-options` to cycle the current selector, `just benchmark-view 5`
+for Bands, and `just smoke-menu-view 6` for the Pressure menu preview.
+See [the development loop](development-loop.md) for current native images,
+console measurements and validation commands.
+
+The material below is an archived prototype report. Its effect IDs, screenshots,
+commands and measurements describe the earlier implementation, including Relief.
+
 # Fluid visualisation prototypes — 2026-10-04
 
 All four prototypes are in **Options → Flow Effect**, alongside NONE, PARTICLES,

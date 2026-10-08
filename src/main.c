@@ -1,4 +1,5 @@
 #include "mathutil.h"
+#include "ink_scale.h"
 #include "sc64_reload.h"
 #include <libdragon.h>
 #include <math.h>
@@ -174,10 +175,15 @@ void audio_storage_service(void) {
 }
 #endif
 static surface_t ink;
+#ifdef PLASMAPONG_INK_SMOOTH
+static surface_t ink_smooth,ink_blur_temp;
+static rspq_block_t *ink_blur_block;
+#endif
 #ifdef PLASMAPONG_INK16
 static surface_t ink16;
 #endif
 static rspq_block_t *ink_blit;
+static const surface_t *ink_blit_texture;
 static float ink_x,ink_y,ink_w,ink_h;
 static bool fill_mode;
 static uint32_t fill_color;
@@ -448,15 +454,14 @@ float label_width(const char *s) {
     }
     return w;
 }
-static void draw_pixels(const Fluid *f,FlowEffect effect) {
+static void produce_pixels(const Fluid *f,FlowEffect effect) {
 #ifdef PLASMAPONG_FLUID_PROFILE
     uint64_t pixel_begin=get_ticks();
 #endif
     bool speed=effect==FLOW_SPEED;
 #if defined(PLASMAPONG_PREPARE_RSP) && !defined(PLASMAPONG_INK16)
-    if(effect==FLOW_BANDS || effect==FLOW_RELIEF) {
-        if(effect==FLOW_BANDS) fluid_bands_pixels_rsp_begin(f,ink.buffer,ink.stride/4);
-        else fluid_relief_pixels_rsp_begin(f,ink.buffer,ink.stride/4);
+    if(effect==FLOW_BANDS) {
+        fluid_bands_pixels_rsp_begin(f,ink.buffer,ink.stride/4);
 #ifdef PLASMAPONG_PIXELS_CHAIN
         pixel_done=rspq_syncpoint_new(); pixel_pending=true;
         rspq_flush();
@@ -534,6 +539,71 @@ static void draw_pixels(const Fluid *f,FlowEffect effect) {
     pixel_ticks+=get_ticks()-pixel_begin;
 #endif
 }
+#ifdef PLASMAPONG_INK_SMOOTH
+static void blur_pass(const surface_t *source,const surface_t *target,
+        int source_w,int source_h,int width,int height,float offset,int rows) {
+    rdpq_set_color_image(target);
+    rdpq_set_mode_standard();
+    /* At half-texel centres MEDIAN averages all four samples, avoiding the
+       diagonal two-sample average of the ordinary three-point filter. */
+    rdpq_mode_filter(FILTER_MEDIAN);
+    for(int y=0;y<height;y+=rows) {
+        int end=y+rows<height?y+rows:height;
+        int top=y?y-1:0;
+        int bottom=end+1<source_h?end+1:source_h;
+        rdpq_tex_upload_sub(TILE0,source,NULL,0,top,source_w,bottom);
+        rdpq_texture_rectangle(TILE0,0,y,width,end,offset,y+offset);
+    }
+    /* Complete colour writes before the following pass uploads this surface. */
+    rdpq_sync_pipe();
+}
+static void blur_pixels(void) {
+    rdpq_attach(&ink_blur_temp,NULL);
+    if(!ink_blur_block) {
+        rspq_block_begin();
+        /* The extra top/left sample preserves clamped borders and centre
+           alignment when two box filters combine into a symmetric 3x3 blur. */
+        blur_pass(&ink,&ink_blur_temp,FW,FH,FW+1,FH+1,-.5f,12);
+        blur_pass(&ink_blur_temp,&ink_smooth,FW+1,FH+1,FW,FH,.5f,24);
+        ink_blur_block=rspq_block_end();
+    }
+    rspq_block_run(ink_blur_block);
+    rdpq_detach();
+}
+#ifdef PLASMAPONG_RDP_VALIDATE
+static void blur_check(void) {
+    uint32_t expected[FW*FH];
+    uint32_t *pixels=ink.buffer;
+    unsigned seed=7;
+    for(unsigned y=0;y<FH;y++) for(unsigned x=0;x<FW;x++) {
+        seed=1664525*seed+1013904223;
+        pixels[y*(ink.stride/4)+x]=(seed&0xffffff00)|255;
+    }
+    ink_blur(pixels,ink.stride/4,expected,FW,FW,FH);
+    blur_pixels();
+    rspq_wait();
+    const uint16_t *actual=ink_smooth.buffer;
+    for(unsigned y=0;y<FH;y++) for(unsigned x=0;x<FW;x++)
+        for(unsigned shift=8;shift<=24;shift+=8) {
+            unsigned packed=actual[y*(ink_smooth.stride/2)+x];
+            unsigned channel=(packed>>(shift==24?11:shift==16?6:1))&31;
+            int a=(channel<<3)|(channel>>2);
+            int b=(expected[y*FW+x]>>shift)&255;
+            /* Two RGBA16 render targets quantize channels to five bits. */
+            assertf(abs(a-b)<=16,"Blur mismatch at %u,%u channel %u: %d != %d",x,y,shift,a,b);
+        }
+    debugf("Display blur PASS: RDP versus clamped 3x3 reference\n");
+}
+#endif
+
+#endif
+static void draw_pixels(const Fluid *f,FlowEffect effect) {
+    produce_pixels(f,effect);
+#ifdef PLASMAPONG_INK_SMOOTH
+    /* Pixel production and both RDP passes share the queue; no CPU readback. */
+    if(effect==FLOW_BANDS) blur_pixels();
+#endif
+}
 void draw_fluid(const Fluid *f,float x,float y,float width,float height,FlowEffect effect) {
     fill_mode=false;
 #ifdef PLASMAPONG_FRAME_BLOCK
@@ -550,6 +620,9 @@ void draw_fluid(const Fluid *f,float x,float y,float width,float height,FlowEffe
     return;
 #endif
     surface_t *texture=&ink;
+#ifdef PLASMAPONG_INK_SMOOTH
+    if(effect==FLOW_BANDS) texture=&ink_smooth;
+#endif
 #if defined(PLASMAPONG_INK16) && !defined(PLASMAPONG_INK16_RSP)
     /* First measure the upload benefit using the established RGBA32 producer.
        If retained, packing can move to RSP rather than this CPU conversion. */
@@ -594,9 +667,10 @@ void draw_fluid(const Fluid *f,float x,float y,float width,float height,FlowEffe
     /* Geometry and texture address are constant until switching menu/court.
        Record upload/tiling commands once; pixel contents remain dynamic. The
        frame-start wait also makes freeing the previous block safe. */
-    if(!ink_blit || x!=ink_x || y!=ink_y || width!=ink_w || height!=ink_h) {
+    if(!ink_blit || texture!=ink_blit_texture || x!=ink_x || y!=ink_y || width!=ink_w || height!=ink_h) {
         if(ink_blit) rspq_block_free(ink_blit);
         ink_x=x; ink_y=y; ink_w=width; ink_h=height;
+        ink_blit_texture=texture;
         rspq_block_begin();
         rdpq_set_mode_standard(); rdpq_mode_filter(FILTER_BILINEAR);
         rdpq_tex_blit(texture,x*draw_scale,y*draw_scale,&(rdpq_blitparms_t){
@@ -676,6 +750,11 @@ int main(void) {
     /* Pad rows so partial-width uploads use LoadTile. The pinned libdragon's
        RGBA32 LoadBlock path corrupts this non-power-of-two texture width. */
     rdpq_init(); ink=surface_alloc(FMT_RGBA32,64,FH);
+#ifdef PLASMAPONG_INK_SMOOTH
+    /* RGBA16 supports full-width LoadBlock; only the halo target needs padding. */
+    ink_smooth=surface_alloc(FMT_RGBA16,FW,FH);
+    ink_blur_temp=surface_alloc(FMT_RGBA16,FW+8,FH+1);
+#endif
 #ifdef PLASMAPONG_INK16
     ink16=surface_alloc(FMT_RGBA16,64,FH);
 #endif
@@ -690,6 +769,9 @@ int main(void) {
 #endif
 #ifdef PLASMAPONG_RDP_VALIDATE
     rdpq_debug_start();
+#ifdef PLASMAPONG_INK_SMOOTH
+    blur_check();
+#endif
 #endif
 #ifdef PLASMAPONG_UPWIND_TEST
     upwind_cases();

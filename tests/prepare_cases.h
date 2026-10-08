@@ -93,13 +93,13 @@ static void prepare_cases(void) {
             }
         }
         prepare_pixels16_case(&f,true,expected_pixels);
-        for(FluidView view=FLUID_VIEW_RELIEF;view<=FLUID_VIEW_BANDS;view++) {
+        {
+            FluidView view=FLUID_VIEW_BANDS;
             memset(&pixels,0x5a,sizeof(pixels));
             memset(expected_pixels,0x5a,sizeof(expected_pixels));
             fluid_view_pixels(&f,expected_pixels,64,view);
             data_cache_hit_writeback_invalidate(&pixels,sizeof(pixels));
-            if(view==FLUID_VIEW_RELIEF) fluid_relief_pixels_rsp_begin(&f,pixels.value,64);
-            else fluid_bands_pixels_rsp_begin(&f,pixels.value,64);
+            fluid_bands_pixels_rsp_begin(&f,pixels.value,64);
             /* Exercise a normal-queue render command after the producer. */
             rdpq_set_fill_color(RGBA32(trial,trial,0,255));
             rspq_wait(); data_cache_hit_invalidate(&pixels,sizeof(pixels));
@@ -116,7 +116,7 @@ static void prepare_cases(void) {
         for(unsigned k=0;k<4;k++) assert(pixels.before[k]==0x5a5a5a5a && pixels.after[k]==0x5a5a5a5a);
     }
     debugf("Prepare PASS: 80 exact dye-color/speed-color/divergence fields, queued pixel producers, overlay switches, full timestep range, padded pixels and DMA guards\n");
-    debugf("View pixels PASS: 80 exact RELIEF and BANDS fields, queued uploads, stride/DMA guards and unchanged inputs\n");
+    debugf("View pixels PASS: 80 exact BANDS fields, queued uploads, stride/DMA guards and unchanged inputs\n");
     debugf("Packed pixels PASS: 80 dye and SPEED fields exactly match RGBA5551 quantization, padding and DMA guards\n");
 }
 #endif

@@ -430,9 +430,6 @@ static const uint32_t *view_palette(FluidView view) {
 static int view_flow(FluidFlowValue value) {
     return value;
 }
-static int view_density(const FluidInk *ink,int k) {
-    return ink->red[k]+ink->blue[k]+ink->gold[k];
-}
 static uint32_t view_color(const Fluid *f,int k,FluidView view,const uint32_t *palette) {
     const FluidFlow *v=fluid_velocity(f);
     if(view==FLUID_VIEW_DYE) return dye_color(fluid_dye(f),k);
@@ -447,21 +444,6 @@ static uint32_t view_color(const Fluid *f,int k,FluidView view,const uint32_t *p
     int x=k%FW,y=k/FW;
     int left=x?k-1:k,right=x<FW-1?k+1:k;
     int above=y?k-FW:k,below=y<FH-1?k+FW:k;
-    if(view==FLUID_VIEW_RELIEF) {
-        const FluidInk *ink=fluid_dye(f);
-        int dx=view_density(ink,right)/4-view_density(ink,left)/4;
-        int dy=view_density(ink,below)/4-view_density(ink,above)/4;
-        /* Fixed upper-left light. Approximate relief, no normalisation/sqrt. */
-        int shade=224+(dx-dy)/32;
-        shade=shade<72?72:shade>352?352:shade;
-        uint32_t c=dye_color(ink,k);
-        unsigned r=((c>>16)&255)*shade>>10;
-        unsigned g=((c>>8)&255)*shade>>10;
-        unsigned b=(c&255)*shade>>10;
-        r*=4; g*=4; b*=4;
-        r=r>255?255:r; g=g>255?255:g; b=b>255?255:b;
-        return (r<<16)|(g<<8)|b;
-    }
     int n;
     if(view==FLUID_VIEW_VORTEX) {
         /* Recompute from current projected velocity: pressure scratch has
@@ -479,17 +461,4 @@ void fluid_view_pixels(const Fluid *f,uint32_t *pixels,unsigned stride,FluidView
     const uint32_t *palette=view_palette(view);
     for(int y=0;y<FH;y++) for(int x=0;x<FW;x++)
         pixels[y*stride+x]=(view_color(f,y*FW+x,view,palette)<<8)|255;
-}
-
-void fluid_relief_shades(const Fluid *f,int16_t *shades) {
-    int16_t density[FN];
-    const FluidInk *ink=fluid_dye(f);
-    for(int k=0;k<FN;k++) density[k]=(int16_t)(view_density(ink,k)/4);
-    for(int y=0;y<FH;y++) for(int x=0;x<FW;x++) {
-        int k=y*FW+x;
-        int dx=density[x<FW-1?k+1:k]-density[x?k-1:k];
-        int dy=density[y<FH-1?k+FW:k]-density[y?k-FW:k];
-        int shade=224+(dx-dy)/32;
-        shades[k]=(int16_t)((shade<72?72:shade>352?352:shade)*64);
-    }
 }

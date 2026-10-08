@@ -34,6 +34,18 @@ int main(void) {
         score_save_encode(data,scores,43,(FlowEffect)choice,FPS_60,true);
         assert(score_save_decode(data,decoded,&generation,&effect,&frame_rate,&fps_meter) && effect==(FlowEffect)choice);
     }
+    /* Existing PPH2/3/4 effect IDs remain stable after retiring Relief. */
+    for(int version=2;version<=4;version++) for(int old=4;old<=7;old++) {
+        score_save_encode(data,scores,47,FLOW_NONE,FPS_60,true);
+        data[3]=(uint8_t)('0'+version); data[132]=(uint8_t)old; reseal(data);
+        assert(score_save_decode(data,decoded,&generation,&effect,&frame_rate,&fps_meter));
+        FlowEffect expected=old==5?FLOW_NONE:old>5?(FlowEffect)(old-1):FLOW_VORTEX;
+        assert(effect==expected && generation==47 && !memcmp(scores,decoded,sizeof(scores)));
+    }
+    score_save_encode(data,scores,48,FLOW_BANDS,FPS_60,true);
+    assert(data[132]==6);
+    score_save_encode(data,scores,48,FLOW_PRESSURE,FPS_60,true);
+    assert(data[132]==7);
     for(int fps=30;fps<=60;fps+=30) {
         score_save_encode(data,scores,44,FLOW_SPEED,(FrameRate)fps,true);
         assert(score_save_decode(data,decoded,&generation,&effect,&frame_rate,&fps_meter) && frame_rate==(FrameRate)fps);

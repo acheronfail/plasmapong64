@@ -46,7 +46,7 @@ smoke-arcade:
 smoke-save:
     ./tools/build-rom.sh -j4 SMOKE_SAVE=1 ROM=plasmapong-save-smoke BUILD_DIR=build/save_smoke_official
 
-# Cycle all eight flow effects during scripted play with RDP validation.
+# Cycle all seven flow effects during scripted play with RDP validation.
 smoke-flow:
     ./tools/build-rom.sh -j4 SMOKE_FLOW=1 RDP_VALIDATE=1 ROM=plasmapong-flow-smoke BUILD_DIR=build/flow_smoke
 
@@ -86,12 +86,12 @@ benchmark-complete:
 benchmark-speed:
     ./tools/build-rom.sh -j4 SMOKE=1 SMOKE_EFFECT=3 FLUID_PROFILE=1 DRAW_SYNC_PROFILE=1 ROM=plasmapong-speed-benchmark BUILD_DIR=build/speed_benchmark
 
-# Human-controlled prototype: all eight effects in the existing Options selector.
+# Human-controlled prototype: all seven effects in the existing Options selector.
 prototype-views:
     ./tools/build-rom.sh -j4 USB_LOG=1 ROM=plasmapong-views BUILD_DIR=build/views_playable
 
 # Matched 4P high-res stress; ordinary asynchronous renderer, console USB logs.
-# Effect IDs: dye=0 speed=3 vortex=4 relief=5 bands=6 pressure=7.
+# Effect IDs: dye=0 speed=3 vortex=4 bands=5 pressure=6.
 benchmark-view effect="4":
     ./tools/build-views.sh benchmark "{{effect}}"
 
@@ -104,5 +104,5 @@ smoke-view-options:
     ./tools/build-rom.sh -j4 SMOKE_OPTIONS=1 SMOKE_HIGH_RES=1 RDP_VALIDATE=1 ROM=plasmapong-views-options BUILD_DIR=build/views_options
 
 # Select an effect in Options, press B, then hold the matching main-menu preview.
-smoke-menu-view effect="7":
+smoke-menu-view effect="6":
     ./tools/build-rom.sh -j4 SMOKE_MENU_VIEW={{effect}} SMOKE_HIGH_RES=1 RDP_VALIDATE=1 ROM=plasmapong-menu-view-{{effect}} BUILD_DIR=build/menu_view_{{effect}}

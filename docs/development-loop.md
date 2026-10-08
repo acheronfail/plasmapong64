@@ -6,6 +6,96 @@ Its ESPHome outlet URL is configured by `N64_POWER_URL`, entity `switch/switch`.
 The user authorizes ROM uploads and explicit outlet on/off commands for development.
 Use this interface instead of desktop automation to power the console.
 
+## Bands-only smoothing and Relief removal, 2026-10-08
+
+The user rejected Relief and preferred the original appearance of the other
+views. The seven-effect selector now omits Relief, including its CPU and RSP
+lighting code. Only Bands generates and displays the blurred texture; Dye,
+Particles, Tails, Speed, Vortex and Pressure use their original colour texture.
+The cached blit is rebuilt when its source texture changes, including switching
+into/out of Bands without changing the court or menu dimensions.
+
+Runtime IDs are now Bands=5 and Pressure=6. EEPROM PPH2–4 retains its existing
+wire IDs (Bands=6, Pressure=7); the retired Relief ID 5 loads as NONE. Tests
+cover all current choices and migration of older records without losing scores,
+video settings or the FPS preference. Earlier all-eight-effect captures and
+blurred non-Bands screenshots below are historical experiments.
+
+`bands-only-no-relief-01` passed the portable suite and 4/8 MiB Ares numerical
+and rendering fixtures, including the surviving dye/speed/Bands RSP producers.
+A separate Options replay visited all seven IDs and wrapped to NONE without
+RDP errors. The ordinary console run cycled every remaining effect with music
+for 60 windows: **8.754 ms/update, 59.942 FPS, 8,990 frames / 8,990 VI**, zero
+presentation misses and zero audio underrun observations. Power OFF was verified.
+The shorter seven-effect cycle changes workload weighting relative to historical
+eight-effect averages; this is not a matched simulation-speed comparison.
+`just build` rebuilt the human-controlled `plasmapong.z64` with these defaults.
+
+## Fluid display smoothing, 2026-10-08
+
+`INK_SMOOTH=1` (default) applies a clamped 3x3 binomial blur to the colour
+texture before ordinary screen scaling. Two half-texel-offset RDP box passes
+use `FILTER_MEDIAN`, whose centre sample averages all four neighbours. Their
+combined weights are `[1 2 1]` horizontally and vertically. A padded intermediate
+sample preserves alignment and the outer borders. Upload strips include
+neighbour rows and use 12 rows for RGBA32 input, 24 for RGBA16 input; cached
+commands avoid repeating upload setup on the CPU.
+The RSP producer, blur and final draw remain ordered on the normal queue, with
+RDP pipe synchronization between render-to-texture passes. The simulation grid,
+current strengths, ball sampling, particles and UI are unchanged. This reduces
+cell/diagonal contrast at the cost of softer fine dye detail; it does not add
+simulation resolution or completely eliminate the hardware's three-point filter.
+
+`INK_SMOOTH=0` retains the unblurred display for comparison. The experimental
+16-bit pixel producers require smoothing disabled; the retained RGBA32 producers
+feed two RGBA16 blur targets to reduce RDP bandwidth. Added storage is 12,112 bytes
+for the two 64x44-grid surfaces, plus the cached command block. Portable tests
+check the reference filter against a scalar 3x3 calculation. Validation ROMs
+compare actual RDP output against that reference at every pixel/channel with a
+16-level bound for the two five-bit render-target quantizations, covering clamped
+edges and strip boundaries.
+Ordinary timing ROMs omit this fixture. The RGBA32 GPU trial
+(`smooth-rdp-cached-04`) passed the two-level reference check but missed 21
+presentations in Relief during its 60-window console capture, so it was replaced
+by the lower-bandwidth targets. Its 10.124 ms/update average and 59.801 FPS are
+not acceptance results. It had no audio underrun observations and verified OFF.
+
+The initial CPU 2x-upscale trial (`smooth-candidate-01`) softened diagonal
+creases but measured only 42.719 FPS with 601 presentation misses over 1,493
+frames. The CPU 3x3 trial (`smooth-blur-02`) measured 51.868 FPS with 1,399 misses
+over 8,992 frames. Both are rejected; their source archives remain in the ignored
+experiment directories. Both had zero audio underrun observations and verified
+power OFF. These are different-duration captures, not matched simulation timings.
+
+The first RGBA16 trial (`smooth-rdp16-05`) reduced the problem to one missed
+presentation in Relief, with no audio underruns. The retained implementation
+(`smooth-rdp-packed-06`) uses wider upload strips and a tightly packed final
+RGBA16 surface, reducing redundant uploads and enabling full-width LoadBlock.
+Both 4/8 MiB Ares rendering checks passed, including the blur reference fixture.
+Portable checks passed; an additional replay exercised low/high/low/high video
+switches through Options. `just build` rebuilt the normal human-controlled ROM.
+
+Matched ordinary 60-window console runs, four players, all eight effects and music:
+
+| Run | Simulation ms/update | FPS | Frames / VI | Misses | Audio underrun observations |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `smooth-baseline-02` | 8.527 | 59.942 | 8,990 / 8,990 | 0 | 0 |
+| `smooth-rdp-packed-06` | 8.529 | 59.937 | 8,990 / 8,990 | 0 | 0 |
+
+Both captures ended with verified power OFF. The approximately 0.002 ms simulation
+mean difference is negligible in these captures; this does not mean the blur is
+free or establish unused RDP headroom. The final loop manifest covers the build
+and emulator checks; its subsequent `hardware.log`/`hardware.json` retain the
+ordinary console capture and matching ROM hash. No profiling is enabled.
+
+Native Ares comparison uses the same four-player Bands replay at video field
+900, with no boot fixtures. Images are unedited native output; static images
+show edge softness, not motion quality.
+
+| Before | GPU blur |
+| --- | --- |
+| ![Before smoothing](screenshots/bands-smoothing-before-900.png) | ![After smoothing](screenshots/bands-smoothing-after-900.png) |
+
 ## Swirl fidelity acceptance, 2026-10-08
 
 The user clarified that **7 ms/update is a stretch goal, not an acceptance

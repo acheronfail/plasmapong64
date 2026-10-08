@@ -3,13 +3,13 @@
 set -eu
 cd "$(dirname "$0")/.."
 mode=${1:-benchmark}
-choices=${2:-"0 3 4 5 6 7"}
+choices=${2:-"0 3 4 5 6"}
 mkdir -p build/views
 for effect in $choices; do
     case "$effect" in
         0) name=dye ;; 3) name=speed ;; 4) name=vortex ;;
-        5) name=relief ;; 6) name=bands ;; 7) name=pressure ;;
-        *) echo "Expected effect 0, 3, 4, 5, 6 or 7" >&2; exit 1 ;;
+        5) name=bands ;; 6) name=pressure ;;
+        *) echo "Expected effect 0, 3, 4, 5 or 6" >&2; exit 1 ;;
     esac
     case "$mode" in
         benchmark)

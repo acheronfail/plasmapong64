@@ -16,7 +16,6 @@ RSPQ_BeginOverlayHeader
     RSPQ_DefineCommand SpeedPixels,16
     RSPQ_DefineCommand Pixels16,16
     RSPQ_DefineCommand SpeedPixels16,16
-    RSPQ_DefineCommand ReliefPixels,16
 RSPQ_EndOverlayHeader
     /* Embedded data can be only 8-byte aligned in RDRAM. Keep the command
        table's CPU cache line separate from the state saved by RSP DMA. */
@@ -46,10 +45,6 @@ scratch: .ds.b (9*ROW_BYTES+1040)
 Pixels16:
     b Pixels
     li a3,1
-ReliefPixels:
-    move fp,a3
-    b Pixels
-    li a3,2
 Pixels:
     move s1,a0
     move s2,a1
@@ -103,12 +98,6 @@ pixels_row:
     transfer s7,input1,ROW_BYTES,DMA_IN
     addiu s7,s1,2*PLANE_BYTES
     transfer s7,input2,ROW_BYTES,DMA_IN
-    li t3,2
-    bne a3,t3,pixels_no_shade_dma
-    nop
-    transfer fp,speed_palette,ROW_BYTES,DMA_IN
-    addiu fp,fp,ROW_BYTES
-pixels_no_shade_dma:
     move s6,zero
 pixels_batch:
     addiu t3,s6,%lo(input0)
@@ -127,23 +116,6 @@ pixels_batch:
     component $v04,$v10.e0,$v10.e1,$v10.e2,$v13
     component $v05,$v11.e0,$v11.e1,$v11.e2,$v14
     component $v06,$v12.e0,$v12.e1,$v12.e2,$v15
-    li t3,2
-    bne a3,t3,pixels_no_shade
-    nop
-    addiu t3,s6,%lo(speed_palette)
-    lqv $v07,0,t3
-    vmudm $v04,$v04,$v07
-    vmudm $v05,$v05,$v07
-    vmudm $v06,$v06,$v07
-    li t3,4
-    mtc2 t3,$v23.e0
-    vmudn $v04,$v04,$v23.e0
-    vmudn $v05,$v05,$v23.e0
-    vmudn $v06,$v06,$v23.e0
-    vlt $v04,$v04,$v20.e0
-    vlt $v05,$v05,$v20.e0
-    vlt $v06,$v06,$v20.e0
-pixels_no_shade:
     li t3,1
     beq a3,t3,pixels_pack16
     nop
