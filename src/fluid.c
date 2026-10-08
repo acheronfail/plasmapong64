@@ -381,12 +381,6 @@ void fluid_speed_palette(uint32_t *rgba) {
 uint32_t fluid_speed_color(const Fluid *f,int k) {
     return speed_color(fluid_velocity(f),k);
 }
-void fluid_speed_pixels(const Fluid *f,uint32_t *pixels,unsigned stride) {
-    const FluidFlow *flow=fluid_velocity(f);
-    for(int y=0;y<FH;y++) for(int x=0;x<FW;x++)
-        pixels[y*stride+x]=(speed_color(flow,y*FW+x)<<8)|255;
-}
-
 void fluid_speed_field_pixels(const Fluid *f,uint32_t *pixels,unsigned stride) {
     const FluidFlow *v=fluid_velocity(f);
     for(int y=0;y<FH;y++) for(int x=0;x<FW;x++) {
@@ -395,6 +389,19 @@ void fluid_speed_field_pixels(const Fluid *f,uint32_t *pixels,unsigned stride) {
         unsigned speed=(unsigned)(u>w?u+w/2:w+u/2)/VELOCITY_SCALE;
         if(speed>255) speed=255;
         pixels[y*stride+x]=(speed*0x01010100u)|255;
+    }
+}
+
+void fluid_vortex_field_pixels(const Fluid *f,uint32_t *pixels,unsigned stride) {
+    const FluidFlow *v=fluid_velocity(f);
+    for(int y=0;y<FH;y++) for(int x=0;x<FW;x++) {
+        int k=y*FW+x;
+        int left=x?k-1:k,right=x<FW-1?k+1:k;
+        int above=y?k-FW:k,below=y<FH-1?k+FW:k;
+        /* Projected velocity, with the same fixed gain as the Vortex palette. */
+        int n=(v->v[right]-v->v[left]-v->u[below]+v->u[above])/16;
+        n=n<-128?-128:n>127?127:n;
+        pixels[y*stride+x]=((unsigned)(n+128)*0x01010100u)|255;
     }
 }
 

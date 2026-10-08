@@ -174,10 +174,14 @@ void audio_storage_service(void) {
 }
 #endif
 static surface_t ink;
-#define BANDS_SCALE 4
-static surface_t bands_horizontal,bands_field,bands_colors;
-static rspq_block_t *bands_resample_block;
-static _Alignas(16) uint16_t bands_palette[256];
+#define FIELD_SCALE 4
+static surface_t field_horizontal,field_scalar,field_colors;
+static rspq_block_t *field_resample_block;
+static _Alignas(16) uint16_t field_palette[3][256];
+static bool field_effect(FlowEffect effect) {
+    return effect==FLOW_SPEED || effect==FLOW_VORTEX || effect==FLOW_BANDS;
+}
+static FlowEffect ink_blit_effect;
 #ifdef PLASMAPONG_INK16
 static surface_t ink16;
 #endif
@@ -457,23 +461,32 @@ static void produce_pixels(const Fluid *f,FlowEffect effect) {
 #ifdef PLASMAPONG_FLUID_PROFILE
     uint64_t pixel_begin=get_ticks();
 #endif
-    bool speed=effect==FLOW_SPEED;
-#if defined(PLASMAPONG_PREPARE_RSP)
-    if(effect==FLOW_BANDS) {
-        fluid_speed_field_rsp_begin(f,ink.buffer,ink.stride/4);
+    if(field_effect(effect)) {
+        if(effect==FLOW_VORTEX) {
+            uint32_t *pixels=CachedAddr(ink.buffer);
+            fluid_vortex_field_pixels(f,pixels,ink.stride/4);
+            data_cache_hit_writeback(pixels,ink.stride*FH);
+        } else {
+#ifdef PLASMAPONG_PREPARE_RSP
+            fluid_speed_field_rsp_begin(f,ink.buffer,ink.stride/4);
 #ifdef PLASMAPONG_PIXELS_CHAIN
-        pixel_done=rspq_syncpoint_new(); pixel_pending=true;
-        rspq_flush();
+            pixel_done=rspq_syncpoint_new(); pixel_pending=true;
+            rspq_flush();
 #else
-        fluid_queue_wait();
+            fluid_queue_wait();
 #endif
+#else
+            uint32_t *pixels=CachedAddr(ink.buffer);
+            fluid_speed_field_pixels(f,pixels,ink.stride/4);
+            data_cache_hit_writeback(pixels,ink.stride*FH);
+#endif
+        }
 #ifdef PLASMAPONG_FLUID_PROFILE
         pixel_ticks+=get_ticks()-pixel_begin;
 #endif
         return;
     }
-#endif
-    if(effect>=FLOW_VORTEX) {
+    if(effect==FLOW_PRESSURE) {
         FluidView view=flow_view(effect);
         void *pixels=CachedAddr(ink.buffer);
         fluid_view_pixels(f,pixels,ink.stride/sizeof(uint32_t),view);
@@ -495,8 +508,7 @@ static void produce_pixels(const Fluid *f,FlowEffect effect) {
     /* Generate all pixels together so bank selection and call overhead stay
        outside the cell loop. Preserve the padded RGBA32 upload layout. */
 #ifdef PLASMAPONG_INK16_RSP
-    if(speed) fluid_speed_pixels16_rsp_begin(f,ink16.buffer,ink16.stride/2);
-    else fluid_pixels16_rsp_begin(f,ink16.buffer,ink16.stride/2);
+    fluid_pixels16_rsp_begin(f,ink16.buffer,ink16.stride/2);
     pixel_done=rspq_syncpoint_new(); pixel_pending=true;
     rspq_flush();
 #ifdef PLASMAPONG_FLUID_PROFILE
@@ -504,43 +516,26 @@ static void produce_pixels(const Fluid *f,FlowEffect effect) {
 #endif
     return;
 #endif
-    if(speed) {
-#ifdef PLASMAPONG_SPEED_RSP
-#ifdef PLASMAPONG_PIXELS_CHAIN
-        fluid_speed_pixels_rsp_begin(f,ink.buffer,ink.stride/sizeof(uint32_t));
-        pixel_done=rspq_syncpoint_new(); pixel_pending=true;
-        rspq_flush();
-#else
-        fluid_speed_pixels_rsp(f,ink.buffer,ink.stride/sizeof(uint32_t));
-#endif
-#else
-        /* CPU writers use cached stores, then expose complete rows to RDP. */
-        void *pixels=CachedAddr(ink.buffer);
-        fluid_speed_pixels(f,pixels,ink.stride/sizeof(uint32_t));
-        data_cache_hit_writeback(pixels,ink.stride*FH);
-#endif
-    } else {
 #ifdef PLASMAPONG_PREPARE_RSP
 #ifdef PLASMAPONG_PIXELS_CHAIN
-        fluid_pixels_rsp_begin(f,ink.buffer,ink.stride/sizeof(uint32_t));
-        pixel_done=rspq_syncpoint_new(); pixel_pending=true;
-        rspq_flush();
+    fluid_pixels_rsp_begin(f,ink.buffer,ink.stride/sizeof(uint32_t));
+    pixel_done=rspq_syncpoint_new(); pixel_pending=true;
+    rspq_flush();
 #else
-        fluid_pixels_rsp(f,ink.buffer,ink.stride/sizeof(uint32_t));
+    fluid_pixels_rsp(f,ink.buffer,ink.stride/sizeof(uint32_t));
 #endif
 #else
-        void *pixels=CachedAddr(ink.buffer);
-        fluid_pixels(f,pixels,ink.stride/sizeof(uint32_t));
-        data_cache_hit_writeback(pixels,ink.stride*FH);
+    void *pixels=CachedAddr(ink.buffer);
+    fluid_pixels(f,pixels,ink.stride/sizeof(uint32_t));
+    data_cache_hit_writeback(pixels,ink.stride*FH);
 #endif
-    }
 #ifdef PLASMAPONG_FLUID_PROFILE
     pixel_ticks+=get_ticks()-pixel_begin;
 #endif
 }
-static void bands_resample(void) {
-    rdpq_attach(&bands_horizontal,NULL);
-    if(!bands_resample_block) {
+static void field_resample(void) {
+    rdpq_attach(&field_horizontal,NULL);
+    if(!field_resample_block) {
         rspq_block_begin();
         rdpq_set_mode_standard();
         rdpq_mode_filter(FILTER_BILINEAR);
@@ -550,33 +545,33 @@ static void bands_resample(void) {
         for(int y=0;y<FH;y+=12) {
             int end=y+12<FH?y+12:FH;
             rdpq_tex_upload_sub(TILE0,&ink,NULL,0,y,FW,end);
-            rdpq_texture_rectangle_scaled(TILE0,0,y,FW*BANDS_SCALE,end,
+            rdpq_texture_rectangle_scaled(TILE0,0,y,FW*FIELD_SCALE,end,
                 -.375f,y,FW-.375f,end);
         }
         rdpq_sync_pipe();
-        rdpq_set_color_image(&bands_field);
+        rdpq_set_color_image(&field_scalar);
         for(int y=0;y<FH;y+=8) {
             int end=y+8<FH?y+8:FH;
             int top=y?y-1:0,bottom=end<FH?end+1:FH;
-            rdpq_tex_upload_sub(TILE0,&bands_horizontal,NULL,0,top,FW*BANDS_SCALE,bottom);
-            rdpq_texture_rectangle_scaled(TILE0,0,y*BANDS_SCALE,FW*BANDS_SCALE,end*BANDS_SCALE,
-                0,y-.375f,FW*BANDS_SCALE,end-.375f);
+            rdpq_tex_upload_sub(TILE0,&field_horizontal,NULL,0,top,FW*FIELD_SCALE,bottom);
+            rdpq_texture_rectangle_scaled(TILE0,0,y*FIELD_SCALE,FW*FIELD_SCALE,end*FIELD_SCALE,
+                0,y-.375f,FW*FIELD_SCALE,end-.375f);
         }
         rdpq_sync_pipe();
-        bands_resample_block=rspq_block_end();
+        field_resample_block=rspq_block_end();
     }
-    rspq_block_run(bands_resample_block);
+    rspq_block_run(field_resample_block);
     rdpq_detach();
 }
 #ifdef PLASMAPONG_RDP_VALIDATE
-static void bands_field_check(void) {
+static void field_resample_check(void) {
     uint32_t *pixels=ink.buffer;
     for(unsigned y=0;y<FH;y++) for(unsigned x=0;x<FW;x++) {
         unsigned v=(x*47+y*83+(x*y)*17)&255;
         pixels[y*(ink.stride/4)+x]=(v*0x01010100u)|255;
     }
-    bands_resample(); rspq_wait();
-    const uint8_t *actual=bands_field.buffer;
+    field_resample(); rspq_wait();
+    const uint8_t *actual=field_scalar.buffer;
     for(unsigned y=0;y<FH*4;y++) for(unsigned x=0;x<FW*4;x++) {
         unsigned sx=x<2?0:2*x-3,sy=y<2?0:2*y-3;
         unsigned ix=sx/8,iy=sy/8,fx=sx%8,fy=sy%8;
@@ -584,7 +579,7 @@ static void bands_field_check(void) {
         unsigned a=pixels[iy*(ink.stride/4)+ix]>>24,b=pixels[iy*(ink.stride/4)+rx]>>24;
         unsigned c=pixels[by*(ink.stride/4)+ix]>>24,d=pixels[by*(ink.stride/4)+rx]>>24;
         int expected=(((a*(8-fx)+b*fx)/8)*(8-fy)+((c*(8-fx)+d*fx)/8)*fy)/8;
-        int got=actual[y*bands_field.stride+x];
+        int got=actual[y*field_scalar.stride+x];
         assertf(abs(got-expected)<=2,"Bands scalar interpolation %u,%u: %d != %d",x,y,got,expected);
     }
     debugf("Bands field PASS: separable bilinear scalar interpolation, edges and strip boundaries\n");
@@ -592,7 +587,7 @@ static void bands_field_check(void) {
 #endif
 static void draw_pixels(const Fluid *f,FlowEffect effect) {
     produce_pixels(f,effect);
-    if(effect==FLOW_BANDS) bands_resample();
+    if(field_effect(effect)) field_resample();
 }
 void draw_fluid(const Fluid *f,float x,float y,float width,float height,FlowEffect effect) {
     fill_mode=false;
@@ -631,8 +626,8 @@ void draw_fluid(const Fluid *f,float x,float y,float width,float height,FlowEffe
 #elif defined(PLASMAPONG_INK16)
     texture=&ink16;
 #endif
-    if(effect==FLOW_BANDS) {
-        texture=&bands_colors; texture_w=FW*BANDS_SCALE; texture_h=FH*BANDS_SCALE;
+    if(field_effect(effect)) {
+        texture=&field_colors; texture_w=FW*FIELD_SCALE; texture_h=FH*FIELD_SCALE;
     }
 #ifdef PLASMAPONG_FLUID_PROFILE
     uint64_t texture_begin=get_ticks();
@@ -647,9 +642,9 @@ void draw_fluid(const Fluid *f,float x,float y,float width,float height,FlowEffe
 #endif
         /* Keep the texture, particles and text in the same command stream. */
         rdpq_set_mode_standard(); rdpq_mode_filter(FILTER_BILINEAR);
-        if(effect==FLOW_BANDS) {
+        if(field_effect(effect)) {
             rdpq_mode_tlut(TLUT_RGBA16);
-            rdpq_tex_upload_tlut(bands_palette,0,256);
+            rdpq_tex_upload_tlut(field_palette[effect-FLOW_SPEED],0,256);
         }
         rdpq_tex_blit(texture,x*draw_scale,y*draw_scale,&(rdpq_blitparms_t){
             .width=texture_w,.height=texture_h,.scale_x=width*draw_scale/texture_w,.scale_y=height*draw_scale/texture_h,.filtering=true});
@@ -662,15 +657,15 @@ void draw_fluid(const Fluid *f,float x,float y,float width,float height,FlowEffe
     /* Geometry and texture address are constant until switching menu/court.
        Record upload/tiling commands once; pixel contents remain dynamic. The
        frame-start wait also makes freeing the previous block safe. */
-    if(!ink_blit || texture!=ink_blit_texture || x!=ink_x || y!=ink_y || width!=ink_w || height!=ink_h) {
+    if(!ink_blit || effect!=ink_blit_effect || texture!=ink_blit_texture || x!=ink_x || y!=ink_y || width!=ink_w || height!=ink_h) {
         if(ink_blit) rspq_block_free(ink_blit);
         ink_x=x; ink_y=y; ink_w=width; ink_h=height;
-        ink_blit_texture=texture;
+        ink_blit_texture=texture; ink_blit_effect=effect;
         rspq_block_begin();
         rdpq_set_mode_standard(); rdpq_mode_filter(FILTER_BILINEAR);
-        if(effect==FLOW_BANDS) {
+        if(field_effect(effect)) {
             rdpq_mode_tlut(TLUT_RGBA16);
-            rdpq_tex_upload_tlut(bands_palette,0,256);
+            rdpq_tex_upload_tlut(field_palette[effect-FLOW_SPEED],0,256);
         }
         rdpq_tex_blit(texture,x*draw_scale,y*draw_scale,&(rdpq_blitparms_t){
             .width=texture_w,.height=texture_h,.scale_x=width*draw_scale/texture_w,.scale_y=height*draw_scale/texture_h,.filtering=true});
@@ -749,16 +744,19 @@ int main(void) {
     /* Pad rows so partial-width uploads use LoadTile. The pinned libdragon's
        RGBA32 LoadBlock path corrupts this non-power-of-two texture width. */
     rdpq_init(); ink=surface_alloc(FMT_RGBA32,64,FH);
-    bands_horizontal=surface_alloc(FMT_I8,FW*BANDS_SCALE,FH);
-    bands_field=surface_alloc(FMT_I8,FW*BANDS_SCALE,FH*BANDS_SCALE);
-    bands_colors=surface_make(bands_field.buffer,FMT_CI8,bands_field.width,bands_field.height,bands_field.stride);
+    field_horizontal=surface_alloc(FMT_I8,FW*FIELD_SCALE,FH);
+    field_scalar=surface_alloc(FMT_I8,FW*FIELD_SCALE,FH*FIELD_SCALE);
+    field_colors=surface_make(field_scalar.buffer,FMT_CI8,field_scalar.width,field_scalar.height,field_scalar.stride);
     uint32_t palette[FLUID_SPEED_PALETTE_SIZE];
-    fluid_view_palette(FLUID_VIEW_BANDS,palette);
-    for(unsigned i=0;i<256;i++) {
-        uint32_t p=palette[i];
-        bands_palette[i]=((p>>16)&0xf800)|((p>>13)&0x07c0)|((p>>10)&0x003e)|1;
+    for(FlowEffect effect=FLOW_SPEED;effect<=FLOW_BANDS;effect++) {
+        if(effect==FLOW_SPEED) fluid_speed_palette(palette);
+        else fluid_view_palette(flow_view(effect),palette);
+        for(unsigned i=0;i<256;i++) {
+            uint32_t p=palette[i];
+            field_palette[effect-FLOW_SPEED][i]=((p>>16)&0xf800)|((p>>13)&0x07c0)|((p>>10)&0x003e)|1;
+        }
     }
-    data_cache_hit_writeback(bands_palette,sizeof(bands_palette));
+    data_cache_hit_writeback(field_palette,sizeof(field_palette));
 #ifdef PLASMAPONG_INK16
     ink16=surface_alloc(FMT_RGBA16,64,FH);
 #endif
@@ -773,7 +771,7 @@ int main(void) {
 #endif
 #ifdef PLASMAPONG_RDP_VALIDATE
     rdpq_debug_start();
-    bands_field_check();
+    field_resample_check();
 #endif
 #ifdef PLASMAPONG_UPWIND_TEST
     upwind_cases();

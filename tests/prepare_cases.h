@@ -1,19 +1,18 @@
 #ifndef PREPARE_CASES_H
 #define PREPARE_CASES_H
 #include "../src/fluid_velocity_fixed.h"
-static void prepare_pixels16_case(const Fluid *f,bool speed,const uint32_t *expected) {
+static void prepare_pixels16_case(const Fluid *f,const uint32_t *expected) {
     static struct { _Alignas(16) uint16_t before[8],value[64*FH],after[8]; } packed;
     memset(&packed,0x5a,sizeof(packed));
     data_cache_hit_writeback_invalidate(&packed,sizeof(packed));
-    if(speed) fluid_speed_pixels16_rsp_begin(f,packed.value,64);
-    else fluid_pixels16_rsp_begin(f,packed.value,64);
+    fluid_pixels16_rsp_begin(f,packed.value,64);
     rdpq_set_fill_color(RGBA32(0,0,0,255));
     rspq_wait(); data_cache_hit_invalidate(&packed,sizeof(packed));
     for(unsigned y=0;y<FH;y++) for(unsigned x=0;x<64;x++) {
         uint32_t p=expected[y*64+x];
         uint16_t want=x<FW?((p>>16)&0xf800)|((p>>13)&0x07c0)|((p>>10)&0x003e)|1:0x5a5a;
         if(packed.value[y*64+x]!=want) {
-            debugf("Packed pixels mismatch speed %u row %u col %u: %04x/%04x\n",speed,y,x,want,packed.value[y*64+x]);
+            debugf("Packed pixels mismatch row %u col %u: %04x/%04x\n",y,x,want,packed.value[y*64+x]);
             assert(0);
         }
     }
@@ -75,42 +74,7 @@ static void prepare_cases(void) {
                 assert(0);
             }
         }
-        prepare_pixels16_case(&f,false,expected_pixels);
-        memset(&pixels,0x5a,sizeof(pixels));
-        memset(expected_pixels,0x5a,sizeof(expected_pixels));
-        fluid_speed_pixels(&f,expected_pixels,64);
-        data_cache_hit_writeback_invalidate(&pixels,sizeof(pixels));
-        if(trial&1) {
-            fluid_speed_pixels_rsp_begin(&f,pixels.value,64);
-            rdpq_set_fill_color(RGBA32(0,trial,0,255));
-            rspq_wait();
-        } else fluid_speed_pixels_rsp(&f,pixels.value,64);
-        data_cache_hit_invalidate(&pixels,sizeof(pixels));
-        for(unsigned k=0;k<64*FH;k++) {
-            if(expected_pixels[k]!=pixels.value[k]) {
-                debugf("Speed mismatch trial %u cell %u: %08lx/%08lx\n",trial,k,(unsigned long)expected_pixels[k],(unsigned long)pixels.value[k]);
-                assert(0);
-            }
-        }
-        prepare_pixels16_case(&f,true,expected_pixels);
-        {
-            FluidView view=FLUID_VIEW_BANDS;
-            memset(&pixels,0x5a,sizeof(pixels));
-            memset(expected_pixels,0x5a,sizeof(expected_pixels));
-            fluid_view_pixels(&f,expected_pixels,64,view);
-            data_cache_hit_writeback_invalidate(&pixels,sizeof(pixels));
-            fluid_bands_pixels_rsp_begin(&f,pixels.value,64);
-            /* Exercise a normal-queue render command after the producer. */
-            rdpq_set_fill_color(RGBA32(trial,trial,0,255));
-            rspq_wait(); data_cache_hit_invalidate(&pixels,sizeof(pixels));
-            for(unsigned k=0;k<64*FH;k++) {
-                if(expected_pixels[k]!=pixels.value[k]) {
-                    debugf("View mismatch trial %u view %u cell %u: %08lx/%08lx\n",trial,view,k,(unsigned long)expected_pixels[k],(unsigned long)pixels.value[k]);
-                    assert(0);
-                }
-            }
-            for(unsigned k=0;k<4;k++) assert(pixels.before[k]==0x5a5a5a5a && pixels.after[k]==0x5a5a5a5a);
-        }
+        prepare_pixels16_case(&f,expected_pixels);
         memset(&pixels,0x5a,sizeof(pixels));
         memset(expected_pixels,0x5a,sizeof(expected_pixels));
         fluid_speed_field_pixels(&f,expected_pixels,64);
@@ -121,9 +85,8 @@ static void prepare_cases(void) {
         assert(!memcmp(&f,&saved,sizeof(f)));
         for(unsigned k=0;k<4;k++) assert(pixels.before[k]==0x5a5a5a5a && pixels.after[k]==0x5a5a5a5a);
     }
-    debugf("Prepare PASS: 80 exact dye-color/speed-color/divergence fields, queued pixel producers, overlay switches, full timestep range, padded pixels and DMA guards\n");
-    debugf("View pixels PASS: 80 exact BANDS fields, queued uploads, stride/DMA guards and unchanged inputs\n");
+    debugf("Prepare PASS: 80 exact dye-color/divergence fields, queued pixel producers, overlay switches, full timestep range, padded pixels and DMA guards\n");
     debugf("Speed field PASS: 80 exact CPU/RSP grayscale fields, padding and DMA guards\n");
-    debugf("Packed pixels PASS: 80 dye and SPEED fields exactly match RGBA5551 quantization, padding and DMA guards\n");
+    debugf("Packed pixels PASS: 80 dye fields exactly match RGBA5551 quantization, padding and DMA guards\n");
 }
 #endif

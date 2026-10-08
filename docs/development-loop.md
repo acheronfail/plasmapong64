@@ -6,6 +6,37 @@ Its ESPHome outlet URL is configured by `N64_POWER_URL`, entity `switch/switch`.
 The user authorizes ROM uploads and explicit outlet on/off commands for development.
 Use this interface instead of desktop automation to power the console.
 
+## Speed and Vortex interpolation defaults, 2026-10-08
+
+Speed and Vortex now join Bands in reconstructing their scalar field before
+palette lookup. All three reuse the existing separable 4x RDP interpolation
+surfaces. Speed shares the RSP grayscale speed producer with Bands; Vortex
+encodes signed curl from the current projected velocity into an 8-bit field,
+with clamped edges and fixed exposure. Each effect has its own RGBA16 palette,
+and the cached draw commands are rebuilt when the selected palette changes.
+Pressure and the dye-based views retain their existing rendering.
+
+Removed the superseded CPU Speed colour-texture producer, RSP Speed/Bands
+colour producers, packed-Speed RSP command and its branches, and `SPEED_RSP`
+build flag. The scalar speed kernel, dye packing and portable colour references
+used by the preview and palette tests remain. No experimental selection flag is
+needed. The shared intermediate surfaces do not grow; the two additional display
+palettes occupy 1,024 bytes.
+
+Matched prototype console captures (`effect-fields-hardware-01`, four-player
+high-resolution stress with music, 20 windows per ROM) measured Speed at
+8.244/8.501 ms before/after and Vortex at 11.156/11.389 ms. All four sustained
+approximately 59.94 FPS with 2,990 frames / 2,990 VI, zero misses and zero audio
+underrun observations. Simulation averages do not measure completed RDP cost.
+The cleaned `interpolated-effects-default-01` passed portable checks and 4/8 MiB
+Ares scalar/RSP fixtures. Its ordinary 60-window all-seven-effects console run
+measured **8.559 ms/update, 59.942 FPS, 8,990 frames / 8,990 VI**, zero
+presentation misses and zero audio underrun observations, with verified power
+OFF. This mixed workload is acceptance evidence, not a matched speedup claim.
+A separate 4 MiB Options replay passed all seven selections and wraparound with
+RDP validation. Menu EEPROM save pauses are expected and are excluded from the
+ordinary gameplay performance result. `just build` rebuilt the playable ROM.
+
 ## Pre-palette Bands interpolation, 2026-10-08
 
 Bands now reconstructs the scalar approximate-speed field before colour mapping.

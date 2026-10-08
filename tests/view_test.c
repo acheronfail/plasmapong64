@@ -40,5 +40,31 @@ int main(void) {
         }
         assert(!memcmp(&f,&before,sizeof(f)));
     }
+    /* A linear velocity ramp has known curl, including clamped border stencils. */
+    for(int sign=-1;sign<=1;sign+=2) {
+        for(int y=0;y<FH;y++) for(int x=0;x<FW;x++) {
+            fluid_velocity(&f)->u[y*FW+x]=-sign*y*16;
+            fluid_velocity(&f)->v[y*FW+x]=sign*x*16;
+        }
+        before=f;
+        for(unsigned i=0;i<sizeof(pixels)/sizeof(*pixels);i++) pixels[i]=0xdeadbeef;
+        fluid_vortex_field_pixels(&f,pixels,FW+4);
+        for(int y=0;y<FH;y++) {
+            for(int x=0;x<FW;x++) {
+                unsigned index=128+sign*((x==0 || x==FW-1?1:2)+(y==0 || y==FH-1?1:2));
+                assert(pixels[y*(FW+4)+x]==((index*0x01010100u)|255));
+            }
+            for(int x=FW;x<FW+4;x++) assert(pixels[y*(FW+4)+x]==0xdeadbeef);
+        }
+        assert(!memcmp(&f,&before,sizeof(f)));
+    }
+    fluid_velocity(&f)->v[k+1]=16383;
+    fluid_velocity(&f)->v[k-1]=-16383;
+    fluid_vortex_field_pixels(&f,pixels,FW+4);
+    assert(pixels[16*(FW+4)+24]==0xffffffff);
+    fluid_velocity(&f)->v[k+1]=-16383;
+    fluid_velocity(&f)->v[k-1]=16383;
+    fluid_vortex_field_pixels(&f,pixels,FW+4);
+    assert(pixels[16*(FW+4)+24]==0x000000ff);
     puts("PASS: vortex rotation/scratch independence, signed pressure, visual source integrity, texture edges/stride/opacity");
 }

@@ -15,7 +15,6 @@ RSPQ_BeginOverlayHeader
     RSPQ_DefineCommand Divergence,12
     RSPQ_DefineCommand SpeedPixels,16
     RSPQ_DefineCommand Pixels16,16
-    RSPQ_DefineCommand SpeedPixels16,16
 RSPQ_EndOverlayHeader
     /* Embedded data can be only 8-byte aligned in RDRAM. Keep the command
        table's CPU cache line separate from the state saved by RSP DMA. */
@@ -252,17 +251,11 @@ divergence_batch:
     nop
     j RSPQ_Loop
     nop
-/* a0=u, a1=v, a2=Q12 pressure. Exact signed rounded division by 3072.
- * Let n=(abs(difference)+1536)>>10. For n<98304,
- * floor(n/3) == floor(n*43691/131072). Larger n can saturate to 32767:
- * subtracting that from any legal Q4 velocity already reaches the final clamp.
- * Unsigned halves retain all 32 difference bits; no float reciprocal is used. */
-SpeedPixels16:
-    ori a2,a2,0x8000
+/* Approximate speed converted to grayscale through the scalar lookup table. */
 SpeedPixels:
     move s1,a0
     move s2,a1
-    andi s3,a2,0x7fff
+    move s3,a2
     li s5,HEIGHT
     transfer a3,speed_palette,1040,DMA_IN
     li t3,32768
@@ -295,9 +288,6 @@ speed_batch:
     vmudn $v04,$v04,$v20.e3
     li t3,%lo(input2)
     sqv $v04,0,t3
-    andi t6,a2,0x8000
-    bnez t6,speed_pack16
-    nop
     sll t4,s6,1
     addiu t4,t4,%lo(result)
     .set lane,0
@@ -308,32 +298,11 @@ speed_batch:
     sw t5,lane*4(t4)
     .set lane,lane+1
     .endr
-    b speed_next
-    nop
-speed_pack16:
-    addiu t4,s6,%lo(result)
-    .set lane,0
-    .rept 8
-    lhu t5,lane*2(t3)
-    addiu t5,t5,%lo(speed_palette)
-    lw t5,0(t5)
-    sh t5,lane*2(t4)
-    .set lane,lane+1
-    .endr
-speed_next:
     addiu s6,s6,16
     slti t3,s6,ROW_BYTES
     bnez t3,speed_batch
     nop
-    andi t6,a2,0x8000
-    bnez t6,speed_dma16
-    nop
     transfer s2,result,WORD_ROW,DMA_OUT
-    b speed_dma_done
-    nop
-speed_dma16:
-    transfer s2,result,ROW_BYTES,DMA_OUT
-speed_dma_done:
     addiu s1,s1,ROW_BYTES
     addu s2,s2,s3
     addiu s5,s5,-1

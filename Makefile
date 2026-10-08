@@ -19,7 +19,6 @@ HIRES_FONT_FORMAT ?= RGBA16
 AUDIO_STREAM ?= 1
 SOUND_STEADY ?= 1
 EXPANSION_BANKS ?= 1
-SPEED_RSP ?= 1
 MENU_STAMPS ?= 1
 MENU_LABEL_BLOCK ?= $(if $(filter 1,$(FRAME_BLOCK)),0,1)
 FLUID_HIGHPRI ?= 1
@@ -75,9 +74,6 @@ endif
 ifeq ($(EXPANSION_BANKS),1)
 src += src/expansion_n64.c
 N64_LDFLAGS += --wrap malloc_uncached_aligned
-endif
-ifeq ($(SPEED_RSP),1)
-N64_CFLAGS += -DPLASMAPONG_SPEED_RSP
 endif
 ifeq ($(RSP_TEST),1)
 N64_CFLAGS += -DPLASMAPONG_RSP_TEST
@@ -177,8 +173,8 @@ ifeq ($(INK16),1)
 N64_CFLAGS += -DPLASMAPONG_INK16
 endif
 ifeq ($(INK16_RSP),1)
-ifneq ($(SPEED_RSP)$(PIXELS_CHAIN),11)
-$(error INK16_RSP=1 requires SPEED_RSP=1 PIXELS_CHAIN=1)
+ifneq ($(PIXELS_CHAIN),1)
+$(error INK16_RSP=1 requires PIXELS_CHAIN=1)
 endif
 N64_CFLAGS += -DPLASMAPONG_INK16 -DPLASMAPONG_INK16_RSP
 endif

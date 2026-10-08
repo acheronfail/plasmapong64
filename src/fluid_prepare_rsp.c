@@ -68,66 +68,6 @@ void fluid_divergence_rsp(int32_t *divergence,const FluidVelocityFixed *velocity
     data_cache_hit_invalidate(divergence+FW,(FH-2)*FW*sizeof(*divergence));
 }
 
-#ifdef PLASMAPONG_FLUID_RSP
-#endif
-
-void fluid_speed_pixels_rsp_begin(const Fluid *f,uint32_t *pixels,unsigned stride) {
-    static _Alignas(16) uint32_t palette[FLUID_SPEED_PALETTE_SIZE];
-    static bool ready;
-    assert(((uintptr_t)pixels&15)==0 && stride>=FW && stride%4==0);
-    prepare_init();
-    if(!ready) {
-        fluid_speed_palette(palette);
-        data_cache_hit_writeback(palette,sizeof(palette));
-        ready=true;
-    }
-    const FluidVelocityFixed *v=fluid_velocity(f);
-    data_cache_hit_writeback(v,sizeof(*v));
-    data_cache_hit_writeback_invalidate(CachedAddr(pixels),stride*FH*sizeof(*pixels));
-    fluid_queue_begin();
-    rspq_write(overlay_id,2,PhysicalAddr(v),PhysicalAddr(pixels),stride*sizeof(*pixels),PhysicalAddr(palette));
-}
-void fluid_speed_pixels_rsp(const Fluid *f,uint32_t *pixels,unsigned stride) {
-    fluid_speed_pixels_rsp_begin(f,pixels,stride);
-    prepare_wait();
-    data_cache_hit_invalidate(CachedAddr(pixels),stride*FH*sizeof(*pixels));
-}
-void fluid_speed_pixels16_rsp_begin(const Fluid *f,uint16_t *pixels,unsigned stride) {
-    static _Alignas(16) uint32_t palette[FLUID_SPEED_PALETTE_SIZE];
-    static bool ready;
-    assert(((uintptr_t)pixels&15)==0 && stride>=FW && stride%8==0 && stride*2<0x8000);
-    prepare_init();
-    if(!ready) {
-        fluid_speed_palette(palette);
-        for(unsigned i=0;i<FLUID_SPEED_PALETTE_SIZE;i++) {
-            uint32_t p=palette[i];
-            palette[i]=((p>>16)&0xf800)|((p>>13)&0x07c0)|((p>>10)&0x003e)|1;
-        }
-        data_cache_hit_writeback(palette,sizeof(palette)); ready=true;
-    }
-    const FluidVelocityFixed *v=fluid_velocity(f);
-    data_cache_hit_writeback(v,sizeof(*v));
-    data_cache_hit_writeback_invalidate(CachedAddr(pixels),stride*FH*sizeof(*pixels));
-    fluid_queue_begin();
-    rspq_write(overlay_id,4,PhysicalAddr(v),PhysicalAddr(pixels),stride*sizeof(*pixels),PhysicalAddr(palette));
-}
-
-void fluid_bands_pixels_rsp_begin(const Fluid *f,uint32_t *pixels,unsigned stride) {
-    static _Alignas(16) uint32_t palette[FLUID_SPEED_PALETTE_SIZE];
-    static bool ready;
-    assert(((uintptr_t)pixels&15)==0 && stride>=FW && stride%4==0);
-    prepare_init();
-    if(!ready) {
-        fluid_view_palette(FLUID_VIEW_BANDS,palette);
-        data_cache_hit_writeback(palette,sizeof(palette)); ready=true;
-    }
-    const FluidVelocityFixed *v=fluid_velocity(f);
-    data_cache_hit_writeback(v,sizeof(*v));
-    data_cache_hit_writeback_invalidate(CachedAddr(pixels),stride*FH*sizeof(*pixels));
-    fluid_queue_begin();
-    rspq_write(overlay_id,2,PhysicalAddr(v),PhysicalAddr(pixels),stride*sizeof(*pixels),PhysicalAddr(palette));
-}
-
 void fluid_speed_field_rsp_begin(const Fluid *f,uint32_t *pixels,unsigned stride) {
     static _Alignas(16) uint32_t palette[FLUID_SPEED_PALETTE_SIZE];
     static bool ready;
