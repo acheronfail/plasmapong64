@@ -18,7 +18,7 @@
 #ifndef PLASMAPONG_PRESSURE_WARM_START
 #define PLASMAPONG_PRESSURE_WARM_START 0
 #endif
-/* Shared C/RSP compile-time settings; eight passes remain the shipping control. */
+/* Portable reference defaults; the Makefile supplies the official ROM settings. */
 #ifndef PLASMAPONG_PRESSURE_PASSES
 #define PLASMAPONG_PRESSURE_PASSES 8
 #endif

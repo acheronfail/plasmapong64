@@ -28,16 +28,18 @@ captures and controls are recorded in the hardware benchmark notes below.
 See [the final console bottleneck and fix](docs/hardware-performance.md) for
 the concise findings and acceptance results.
 
-The finer fluid candidate is available with `just build-fluid64`, producing
-`plasmapong-fluid64.z64` with normal player controls. It simulates **64×44 cells**
+The official `just build` produces `plasmapong.z64` with normal player controls
+and the optimised fluid solver. It simulates **64×44 cells**
 (78% more than 48×33) and measured **59.95 FPS / 9.52 ms per simulation update**
 in four-player tails stress gameplay on the NTSC-J console, with no presentation
 misses or audio underruns. Cycling all eight effects measured 59.87 FPS with
 11 missed presentations over 9,001 refreshes and no audio underruns. This uses
 approximate fixed-point transport and pressure; it changes the flow's appearance.
-The original `just build` configuration remains available as the comparison control.
+`just deploy` and `just emulate` use this official version. The old solver is
+available only for comparisons through `just build-legacy`; `just build-fluid64`
+is a compatibility alias for `just build`.
 See [the development-loop results](docs/development-loop.md#retained-checkpoint-2026-10-08)
-for settings, tests and remaining limits. Optimisation is paused at this checkpoint.
+for settings, tests and remaining limits. Further optimisation is paused at this checkpoint.
 
 A console performance overlay is enabled for testing: **L** on controller port 1
 shows/hides it; **R** resets its counters. `FPS` shows newly presented frames per
@@ -204,7 +206,7 @@ badges. Arcade requires one emulated N64 pad in port 1; multiplayer requires two
 
 ## Implementation
 
-- `src/fluid.c`: 48 × 33 Eulerian grid covering a 288 × 198 arena. Velocity and
+- `src/fluid.c`: 64 × 44 Eulerian grid covering a 288 × 198 arena. Velocity and
   three dye concentrations use bilinear semi-Lagrangian advection. An 8-iteration
   Gauss–Seidel pressure solve uses bounded Q12 integer arithmetic to reduce
   divergence; curl confinement preserves

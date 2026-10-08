@@ -85,7 +85,9 @@ def main():
         if not args.skip_check:
             execute(['./tools/check.sh'], 'check.log')
         fixtures = ['RSP_TEST=1', 'DYE_TEST=1', 'VELOCITY_TEST=1', 'CONFINEMENT_TEST=1'] if args.kernel_checks else []
-        if args.kernel_checks and 'UPWIND=1' in args.define:
+        settings = dict(item.split('=', 1) for item in args.define)
+        upwind = settings.get('UPWIND', '0' if settings.get('FLUID_PRESET') == 'legacy' else '1')
+        if args.kernel_checks and upwind == '1':
             fixtures = ['RSP_TEST=1', 'UPWIND_TEST=1', 'PREPARE_TEST=1', 'CONFINEMENT_TEST=1']
         execute(['./tools/build-rom.sh', '-j4'] + common + fixtures + ['RDP_VALIDATE=1', 'ROM=' + name + '-validate', 'BUILD_DIR=' + build + '_validate'], 'build-validate.log')
         for memory in (8, 4):

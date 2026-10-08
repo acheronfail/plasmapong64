@@ -16,7 +16,7 @@ done
 # Real finer-grid gameplay must preserve world-space mechanics as well as
 # numerical fixtures. Four-and-a-half-pixel cells retain the same arena size.
 for scenario in game arcade multiplayer fps; do
-    cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -DPLASMAPONG_GRID_W=64 -DPLASMAPONG_GRID_H=44 -DPLASMAPONG_CELL_Q4=72 -DPLASMAPONG_UPWIND -DPLASMAPONG_PRESSURE_Q3=1 -DPLASMAPONG_FORCE_FIXED -DPLASMAPONG_SPLAT_PLAN -DPLASMAPONG_DYE_FIXED -DPLASMAPONG_VELOCITY_FIXED -DPLASMAPONG_CONFINEMENT_FIXED -Isrc src/game.c src/arcade.c src/fluid.c src/fluid_upwind.c src/fluid_advection.c src/fluid_dye_fixed.c src/fluid_velocity_fixed.c src/fluid_confinement.c "tests/${scenario}_test.c" -lm -o "build/${scenario}-grid64-test"
+    cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -DPLASMAPONG_GRID_W=64 -DPLASMAPONG_GRID_H=44 -DPLASMAPONG_CELL_Q4=72 -DPLASMAPONG_PRESSURE_PASSES=1 -DPLASMAPONG_PRESSURE_WARM_START=1 -DPLASMAPONG_UPWIND_GPU_LIMIT -DPLASMAPONG_FLOW_DAMPING=.16f -DPLASMAPONG_FLOW_CONFINEMENT=0.0f -DPLASMAPONG_UPWIND -DPLASMAPONG_PRESSURE_Q3=1 -DPLASMAPONG_FORCE_FIXED -DPLASMAPONG_SPLAT_PLAN -DPLASMAPONG_DYE_FIXED -DPLASMAPONG_VELOCITY_FIXED -DPLASMAPONG_CONFINEMENT_FIXED -Isrc src/game.c src/arcade.c src/fluid.c src/fluid_upwind.c src/fluid_advection.c src/fluid_dye_fixed.c src/fluid_velocity_fixed.c src/fluid_confinement.c "tests/${scenario}_test.c" -lm -o "build/${scenario}-grid64-test"
     "./build/${scenario}-grid64-test"
 done
 # Approximate force kernels must retain gameplay/arcade interactions and stability.

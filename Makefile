@@ -1,3 +1,26 @@
+# Official fluid configuration. Historical backend comparisons opt into legacy.
+FLUID_PRESET ?= current
+ifeq ($(FLUID_PRESET),current)
+GRID_W ?= 64
+GRID_H ?= 44
+FORCE_FIXED ?= 1
+UPWIND ?= 1
+UPWIND_GPU_LIMIT ?= 1
+UPWIND_PREFETCH ?= 1
+UPWIND_INLINE_LIMIT ?= 1
+VELOCITY_CHAIN ?= 1
+FLOW_DAMPING ?= .16f
+FLOW_CONFINEMENT ?= 0.0f
+PRESSURE_PASSES ?= 1
+PRESSURE_Q3 ?= 1
+PRESSURE_FAST_GRADIENT ?= 1
+PRESSURE_WARM_START ?= 1
+BUILD_DIR ?= build/official64
+ROM ?= plasmapong
+else ifneq ($(FLUID_PRESET),legacy)
+$(error FLUID_PRESET must be current or legacy)
+endif
+
 ADVECTION_CHAIN ?= 1
 ADVECTION_PIPELINE ?= 1
 GRADIENT_PIPELINE ?= 1

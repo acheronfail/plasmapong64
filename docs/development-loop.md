@@ -8,15 +8,21 @@ Use this interface instead of desktop automation to power the console.
 
 ## Retained checkpoint, 2026-10-08
 
-Implementation is paused at the user's request. The finer-grid candidate runs
+Further optimisation is paused at the user's request. The official finer grid runs
 near 60 FPS on the NTSC-J console; the original goals of 5 ms at 48x33 and
 6 ms at 64x44 remain unmet. Historical experiment notes below describe progress
 at the time of each capture, not additional work currently in progress.
 
-`just build-fluid64` produces a human-controlled `plasmapong-fluid64.z64` using
-the retained configuration, with a separate build directory and no profiling or
-scripted input. `just build` retains the original 48x33 comparison configuration.
-The finer candidate uses these settings:
+`just build` now produces the official, human-controlled `plasmapong.z64` using
+the retained configuration, without profiling or scripted input. `just deploy`
+and `just emulate` use it too. Objects live in `build/official64` to keep them
+separate from previous builds. `just build-fluid64` is only a compatibility alias.
+For historical comparisons, `just build-legacy` produces `plasmapong-legacy.z64`;
+`FLUID_PRESET=legacy` selects the old defaults in direct toolchain builds or via
+`just dev-loop NAME --define FLUID_PRESET=legacy`. Historical backend/scheduler
+recipes explicitly select that preset. New experiments use the official defaults.
+Portable C headers retain reference defaults; ROM settings come from the Makefile.
+The official configuration is:
 
 ```text
 GRID_W=64 GRID_H=44 FORCE_FIXED=1
@@ -190,7 +196,7 @@ three seconds of jets and four seconds of decay, the integer-force eight-pass
 control retains about 18.8-19.0 px/s RMS flow, six passes 17.0-17.6, and four passes
 14.1-14.6. The lower-pass variants fail that control's 18-24 px/s band and are not
 promoted. This is a measured gameplay-quality tradeoff, not a numerical crash.
-All performance candidates remain opt-in pending broader visual/effects checks.
+At this stage, performance candidates remained opt-in pending broader checks.
 
 ## Genuine 64x44 prototype and compact projection, 2026-10-08
 
@@ -233,7 +239,7 @@ arbitrary tolerances.
 
 The <=6 ms / 59.94 FPS goal is not achieved. Wider-grid changes remain experimental.
 The later reduced-confinement candidate below reduces 48x33 further to 5.955 ms/update.
-No wider-grid candidate is promoted to shipping defaults.
+No wider-grid candidate had been promoted at this stage; see the official checkpoint above.
 
 The `grid64-short-profile-01` diagnostic reports approximately 2.71 ms velocity
 advection, 1.65 ms curl/confinement, 5.11 ms chained projection, 2.80 ms dye
