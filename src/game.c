@@ -291,10 +291,13 @@ void game_step(Game *g,const Input physical[MAX_PLAYERS]) {
             }
             int nav=direction(in[p].y);
             if(nav && nav!=direction(g->previous[p].y)) {
-                g->menu_selection=(g->menu_selection+(nav>0?3:1))%4;
+                do {
+                    g->menu_selection=(g->menu_selection+(nav>0?3:1))%4;
+                } while(g->menu_selection==0 && count<2);
                 g->sound_events|=SOUND_SELECT; break;
             }
         }
+        if(g->menu_selection==0 && count<2) g->menu_selection=1;
         menu_step(g);
         if((start || confirm) && (g->menu_selection!=0 || count>=2)) {
             if(g->menu_selection==3) { g->phase=OPTIONS; g->options_selection=0; }

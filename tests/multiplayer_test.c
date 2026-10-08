@@ -27,10 +27,11 @@ static void miss(unsigned p) {
     game_step(&g,in);
 }
 int main(void) {
-    game_init(&g); in[0]=(Input){.connected=true,.a=true};
-    game_step(&g,in); assert(g.phase==MENU && g.players==2 && !g.sound_events);
+    game_init(&g); in[0]=(Input){.connected=true};
+    game_step(&g,in); assert(g.phase==MENU && g.menu_selection==1 && g.players==2 && !g.sound_events);
     in[0].a=false; in[0].x=1; game_step(&g,in); assert(g.players==2);
     in[1].connected=true; in[0].x=0; game_step(&g,in);
+    in[0].y=1; game_step(&g,in); assert(g.menu_selection==0); in[0].y=0;
     in[0].x=1; game_step(&g,in); assert(g.players==2);
     in[2].connected=true; in[0].x=0; game_step(&g,in);
     in[0].x=1; game_step(&g,in); assert(g.players==3);

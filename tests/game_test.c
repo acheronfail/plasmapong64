@@ -186,9 +186,19 @@ static void menu_confirm_tests(void) {
         game_step(&menu,input); assert(menu.phase==MENU);
         if(row==0) {
             input[0]=input[1]; input[0].connected=true;
-            game_step(&menu,input); assert(menu.phase==MENU);
+            game_step(&menu,input); assert(menu.phase==LOBBY && menu.mode==ARCADE);
         }
     }
+    Input input[MAX_PLAYERS]={{.connected=true}};
+    game_init(&menu);
+    game_step(&menu,input); assert(menu.menu_selection==1 && !menu.sound_events);
+    input[0].y=1; game_step(&menu,input); assert(menu.menu_selection==3);
+    input[0].y=0; game_step(&menu,input);
+    input[0].y=-1; game_step(&menu,input); assert(menu.menu_selection==1);
+    input[0].y=0; input[1].connected=true; game_step(&menu,input);
+    input[0].y=1; game_step(&menu,input); assert(menu.menu_selection==0);
+    input[0].y=0; input[1].connected=false; game_step(&menu,input);
+    assert(menu.menu_selection==1 && !menu.sound_events);
     puts("PASS: A/Z/START main-menu selection, held-button debounce, disconnected input and multiplayer gating");
 }
 int main(void) {
@@ -218,8 +228,10 @@ int main(void) {
     assert(g.phase==MENU && energy(&g.fluid)>0);
     float menu_dye=0; for(int i=0;i<FN;i++) menu_dye+=fluid_dye(&g.fluid)->red[i]+fluid_dye(&g.fluid)->blue[i]+fluid_dye(&g.fluid)->gold[i];
     assert(menu_dye>0 && g.score[0]==0 && g.score[1]==0);
-    idle[0]=(Input){.connected=true,.a=true}; game_step(&g,idle); assert(g.phase==MENU && !g.sound_events);
+    idle[0]=(Input){.a=true}; game_step(&g,idle); assert(g.phase==MENU && !g.sound_events);
     idle[0].a=false; idle[1].connected=true; game_step(&g,idle);
+    idle[0].connected=true; idle[0].y=1; game_step(&g,idle); assert(g.menu_selection==0);
+    idle[0].y=0;
     idle[0].a=true; game_step(&g,idle); assert(g.phase==LOBBY && (g.sound_events&SOUND_SELECT));
     idle[1].connected=false;
     game_step(&g,idle); assert(g.sound_events==0);
