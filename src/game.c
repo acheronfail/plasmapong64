@@ -408,7 +408,8 @@ void game_step(Game *g,const Input physical[MAX_PLAYERS]) {
         Bat *b=&g->bat[p]; float nx=normal_x(side),ny=normal_y(side);
         float x=b->x,y=b->y;
         float end=game_bat_half(g,p)+2+(game_square(g)?CORNER_SIZE:0);
-        float depth=game_square(g)?SQUARE_BAT_DEPTH:64;
+        /* Duels can approach within two outlined paddle widths of centre. */
+        float depth=game_square(g)?SQUARE_BAT_DEPTH:ARENA_W*.5f-20;
         if(side<2) {
             b->x=clampf(x+axis(in[p].x)*bat_depth_speed*step,side?game_right(g)-depth:game_left(g)+12,side?game_right(g)-12:game_left(g)+depth);
             b->y=clampf(y-axis(in[p].y)*bat_side_speed*step,end,ARENA_H-end);
