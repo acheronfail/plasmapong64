@@ -3,7 +3,7 @@ set -eu
 cd "$(dirname "$0")/.."
 mkdir -p build
 # Portable execution of the official fixed-point solver; RSP fixtures run in Ares.
-fluid_sources="src/fluid.c src/fluid_upwind.c src/fluid_dye_fixed.c"
+fluid_sources="src/fluid.c src/fluid_confinement.c src/fluid_upwind.c src/fluid_dye_fixed.c"
 flags="-std=c11 -O3 -Wall -Wextra -Werror -pedantic -Isrc"
 for scenario in game arcade multiplayer fps point_capacity view force suction_lookup; do
     ui_sources=""
@@ -11,6 +11,8 @@ for scenario in game arcade multiplayer fps point_capacity view force suction_lo
     cc $flags src/game.c src/arcade.c $fluid_sources $ui_sources "tests/${scenario}_test.c" -lm -o "build/${scenario}-test"
     "./build/${scenario}-test"
 done
+cc $flags src/fluid_confinement.c tests/confinement_test.c -lm -o build/confinement-test
+./build/confinement-test
 for scenario in upwind reciprocal_limit; do
     cc $flags src/fluid_upwind.c src/fluid_dye_fixed.c "tests/${scenario}_test.c" -lm -o "build/${scenario}-test"
     "./build/${scenario}-test"

@@ -10,7 +10,23 @@
 #ifdef PLASMAPONG_FLOW_DAMPING
 #define FLUID_DAMPING ((float)(PLASMAPONG_FLOW_DAMPING))
 #else
-#define FLUID_DAMPING .16f
+#define FLUID_DAMPING .12f
+#endif
+#ifndef PLASMAPONG_FLOW_CONFINEMENT
+#define PLASMAPONG_FLOW_CONFINEMENT .75f
+#endif
+#define FLUID_CONFINEMENT ((float)PLASMAPONG_FLOW_CONFINEMENT)
+/* Spread restoration across four row bands; transport/projection still run at 60 Hz. */
+#define FLUID_CONFINEMENT_BANDS 4
+#ifndef PLASMAPONG_JET_RADIUS
+#define PLASMAPONG_JET_RADIUS 14
+#endif
+#ifndef PLASMAPONG_JET_FORCE
+#define PLASMAPONG_JET_FORCE 1800.0f
+#endif
+/* Preserve roughly the original pigment dose with the narrower footprint. */
+#ifndef PLASMAPONG_JET_DYE
+#define PLASMAPONG_JET_DYE 6.4f
 #endif
 #define ARENA_W (FW * CELL)
 #define ARENA_H (FH * CELL)
@@ -42,6 +58,7 @@ typedef struct {
     _Alignas(16) int32_t pressure[FN];
     _Alignas(16) int16_t pressure_short[FN];
     _Alignas(16) int32_t divergence[FN];
+    _Alignas(16) int16_t curl_fixed[FN];
     unsigned velocity_bank,dye_bank;
     unsigned velocity_phase;
     unsigned dye_phase;

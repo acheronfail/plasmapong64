@@ -36,13 +36,19 @@ void fluid_projection_short_rsp(FluidVelocityFixed *velocity,int32_t *divergence
 
 #ifdef PLASMAPONG_VELOCITY_CHAIN
 #include "fluid_upwind.h"
+#include "fluid_confinement.h"
 void fluid_velocity_chain_rsp(Fluid *f,float dt) {
     /* Register every overlay before opening the producer/consumer batch. */
     fluid_upwind_rsp_init();
+    if(FLUID_CONFINEMENT>0) fluid_confinement_rsp_init();
     fluid_prepare_rsp_init(); fluid_pressure_rsp_init(); fluid_gradient_short_rsp_init();
     FluidVelocityFixed *old=fluid_velocity(f),*next=&f->velocity[f->velocity_bank^1];
     fluid_upwind_velocity_rsp_begin(next,old,dt/CELL,1-FLUID_DAMPING*dt,
         (f->velocity_phase+=40503u)&65535u);
+    if(FLUID_CONFINEMENT>0)
+        fluid_curl_confinement_window_rsp_begin(next,f->curl_fixed,
+            fluid_confinement_strength(dt)*FLUID_CONFINEMENT_BANDS,
+            fluid_confinement_first(f->velocity_phase),fluid_confinement_rows(f->velocity_phase));
     fluid_divergence_walled_rsp_begin(f->divergence,next);
     fluid_pressure_short_rsp_begin(f->pressure,f->divergence,f->pressure_short);
     /* All intermediate lines were invalidated before their producer. No CPU
@@ -52,6 +58,7 @@ void fluid_velocity_chain_rsp(Fluid *f,float dt) {
     rspq_flush(); audio_background();
 #endif
     fluid_queue_wait();
+    if(FLUID_CONFINEMENT>0) data_cache_hit_invalidate(f->curl_fixed,sizeof(f->curl_fixed));
     data_cache_hit_invalidate(old,sizeof(*old));
     data_cache_hit_invalidate(next,sizeof(*next));
     data_cache_hit_invalidate(f->divergence,sizeof(f->divergence));

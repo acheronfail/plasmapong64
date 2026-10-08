@@ -4,7 +4,7 @@
 #include <string.h>
 static const float bat_side_speed=140.0f;
 static const float bat_depth_speed=210.0f;
-static const float jet_force=1500.0f;
+static const float jet_force=PLASMAPONG_JET_FORCE;
 static float axis(float a) {
     /* Ignore stick drift, then use the remaining travel for a smooth ramp. */
     const float deadzone=.12f;
@@ -423,7 +423,7 @@ void game_step(Game *g,const Input physical[MAX_PLAYERS]) {
         if(in[p].z) {
             /* The arcade opponent's jet approaches twice the human strength. */
             float jet=jet_force*step*(g->mode==ARCADE && p==1?1+arcade_difficulty(g):1);
-            fluid_splat(&g->fluid,b->x+nx*14,b->y+ny*14,22,nx*jet+(side<2?0:b->vx*.08f*emission),ny*jet+(side<2?b->vy*.08f*emission:0),2.6f*step,game_player_palette(g,p));
+            fluid_splat(&g->fluid,b->x+nx*14,b->y+ny*14,PLASMAPONG_JET_RADIUS,nx*jet+(side<2?0:b->vx*.08f*emission),ny*jet+(side<2?b->vy*.08f*emission:0),PLASMAPONG_JET_DYE*step,game_player_palette(g,p));
         }
     }
     if(g->mode==ARCADE) arcade_currents(g);

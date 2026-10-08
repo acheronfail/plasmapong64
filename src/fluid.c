@@ -3,6 +3,7 @@
 #include "fluid_profile.h"
 #include "fluid_pressure.h"
 #include "fluid_upwind.h"
+#include "fluid_confinement.h"
 #include <math.h>
 #include <string.h>
 #include "fluid_velocity_fixed.h"
@@ -227,6 +228,12 @@ void fluid_velocity_step(Fluid *f,float dt) {
     PROFILE_END(PROFILE_VELOCITY_ADVECTION);
     f->velocity_bank^=1; velocity=next;
     PROFILE_END(PROFILE_VELOCITY_SWAP);
+    if(FLUID_CONFINEMENT>0) {
+        fluid_curl_fixed(f->curl_fixed,velocity);
+        fluid_confinement_window_fixed(velocity,f->curl_fixed,
+            fluid_confinement_strength(dt)*FLUID_CONFINEMENT_BANDS,
+            fluid_confinement_first(f->velocity_phase),fluid_confinement_rows(f->velocity_phase));
+    }
     fluid_project(f);
 #endif
 }

@@ -6,7 +6,99 @@ Its ESPHome outlet URL is configured by `N64_POWER_URL`, entity `switch/switch`.
 The user authorizes ROM uploads and explicit outlet on/off commands for development.
 Use this interface instead of desktop automation to power the console.
 
-## Current performance goal, 2026-10-08
+## Swirl fidelity acceptance, 2026-10-08
+
+The user clarified that **7 ms/update is a stretch goal, not an acceptance
+requirement**. Small simulation costs are acceptable for more swirly flow when
+the complete game sustains the NTSC console's approximately 59.94 FPS cadence,
+with no steady-state presentation misses or audio underruns. Simulation time
+alone is not the frame budget: rendering, RDP completion and streamed audio must
+also fit. Continue using ordinary matched hardware captures and an all-eight-
+effects stress run for acceptance; Ares supplies correctness and native images.
+
+## Swirl restoration experiments, 2026-10-08
+
+The first full-rate prototype retained 64x44 upwind transport, one warm pressure sweep,
+fractional Q4 velocity and bilinear ball sampling, and added:
+
+- `FLOW_CONFINEMENT=.75f`: restored fixed-point curl/confinement, chained on the
+  RSP between velocity advection and projection. CPU and RSP use the same model;
+  velocity remains bounded and wall-normal constraints are applied by projection.
+- `FLOW_DAMPING=.12f`, reduced from `.16f`, for longer-lived currents.
+- `JET_RADIUS=14` instead of 22 pixels, and `JET_FORCE=1800.0f` instead of 1500.
+  The first narrower-jet trial at strength 1500 left only 17.3–17.4 px/s after
+  release and failed the existing 18–24 px/s residual-current test. Strength
+  1800 passes that unchanged test; its thresholds were not relaxed.
+- `JET_DYE=6.4f` instead of 2.6: approximately preserves total pigment injection
+  when narrowing the circular footprint. This corrects the first prototype's
+  darker image without increasing its velocity. Suction and release bursts retain
+  their existing footprints and forces.
+
+The restored confinement source comes from `fae1d7b`, with its 64-field fixed/
+float tests and 64 CPU/RSP/cache comparisons. `swirl-pigment-02` passed portable
+checks, including 120-second gameplay stability, and 4/8 MiB Ares validation:
+96 transport fields, 96 gradient fields, 148 pressure fields, the confinement
+fixtures, 32 full velocity-pipeline comparisons, and rendering fixtures. Exact
+fixtures run only in validation ROMs, not ordinary console timing captures.
+
+Matched ordinary four-player high-resolution tails with streamed music:
+
+| ROM | Simulation ms/update | FPS | Presentation | Audio underrun observations |
+| --- | ---: | ---: | --- | ---: |
+| `swirl-baseline-01` | 8.519 | 59.944 | 1,490 / 1,490 VI, zero misses | 0 |
+| `swirl-pigment-02` | 9.355 | 59.943 | 1,490 / 1,490 VI, zero misses | 0 |
+
+The combined tuning costs 0.837 ms/update (9.8%) in this matched workload; this
+is not an isolated timing of confinement. Both captures ended with verified
+power OFF. The baseline's successful log is `hardware-powered`; its original
+loop failed to find the serial endpoint. The connected device was discovered at
+its FTDI endpoint. An overlapping preliminary capture (`swirl-candidate-01` /
+`swirl-effects-01`) was interrupted and is excluded from performance acceptance.
+The final captures run serially, retaining their ROM hashes and power metadata.
+
+The full-rate prototype failed the subsequent all-effects hardware budget:
+`swirl-effects-02` presented 8,990 frames over 9,112 VI (122 misses), with zero
+audio underrun observations. The misses occurred in Relief and its transition;
+the 11.013 ms/update overall average is not comparable with the tails average.
+Power OFF was verified. This candidate is not accepted for production.
+
+`swirl-banded-03` distributes confinement over four contiguous row bands,
+restoring one band per update at four times the per-update strength. Curl,
+advection, projection, dye and ball sampling continue every update; each band
+receives restoration every four updates. It is deterministic from the existing
+velocity rounding phase and does not depend on the selected visual effect.
+Portable checks (trace `e21bce90`) and all 4/8 MiB Ares fixtures passed, including
+32 full-state comparisons against CPU band forces covering all four phases.
+Matched tails measured **8.806 ms/update, 59.943 FPS**, 1,490 frames over 1,490 VI,
+zero misses and zero audio underrun observations, ending with verified power OFF.
+This is 0.288 ms/update (3.4%) above the fresh baseline and 0.549 ms below the
+full-rate prototype.
+
+The final `swirl-banded-effects-03` ordinary console capture exercised all eight
+effects with streamed music for 60 measurement windows: **8.527 ms/update mean**
+(8.089–8.959 ms across windows), **59.943 FPS**, **8,990 frames / 8,990 VI**, zero
+presentation misses and zero audio underrun observations. It ended with verified
+power OFF. Its manifest covers the emulator-only build/validation; `hardware.log`
+and `hardware.json` retain the subsequent serial hardware capture and matching
+ROM hash. This meets the user's 60 FPS acceptance workload. The accepted defaults
+are `.75f` confinement spread across four bands, `.12f` damping, radius 14, force
+1800 and dye 6.4. `just build` rebuilt the normal human-controlled `plasmapong.z64`
+with these settings. Earlier full-rate and overlapping captures are not acceptance
+evidence. No performance claim subtracts draw submission time from a frame budget.
+
+Native Ares screenshots use the ordinary retained baseline and `swirl-banded-03` tails ROMs, the same scripted
+input and video fields 900 and 1800. These are unedited emulator output, not
+portable previews or desktop screenshots. Different ball trajectories are an
+expected consequence of changed currents. The images show altered, more defined
+streams and curls; still images do not establish motion quality or parity with
+the 96x96 browser simulation.
+
+| Ares video field | Before | After |
+| --- | --- | --- |
+| 900 | ![Before, field 900](screenshots/swirl-before-900.png) | ![After, field 900](screenshots/swirl-after-900.png) |
+| 1800 | ![Before, field 1800](screenshots/swirl-before-1800.png) | ![After, field 1800](screenshots/swirl-after-1800.png) |
+
+## Earlier performance goal, 2026-10-08
 
 The user has requested a new optimisation pass after adding streamed music,
 fixing input bugs and adopting the larger grid. Target **<=7 ms per simulation

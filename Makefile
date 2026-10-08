@@ -6,7 +6,11 @@ GRID_W ?= 64
 GRID_H ?= 44
 CELL_Q4 ?= $(if $(filter 64,$(GRID_W)),72,96)
 PRESSURE_PASSES ?= 1
-FLOW_DAMPING ?= .16f
+FLOW_DAMPING ?= .12f
+FLOW_CONFINEMENT ?= .75f
+JET_RADIUS ?= 14
+JET_FORCE ?= 1800.0f
+JET_DYE ?= 6.4f
 BUILD_DIR ?= build/official64
 ROM ?= plasmapong
 CPU_LTO ?= 1
@@ -43,6 +47,7 @@ endif
 ifeq ($(filter $(PRESSURE_PASSES),1 2 3 4 5 6 7 8),)
 $(error PRESSURE_PASSES must be between 1 and 8)
 endif
+N64_CFLAGS += -DPLASMAPONG_CONFINEMENT_RSP -DPLASMAPONG_CONFINEMENT_CHAIN -DPLASMAPONG_FLOW_CONFINEMENT=$(FLOW_CONFINEMENT) -DPLASMAPONG_JET_RADIUS=$(JET_RADIUS) -DPLASMAPONG_JET_FORCE=$(JET_FORCE) -DPLASMAPONG_JET_DYE=$(JET_DYE)
 N64_CFLAGS += -DPLASMAPONG_FLOW_DAMPING=$(FLOW_DAMPING) -DPLASMAPONG_PRESSURE_PASSES=$(PRESSURE_PASSES)
 N64_RSPASFLAGS += -DPLASMAPONG_PRESSURE_PASSES=$(PRESSURE_PASSES)
 N64_CFLAGS += -DPLASMAPONG_VELOCITY_CHAIN -DPLASMAPONG_UPWIND_RSP -DPLASMAPONG_FLUID_RSP -DPLASMAPONG_PREPARE_RSP -DPLASMAPONG_PROJECTION_CHAIN
@@ -57,8 +62,8 @@ N64_CXXFLAGS += -flto
 endif
 src := src/main.c src/game.c src/arcade.c src/fluid.c src/ui.c src/sound.c src/music.c src/save.c src/save_n64.c \
        src/fluid_dye_fixed.c src/fluid_upwind.c src/fluid_upwind_rsp.c src/fluid_rsp.c \
-       src/fluid_prepare_rsp.c src/fluid_gradient_short_rsp.c
-rsp_obj := $(addprefix $(BUILD_DIR)/src/,rsp_fluid.o rsp_upwind.o rsp_prepare.o rsp_gradient_short.o)
+       src/fluid_prepare_rsp.c src/fluid_gradient_short_rsp.c src/fluid_confinement.c src/fluid_confinement_rsp.c
+rsp_obj := $(addprefix $(BUILD_DIR)/src/,rsp_fluid.o rsp_upwind.o rsp_prepare.o rsp_gradient_short.o rsp_confinement.o)
 # This pinned n64.mk does not sanitize hyphens in embedded ucode symbols.
 ifneq ($(findstring -,$(BUILD_DIR)),)
 $(error BUILD_DIR must not contain hyphens)

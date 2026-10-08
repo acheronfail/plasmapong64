@@ -36,6 +36,7 @@ bool fluid_highpri_open;
 #endif
 #ifdef PLASMAPONG_RSP_TEST
 #include "../tests/rsp_fluid_smoke.h"
+#include "../tests/confinement_cases.h"
 #ifdef PLASMAPONG_VELOCITY_CHAIN
 #include "../tests/velocity_chain_cases.h"
 #endif
@@ -698,6 +699,7 @@ int main(void) {
 #endif
 #ifdef PLASMAPONG_RSP_TEST
     rsp_fluid_smoke();
+    confinement_cases();
 #ifdef PLASMAPONG_VELOCITY_CHAIN
     velocity_chain_cases();
 #endif
