@@ -20,10 +20,11 @@ static void ready(unsigned players) {
 static void miss(unsigned p) {
     fluid_init(&g.fluid); g.serve=0; g.held=-1;
     g.bx=ARENA_W*.5f; g.by=ARENA_H*.5f; g.bvx=g.bvy=0;
-    if(p==0) { g.bx=game_left(&g)-2; g.bvx=-200; }
-    if(p==1) { g.bx=game_right(&g)+2; g.bvx=200; }
-    if(p==2) { g.by=ARENA_H+2; g.bvy=200; }
-    if(p==3) { g.by=-2; g.bvy=-200; }
+    unsigned side=game_side(&g,p);
+    if(side==0) { g.bx=game_left(&g)-2; g.bvx=-200; }
+    if(side==1) { g.bx=game_right(&g)+2; g.bvx=200; }
+    if(side==2) { g.by=ARENA_H+2; g.bvy=200; }
+    if(side==3) { g.by=-2; g.bvy=-200; }
     game_step(&g,in);
 }
 int main(void) {
@@ -65,8 +66,14 @@ int main(void) {
             ready(players); miss(p);
             assert(g.lives[p]==2 && g.phase==PLAY && g.serve>0);
             miss(p); miss(p); assert(!g.lives[p]);
-            miss(p); assert(g.phase==PLAY && !g.lives[p] && g.serve==0);
-            assert(g.sound_events&SOUND_WALL); /* Eliminated side reflects. */
+            if(game_square(&g)) {
+                miss(p); assert(g.phase==PLAY && !g.lives[p] && g.serve==0);
+                assert(g.sound_events&SOUND_WALL); /* Eliminated side reflects. */
+            } else {
+                assert(g.final_duel && game_left(&g)==0 && game_right(&g)==ARENA_W);
+                g.serve=0; g.by=2; g.bvy=-150; game_step(&g,in);
+                assert(g.bvy>0 && (g.sound_events&SOUND_WALL));
+            }
             in[p].connected=false; game_step(&g,in); assert(g.phase==PLAY);
         }
         ready(players);
@@ -77,6 +84,38 @@ int main(void) {
         in[0].connected=true; in[players-1].start=false; game_step(&g,in);
         in[players-1].start=true; game_step(&g,in); assert(g.phase==PLAY && g.players==players);
         for(unsigned p=0;p<players;p++) assert(g.lives[p]==3);
+    }
+    /* Every survivor pairing, including two original horizontal paddles,
+       becomes a full-width duel without changing identities or ports. */
+    for(unsigned left=0;left<4;left++) for(unsigned right=left+1;right<4;right++) {
+        ready(4);
+        g.lives[left]=2; g.lives[right]=1;
+        for(unsigned p=0;p<4;p++) if(p!=left && p!=right)
+            for(unsigned life=0;life<3;life++) miss(p);
+        assert(g.final_duel && !game_square(&g) && game_elimination(&g));
+        assert(g.players==4 && game_left(&g)==0 && game_right(&g)==ARENA_W);
+        assert(g.lives[left]==2 && g.lives[right]==1 && g.serve>0 && g.held==-1);
+        assert(game_side(&g,left)==0 && game_side(&g,right)==1);
+        assert(g.bat[left].x==20 && g.bat[right].x==ARENA_W-20);
+        for(unsigned p=0;p<4;p++) assert(g.player_port[p]==p);
+        for(unsigned p=0;p<4;p++) if(p!=left && p!=right) in[p].connected=false;
+        game_step(&g,in); assert(g.phase==PLAY);
+        float y=g.bat[right].y; in[right].y=1; game_step(&g,in);
+        assert(g.bat[right].y<y); in[right].y=0;
+        fluid_init(&g.fluid); g.serve=0;
+        g.bx=g.bat[right].x-8; g.by=g.bat[right].y; g.bvx=200; g.bvy=0;
+        game_step(&g,in); assert(g.bvx<0 && g.rumble_ticks[right]==RUMBLE_HIT_TICKS);
+        g.held=left; g.bat[left].sucking=true; g.bat[left].charge=1;
+        game_step(&g,in); assert(g.held==-1 && g.bvx>240 && g.rumble_ticks[left]==RUMBLE_BURST_TICKS);
+        in[right].connected=false; game_step(&g,in); assert(g.phase==PAUSED);
+        in[right].connected=true; in[right].start=true; game_step(&g,in);
+        assert(g.phase==PLAY); in[right].start=false;
+        miss(right); assert(g.phase==FINISHED && g.winner==(int)left && !g.lives[right]);
+        assert(!g.score[left]); /* Duel still uses lives, not first-to-nine. */
+        for(unsigned p=0;p<4;p++) in[p].connected=true;
+        in[left].start=true; game_step(&g,in);
+        assert(g.phase==PLAY && game_square(&g) && !g.final_duel && g.players==4);
+        for(unsigned p=0;p<4;p++) assert(g.lives[p]==3 && game_side(&g,p)==p);
     }
     ready(3); g.by=3; g.bvy=-150; game_step(&g,in);
     assert(g.bvy>0 && (g.sound_events&SOUND_WALL));

@@ -382,7 +382,7 @@ void ui_draw(const Game *g) {
         snprintf(s,sizeof(s),"SCORE %u",(unsigned)g->arcade.points); label(16,20,0,s);
         snprintf(s,sizeof(s),"LV %u",(unsigned)g->arcade.level); label(167,20,0,s);
         snprintf(s,sizeof(s),"LIVES %u",g->arcade.lives); label_edge(304,20,player_styles[game_player_palette(g,0)],s,true);
-    } else if(game_square(g)) {
+    } else if(game_elimination(g)) {
         for(unsigned p=0;p<g->players;p++) {
             snprintf(s,sizeof(s),g->lives[p]?"P%u %u":"P%u OUT",p+1,g->lives[p]);
             label(20+p*76,20,g->lives[p]?player_styles[p]:6,s);
@@ -407,22 +407,26 @@ void ui_draw(const Game *g) {
             if(!radius_ready) { suction_radius=24+2*sinf(g->elapsed*7); radius_ready=true; }
             ring(g,x,y,suction_radius,c);
             if(g->held==(int)p)
-                bat_rect(p,x,y,-9,half+5,18*b->charge,2,b->charge>=1?0x40ff70:c);
+                bat_rect(game_side(g,p),x,y,-9,half+5,18*b->charge,2,b->charge>=1?0x40ff70:c);
         }
         if(b->burst>0) ring(g,x,y,12+(1-b->burst/.25f)*30,c);
-        bat_rect(p,x,y,-5,-half-2,10,half*2+4,broken?0x36323c:player_outlines[palette]);
-        bat_rect(p,x,y,-3,-half,6,half*2,c);
-        bat_rect(p,x,y,-1,-half+2,2,half*2-4,broken?0x434753:WHITE);
+        bat_rect(game_side(g,p),x,y,-5,-half-2,10,half*2+4,broken?0x36323c:player_outlines[palette]);
+        bat_rect(game_side(g,p),x,y,-3,-half,6,half*2,c);
+        bat_rect(game_side(g,p),x,y,-1,-half+2,2,half*2-4,broken?0x434753:WHITE);
         if(broken) {
-            bat_rect(p,x,y,-3,-4,4,2,0xff3030); bat_rect(p,x,y,-1,-2,4,2,0xff3030);
-            bat_rect(p,x,y,-3,0,4,2,0xff3030);
-            bat_rect(p,x,y,-9,half+5,18,2,0x36323c);
-            bat_rect(p,x,y,-9,half+5,18*(float)b->cooldown_ticks/SUCTION_COOLDOWN_TICKS,2,0xff3030);
+            bat_rect(game_side(g,p),x,y,-3,-4,4,2,0xff3030); bat_rect(game_side(g,p),x,y,-1,-2,4,2,0xff3030);
+            bat_rect(game_side(g,p),x,y,-3,0,4,2,0xff3030);
+            bat_rect(game_side(g,p),x,y,-9,half+5,18,2,0x36323c);
+            bat_rect(game_side(g,p),x,y,-9,half+5,18*(float)b->cooldown_ticks/SUCTION_COOLDOWN_TICKS,2,0xff3030);
         }
     }
     if(!game_square(g)) {
-        label_edge(OX+5,46,player_styles[game_player_palette(g,0)],"P1",false);
-        label_edge(OX+ARENA_W-5,46,player_styles[game_player_palette(g,1)],g->mode==ARCADE?"CPU":"P2",true);
+        for(unsigned p=0;p<game_players(g);p++) if(game_alive(g,p)) {
+            bool right=game_side(g,p)==1;
+            snprintf(s,sizeof(s),"P%u",p+1);
+            label_edge(right?OX+ARENA_W-5:OX+5,46,player_styles[game_player_palette(g,p)],
+                       g->mode==ARCADE && p==1?"CPU":s,right);
+        }
     }
     if(g->mode==ARCADE) {
         snprintf(s,sizeof(s),"GOALS %u / 3",g->arcade.goals); label(130,46,0,s);

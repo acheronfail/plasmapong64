@@ -72,7 +72,8 @@ typedef struct {
     Input previous[MAX_PLAYERS];
     float bx,by,bvx,bvy,serve,elapsed;
     unsigned score[MAX_PLAYERS],lives[MAX_PLAYERS];
-    unsigned players,player_port[MAX_PLAYERS];
+    unsigned players,player_port[MAX_PLAYERS],player_side[MAX_PLAYERS];
+    bool final_duel;
     int held,winner;
     Phase phase;
     bool connected[MAX_PLAYERS];
@@ -107,10 +108,12 @@ static inline unsigned game_tick_units(const Game *g) { (void)g; return 1u; }
 static inline float game_dt(const Game *g) { (void)g; return STEP; }
 static inline float game_emission(const Game *g) { (void)g; return .5f; }
 static inline unsigned game_players(const Game *g) { return g->mode==ARCADE?2:g->players; }
-static inline bool game_square(const Game *g) { return game_players(g)>2; }
+static inline bool game_elimination(const Game *g) { return game_players(g)>2; }
+static inline bool game_square(const Game *g) { return game_elimination(g) && !g->final_duel; }
+static inline unsigned game_side(const Game *g,unsigned p) { return g->player_side[p]; }
 static inline float game_left(const Game *g) { return game_square(g)?(ARENA_W-ARENA_H)*.5f:0; }
 static inline float game_right(const Game *g) { return ARENA_W-game_left(g); }
-static inline bool game_alive(const Game *g,unsigned p) { return !game_square(g) || g->lives[p]>0; }
+static inline bool game_alive(const Game *g,unsigned p) { return !game_elimination(g) || g->lives[p]>0; }
 static inline bool game_ready(const Game *g) {
     for(unsigned p=0;p<(g->mode==ARCADE?1:g->players);p++)
         if((g->phase==FINISHED || game_alive(g,p)) && !g->connected[p]) return false;
