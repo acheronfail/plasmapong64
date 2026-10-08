@@ -68,6 +68,13 @@ misses and zero audio underrun observations**. Power OFF was verified after capt
 This is a cleanup regression check, not evidence of a meaningful speedup over
 9.521 ms. The earlier all-effects limitation remains documented above.
 
+## FPS meter
+
+**Options → FPS Meter** enables the overlay and controller-port-1 shortcuts:
+**L** shows/hides it and **R** resets its counters. The setting saves to EEPROM
+and defaults to OFF, including when loading older saves. With it OFF, L and R
+have no effect. Presentation sampling continues for benchmark logs.
+
 ## Run an experiment
 
 Copy `.env.example` to `.env` and set `N64_POWER_URL` to your outlet URL.

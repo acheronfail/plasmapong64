@@ -16,41 +16,49 @@ int main(void) {
     HighScore scores[HIGH_SCORE_COUNT]={0},decoded[HIGH_SCORE_COUNT]={0};
     scores[0]=(HighScore){.points=4294967295u,.level=123,.initials="ACE"};
     scores[1]=(HighScore){.points=800,.level=2,.initials="BOB"};
-    uint8_t data[SCORE_SAVE_BYTES],bad[SCORE_SAVE_BYTES]; uint32_t generation=0; FlowEffect effect=FLOW_NONE; FrameRate frame_rate=FPS_60;
-    score_save_encode(data,scores,42,FLOW_TAILS,FPS_30);
-    assert(score_save_decode(data,decoded,&generation,&effect,&frame_rate));
-    assert(effect==FLOW_TAILS && frame_rate==FPS_30 && generation==42 && !memcmp(scores,decoded,sizeof(scores)));
+    uint8_t data[SCORE_SAVE_BYTES],bad[SCORE_SAVE_BYTES]; uint32_t generation=0; FlowEffect effect=FLOW_NONE; FrameRate frame_rate=FPS_60; bool fps_meter=false;
+    score_save_encode(data,scores,42,FLOW_TAILS,FPS_30,true);
+    assert(score_save_decode(data,decoded,&generation,&effect,&frame_rate,&fps_meter));
+    assert(fps_meter && effect==FLOW_TAILS && frame_rate==FPS_30 && generation==42 && !memcmp(scores,decoded,sizeof(scores)));
     for(unsigned i=0;i<sizeof(data);i++) {
         memcpy(bad,data,sizeof(bad)); bad[i]^=1;
-        assert(!score_save_decode(bad,decoded,&generation,&effect,&frame_rate));
-        assert(effect==FLOW_TAILS && frame_rate==FPS_30 && generation==42 && !memcmp(scores,decoded,sizeof(scores)));
+        assert(!score_save_decode(bad,decoded,&generation,&effect,&frame_rate,&fps_meter));
+        assert(fps_meter && effect==FLOW_TAILS && frame_rate==FPS_30 && generation==42 && !memcmp(scores,decoded,sizeof(scores)));
     }
     /* Every partial body/header write must reject the incomplete new slot. */
     for(unsigned bytes=0;bytes<sizeof(data);bytes+=8) {
         memset(bad,0xff,sizeof(bad)); memcpy(bad+8,data+8,bytes);
-        assert(!score_save_decode(bad,decoded,&generation,&effect,&frame_rate));
+        assert(!score_save_decode(bad,decoded,&generation,&effect,&frame_rate,&fps_meter));
     }
     for(int choice=0;choice<FLOW_COUNT;choice++) {
-        score_save_encode(data,scores,43,(FlowEffect)choice,FPS_60);
-        assert(score_save_decode(data,decoded,&generation,&effect,&frame_rate) && effect==(FlowEffect)choice);
+        score_save_encode(data,scores,43,(FlowEffect)choice,FPS_60,true);
+        assert(score_save_decode(data,decoded,&generation,&effect,&frame_rate,&fps_meter) && effect==(FlowEffect)choice);
     }
     for(int fps=30;fps<=60;fps+=30) {
-        score_save_encode(data,scores,44,FLOW_SPEED,(FrameRate)fps);
-        assert(score_save_decode(data,decoded,&generation,&effect,&frame_rate) && frame_rate==(FrameRate)fps);
+        score_save_encode(data,scores,44,FLOW_SPEED,(FrameRate)fps,true);
+        assert(score_save_decode(data,decoded,&generation,&effect,&frame_rate,&fps_meter) && frame_rate==(FrameRate)fps);
     }
+    score_save_encode(data,scores,45,FLOW_TAILS,FPS_60,false);
+    assert(score_save_decode(data,decoded,&generation,&effect,&frame_rate,&fps_meter) && !fps_meter);
+    data[134]=2; reseal(data);
+    assert(!score_save_decode(data,decoded,&generation,&effect,&frame_rate,&fps_meter));
+    memcpy(data,"PPH3",4); reseal(data);
+    assert(score_save_decode(data,decoded,&generation,&effect,&frame_rate,&fps_meter));
+    assert(!fps_meter && effect==FLOW_TAILS && frame_rate==FPS_60 && !memcmp(scores,decoded,sizeof(scores)));
+    score_save_encode(data,scores,44,FLOW_SPEED,FPS_60,true);
     data[133]=45; reseal(data);
-    assert(!score_save_decode(data,decoded,&generation,&effect,&frame_rate));
+    assert(!score_save_decode(data,decoded,&generation,&effect,&frame_rate,&fps_meter));
     memcpy(data,"PPH2",4); reseal(data);
-    assert(score_save_decode(data,decoded,&generation,&effect,&frame_rate));
-    assert(effect==FLOW_SPEED && frame_rate==FPS_60 && !memcmp(scores,decoded,sizeof(scores)));
+    assert(score_save_decode(data,decoded,&generation,&effect,&frame_rate,&fps_meter));
+    assert(!fps_meter && effect==FLOW_SPEED && frame_rate==FPS_60 && !memcmp(scores,decoded,sizeof(scores)));
     memcpy(data,"PPH1",4); data[132]=255; reseal(data);
-    assert(score_save_decode(data,decoded,&generation,&effect,&frame_rate) && effect==FLOW_NONE && frame_rate==FPS_60);
+    assert(score_save_decode(data,decoded,&generation,&effect,&frame_rate,&fps_meter) && !fps_meter && effect==FLOW_NONE && frame_rate==FPS_60);
     assert(!memcmp(scores,decoded,sizeof(scores)));
     memcpy(data,"PPH2",4); reseal(data);
-    assert(!score_save_decode(data,decoded,&generation,&effect,&frame_rate));
-    scores[0].initials[0]='!'; score_save_encode(data,scores,43,FLOW_NONE,FPS_60);
-    assert(!score_save_decode(data,decoded,&generation,&effect,&frame_rate));
-    memset(scores,0,sizeof(scores)); score_save_encode(data,scores,0,FLOW_NONE,FPS_60);
-    assert(score_save_decode(data,decoded,&generation,&effect,&frame_rate) && generation==0);
+    assert(!score_save_decode(data,decoded,&generation,&effect,&frame_rate,&fps_meter));
+    scores[0].initials[0]='!'; score_save_encode(data,scores,43,FLOW_NONE,FPS_60,true);
+    assert(!score_save_decode(data,decoded,&generation,&effect,&frame_rate,&fps_meter));
+    memset(scores,0,sizeof(scores)); score_save_encode(data,scores,0,FLOW_NONE,FPS_60,true);
+    assert(score_save_decode(data,decoded,&generation,&effect,&frame_rate,&fps_meter) && generation==0);
     puts("PASS: EEPROM record round-trip, corruption, interrupted records, invalid initials, empty table");
 }

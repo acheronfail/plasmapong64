@@ -38,6 +38,7 @@ int main(void) {
         assert(g.tracers[0].life==984);
     }
     ready(FPS_60); g.phase=OPTIONS;
+    assert(!g.fps_meter);
     in[0].y=-1; game_step(&g,in);
     assert(g.options_selection==1 && !g.scores_dirty);
     in[0].y=0; in[0].x=1; game_step(&g,in);
@@ -47,13 +48,28 @@ int main(void) {
     in[0].x=0; game_step(&g,in); in[0].x=-1; game_step(&g,in);
     assert(g.frame_rate==FPS_60 && g.scores_dirty);
     in[0].x=0; game_step(&g,in); in[0].x=1; game_step(&g,in);
+    in[0].x=0; in[0].y=-1; game_step(&g,in);
+    assert(g.options_selection==OPTION_FPS_METER);
+    in[0].y=0; in[0].x=1; game_step(&g,in);
+    assert(g.fps_meter && g.scores_dirty);
+    g.scores_dirty=false; game_step(&g,in);
+    assert(g.fps_meter && !g.scores_dirty);
+    in[0].x=0; game_step(&g,in); in[0].x=-1; game_step(&g,in);
+    assert(!g.fps_meter && g.scores_dirty);
+    in[0].x=0; game_step(&g,in); in[0].x=1; game_step(&g,in);
+    assert(g.fps_meter);
+    in[0].x=0; in[0].y=-1; game_step(&g,in);
+    assert(g.options_selection==OPTION_FLOW);
+    in[0].y=0; game_step(&g,in); in[0].y=1; game_step(&g,in);
+    assert(g.options_selection==OPTION_FPS_METER);
+    in[0].y=0;
     in[0].x=0; in[0].b=true; game_step(&g,in);
     assert(g.phase==MENU && g.frame_rate==FPS_30);
     g.highs[0]=(HighScore){.points=42,.level=1,.initials="ACE"};
     in[0].b=false; in[0].start=true; game_step(&g,in); assert(g.phase==LOBBY);
     in[0].start=false; game_step(&g,in); in[0].start=true; game_step(&g,in);
-    assert(g.phase==PLAY && g.frame_rate==FPS_30 && g.highs[0].points==42);
+    assert(g.phase==PLAY && g.frame_rate==FPS_30 && g.fps_meter && g.highs[0].points==42);
     g.phase=FINISHED; in[0].start=false; game_step(&g,in); in[0].start=true; game_step(&g,in);
-    assert(g.phase==PLAY && g.frame_rate==FPS_30 && g.highs[0].points==42);
+    assert(g.phase==PLAY && g.frame_rate==FPS_30 && g.fps_meter && g.highs[0].points==42);
     puts("PASS: low/high resolution timing, held-input debounce, restart retention, movement, charge/grace/cooldown seconds and tracer history");
 }

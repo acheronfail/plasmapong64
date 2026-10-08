@@ -246,11 +246,11 @@ static void start_game(Game *g) {
     HighScore saved[HIGH_SCORE_COUNT]; memcpy(saved,g->highs,sizeof(saved));
     FlowEffect effect=g->flow_effect; FrameRate frame_rate=g->frame_rate;
     GameMode mode=g->mode; uint32_t seed=g->menu_rng;
-    bool available=g->save_available,failed=g->save_failed;
+    bool available=g->save_available,failed=g->save_failed,fps_meter=g->fps_meter;
     unsigned players=g->players,ports[MAX_PLAYERS]; memcpy(ports,g->player_port,sizeof(ports));
     game_init(g); memcpy(g->highs,saved,sizeof(saved));
     g->players=players; memcpy(g->player_port,ports,sizeof(ports));
-    g->flow_effect=effect; g->frame_rate=frame_rate;
+    g->flow_effect=effect; g->frame_rate=frame_rate; g->fps_meter=fps_meter;
     g->save_available=available; g->save_failed=failed;
     g->mode=mode; place_bats(g); g->menu_selection=mode==ARCADE?1:0;
     g->menu_rng=seed; g->phase=PLAY;
@@ -321,14 +321,15 @@ void game_step(Game *g,const Input physical[MAX_PLAYERS]) {
         else for(int p=0;p<MAX_PLAYERS;p++) if(in[p].connected) {
             int vertical=direction(in[p].y);
             if(vertical && vertical!=direction(g->previous[p].y)) {
-                g->options_selection^=1; g->sound_events|=SOUND_SELECT; break;
+                g->options_selection=(g->options_selection+(vertical>0?OPTION_COUNT-1:1))%OPTION_COUNT; g->sound_events|=SOUND_SELECT; break;
             }
             int nav=direction(in[p].x);
             if(nav && nav!=direction(g->previous[p].x)) {
-                if(g->options_selection==0)
+                if(g->options_selection==OPTION_FLOW)
                     g->flow_effect=(g->flow_effect+(nav>0?1:FLOW_COUNT-1))%FLOW_COUNT;
-                else g->frame_rate=g->frame_rate==FPS_60?FPS_30:FPS_60;
-                memset(g->tracers,0,sizeof(g->tracers));
+                else if(g->options_selection==OPTION_RESOLUTION) g->frame_rate=g->frame_rate==FPS_60?FPS_30:FPS_60;
+                else g->fps_meter=!g->fps_meter;
+                if(g->options_selection!=OPTION_FPS_METER) memset(g->tracers,0,sizeof(g->tracers));
                 g->scores_dirty=true; g->sound_events|=SOUND_SELECT; break;
             }
         }

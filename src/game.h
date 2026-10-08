@@ -44,6 +44,7 @@ static inline FluidView flow_view(FlowEffect effect) {
     return effect>=FLOW_VORTEX?(FluidView)(effect-FLOW_VORTEX+FLUID_VIEW_VORTEX):
         effect==FLOW_SPEED?FLUID_VIEW_SPEED:FLUID_VIEW_DYE;
 }
+typedef enum { OPTION_FLOW, OPTION_RESOLUTION, OPTION_FPS_METER, OPTION_COUNT } GameOption;
 #define FLOW_TRACERS 96
 #define FLOW_SAMPLE_TICKS (GAME_HZ/15)
 #define FLOW_HISTORY (4*FLOW_SAMPLE_TICKS+1)
@@ -83,6 +84,7 @@ typedef struct {
        values for compatibility with existing EEPROMs; these select resolution. */
     FrameRate frame_rate;
     unsigned options_selection;
+    bool fps_meter; /* Saved permission for the overlay and port-1 L/R controls. */
 } Game;
 /* Share the level palette between paddles, labels and new fluid emissions. */
 static inline unsigned game_player_palette(const Game *g,unsigned p) {

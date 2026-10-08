@@ -63,7 +63,7 @@ static bool pixel_pending;
 #endif
 static volatile PresentationStats presentation;
 static volatile uint32_t vi_count;
-static bool perf_visible=true;
+static PerfControls perf_controls;
 static char perf_text[64]="FPS -- / --", perf_gap[64]="MISS 0  GAP 1 VI";
 static PresentationStats perf_window;
 static void perf_vi(void) {
@@ -731,6 +731,7 @@ int main(void) {
 #ifdef PLASMAPONG_SAVE_SMOKE
     save_smoke(&game);
 #endif
+    perf_controls_step(&perf_controls,game.fps_meter,false,false);
     video_configure(game.frame_rate);
     /* Build the first scene's immutable/text commands during startup. This
        first visible menu is initialization, before the timed update loop. */
@@ -740,7 +741,7 @@ int main(void) {
     ui_measure_menu(&game);
     fill_mode=false;
     rdpq_attach(startup_frame,NULL); ui_draw(&game);
-    if(perf_visible) {
+    if(game.fps_meter && perf_controls.visible) {
         rect(14,27,250,28,0x09111f);
         label(18,39,0,perf_text); label(18,51,0,perf_gap);
     }
@@ -774,7 +775,6 @@ int main(void) {
     uint64_t frame_window=get_ticks(); unsigned frame_steps=0;
     Phase perf_phase=game.phase;
     FrameRate perf_rate=game.frame_rate;
-    bool perf_l=false,perf_r=false;
     perf_reset();
     debugf("Plasma Pong 64: ready, %u-byte game state, %u MiB RDRAM\n",(unsigned)sizeof(game),(unsigned)get_memory_size()/(1024*1024));
     debugf("Fluid grid: %u x %u (%u cells), cell Q4 %u, pressure sweeps %u, compact %u\n",
@@ -849,9 +849,7 @@ int main(void) {
         for(int p=0;p<MAX_PLAYERS;p++) {
             joypad_inputs_t in=joypad_get_inputs((joypad_port_t)p);
             if(p==0) {
-                if(in.btn.l && !perf_l) perf_visible=!perf_visible;
-                if(in.btn.r && !perf_r) perf_reset();
-                perf_l=in.btn.l; perf_r=in.btn.r;
+                if(perf_controls_step(&perf_controls,game.fps_meter,in.btn.l,in.btn.r)) perf_reset();
             }
             input[p]=(Input){.connected=joypad_get_style((joypad_port_t)p)==JOYPAD_STYLE_N64,
                 .a=in.btn.a,.z=in.btn.z,.start=in.btn.start,.b=in.btn.b,
@@ -1027,7 +1025,7 @@ int main(void) {
         } else
 #endif
         ui_draw(&game);
-        if(perf_visible) {
+        if(game.fps_meter && perf_controls.visible) {
             rect(14,27,250,28,0x09111f);
             label(18,39,0,perf_text); label(18,51,0,perf_gap);
         }

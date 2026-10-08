@@ -325,17 +325,20 @@ void ui_menu_particles(const Game *g) {
 void ui_draw(const Game *g) {
     if(g->phase==OPTIONS) {
         flow_background(g,0,0,320,240);
-        rect(12,64,296,117,0x09111f);
+        rect(12,64,296,155,0x09111f);
         menu_label(87,4,"OPTIONS");
-        rect(20,g->options_selection?124:98,280,20,0x142c3b);
-        rect(20,g->options_selection?124:98,2,20,CYAN);
+        rect(20,98+26*g->options_selection,280,20,0x142c3b);
+        rect(20,98+26*g->options_selection,2,20,CYAN);
         const char *effects[]={"NONE","PARTICLES","PARTICLE TAILS","SPEED","VORTEX","RELIEF","BANDS","PRESSURE"};
         char setting[64]; snprintf(setting,sizeof(setting),"< FLOW EFFECT: %s >",effects[g->flow_effect]);
-        menu_label(113,g->options_selection==0?2:1,setting);
+        menu_label(113,g->options_selection==OPTION_FLOW?2:1,setting);
         snprintf(setting,sizeof(setting),"< RESOLUTION: %s >",g->frame_rate==FPS_60?"LOW RES":"HIGH RES");
-        menu_label(139,g->options_selection==1?2:1,setting);
+        menu_label(139,g->options_selection==OPTION_RESOLUTION?2:1,setting);
+        snprintf(setting,sizeof(setting),"< FPS METER: %s >",g->fps_meter?"ON":"OFF");
+        menu_label(165,g->options_selection==OPTION_FPS_METER?2:1,setting);
+        if(g->fps_meter) menu_label(187,1,"L: SHOW/HIDE   R: RESET");
         if(!g->save_available || g->save_failed)
-            menu_label(169,1,!g->save_available?"NO SAVE STORAGE - SESSION ONLY":"SAVE FAILED - SESSION ONLY");
+            menu_label(207,1,!g->save_available?"NO SAVE STORAGE - SESSION ONLY":"SAVE FAILED - SESSION ONLY");
         return;
     }
     if(g->phase==MENU) {

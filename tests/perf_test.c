@@ -2,6 +2,19 @@
 #include <assert.h>
 #include <stdio.h>
 int main(void) {
+    PerfControls controls={0};
+    assert(!perf_controls_step(&controls,false,true,true) && !controls.visible);
+    assert(!perf_controls_step(&controls,true,true,true) && controls.visible);
+    assert(!perf_controls_step(&controls,true,false,false));
+    assert(!perf_controls_step(&controls,true,true,false) && !controls.visible);
+    assert(!perf_controls_step(&controls,true,true,false) && !controls.visible);
+    assert(!perf_controls_step(&controls,true,false,false));
+    assert(perf_controls_step(&controls,true,true,true) && controls.visible);
+    assert(!perf_controls_step(&controls,true,true,true));
+    assert(!perf_controls_step(&controls,false,false,false) && !controls.visible);
+    assert(!perf_controls_step(&controls,false,true,true) && !controls.visible);
+    assert(!perf_controls_step(&controls,false,false,false) && !controls.visible);
+    assert(!perf_controls_step(&controls,true,false,false) && controls.visible);
     PresentationStats s={0};
     presentation_sample(&s,100,1000);
     assert(s.seeded && !s.frames && !s.refreshes && !s.repeats);
@@ -38,5 +51,5 @@ int main(void) {
     assert(s.frames==31);
     presentation_sample(&s,presentation_origin(base+stride,true,false,stride),6200);
     assert(s.frames==31 && s.repeats==31 && !s.misses);
-    puts("PASS: presentation counts swaps, repeated fields/refreshes, interlaced origins, longest gaps and reset");
+    puts("PASS: FPS option gates L/R with debounce; presentation counts swaps, repeated fields/refreshes, interlaced origins, longest gaps and reset");
 }
