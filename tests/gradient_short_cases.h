@@ -33,9 +33,7 @@ static void gradient_short_cases(void) {
             rng=rng*1664525u+1013904223u;
             output.value.v[k]=(int)(rng%32767)-16383;
             divergence[k]=((int)(rng%65521)-32760)*4096;
-#if PLASMAPONG_PRESSURE_WARM_START
             words.value[k]=expected_pressure[k]=(int32_t)pressure.value[k]*512;
-#endif
         }
         data_cache_hit_writeback_invalidate(&output,sizeof(output));
         data_cache_hit_writeback_invalidate(&pressure,sizeof(pressure));

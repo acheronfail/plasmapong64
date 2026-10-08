@@ -6,25 +6,18 @@
 #define FH PLASMAPONG_GRID_H
 #define FN (FW * FH)
 #define CELL (PLASMAPONG_CELL_Q4*(1.0f/16))
-/* Momentum loss per second and swirl restoration, shared by CPU/RSP paths. */
+/* Momentum loss per second, shared by CPU/RSP paths. */
 #ifdef PLASMAPONG_FLOW_DAMPING
 #define FLUID_DAMPING ((float)(PLASMAPONG_FLOW_DAMPING))
 #else
-#define FLUID_DAMPING .08f
-#endif
-#ifdef PLASMAPONG_FLOW_CONFINEMENT
-#define FLUID_CONFINEMENT ((float)(PLASMAPONG_FLOW_CONFINEMENT))
-#else
-#define FLUID_CONFINEMENT 1.25f
+#define FLUID_DAMPING .16f
 #endif
 #define ARENA_W (FW * CELL)
 #define ARENA_H (FH * CELL)
 /* Whole grids and rows start on 16-byte cache-line boundaries. Index-based
    ping-pong buffers keep Fluid/Game safe to copy by value (no self-pointers). */
-typedef struct { _Alignas(16) float u[FN],v[FN]; } FluidVelocity;
 enum { VELOCITY_SCALE=16, VELOCITY_LIMIT=16383 };
 typedef struct { _Alignas(16) int16_t u[FN],v[FN]; } FluidVelocityFixed;
-#ifdef PLASMAPONG_VELOCITY_FIXED
 typedef FluidVelocityFixed FluidFlow;
 typedef int16_t FluidFlowValue;
 static inline FluidFlowValue fluid_flow_clamp(int v) {
@@ -37,41 +30,21 @@ static inline FluidFlowValue fluid_flow_encode(float v) {
     if(v<-VELOCITY_LIMIT) return -VELOCITY_LIMIT;
     return (int16_t)(v+(v<0?-.5f:.5f));
 }
-#else
-typedef FluidVelocity FluidFlow;
-typedef float FluidFlowValue;
-static inline float fluid_flow_decode(FluidFlowValue v) { return v; }
-static inline FluidFlowValue fluid_flow_encode(float v) { return v; }
-#endif
-typedef struct { _Alignas(16) float red[FN],blue[FN],gold[FN]; } FluidDye;
 enum { DYE_SCALE=8192, DYE_WEIGHT_SCALE=32768 };
 typedef struct { _Alignas(16) int16_t red[FN],blue[FN],gold[FN]; } FluidDyeFixed;
-#ifdef PLASMAPONG_DYE_FIXED
 typedef FluidDyeFixed FluidInk;
 typedef int16_t FluidInkValue;
 static inline float fluid_ink_decode(FluidInkValue v) { return v*(1.0f/DYE_SCALE); }
 static inline FluidInkValue fluid_ink_encode(float v) { return (int16_t)(v*DYE_SCALE+.5f); }
-#else
-typedef FluidDye FluidInk;
-typedef float FluidInkValue;
-static inline float fluid_ink_decode(FluidInkValue v) { return v; }
-static inline FluidInkValue fluid_ink_encode(float v) { return v; }
-#endif
 typedef struct {
     FluidFlow velocity[2];
     FluidInk dye[2];
     _Alignas(16) int32_t pressure[FN];
-#if PLASMAPONG_PRESSURE_FAST_GRADIENT
     _Alignas(16) int16_t pressure_short[FN];
-#endif
-    _Alignas(16) union { float curl[FN]; int16_t curl_fixed[FN]; int32_t divergence[FN]; };
+    _Alignas(16) int32_t divergence[FN];
     unsigned velocity_bank,dye_bank;
-#ifdef PLASMAPONG_VELOCITY_FIXED
     unsigned velocity_phase;
-#endif
-#ifdef PLASMAPONG_DYE_FIXED
     unsigned dye_phase;
-#endif
 } Fluid;
 /* Reacquire these views after the corresponding velocity/dye step. */
 #define fluid_velocity(f) (&(f)->velocity[(f)->velocity_bank])

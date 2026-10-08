@@ -21,29 +21,16 @@ bool fluid_highpri_open;
 #ifdef PLASMAPONG_UPWIND_TEST
 #include "../tests/upwind_cases.h"
 #endif
-#if PLASMAPONG_PRESSURE_FAST_GRADIENT && defined(PLASMAPONG_PREPARE_TEST)
+#ifdef PLASMAPONG_PREPARE_TEST
 #include "../tests/gradient_short_cases.h"
 #endif
 #ifdef PLASMAPONG_PREPARE_RSP
 #include "fluid_velocity_fixed.h"
 #endif
-#ifdef PLASMAPONG_CONFINEMENT_TEST
-#include "../tests/confinement_cases.h"
-#endif
-#ifdef PLASMAPONG_VELOCITY_TEST
-#include "../tests/velocity_cases.h"
-#endif
-#if defined(PLASMAPONG_VELOCITY_TEST) || defined(PLASMAPONG_PREPARE_TEST)
+#ifdef PLASMAPONG_PREPARE_TEST
 #ifdef PLASMAPONG_PREPARE_RSP
 #include "../tests/prepare_cases.h"
-#include "../tests/gradient_cases.h"
 #endif
-#endif
-#ifdef PLASMAPONG_DYE_TEST
-#include "../tests/dye_cases.h"
-#endif
-#ifdef PLASMAPONG_ADVECTION_TEST
-#include "../tests/advection_cases.h"
 #endif
 #ifdef PLASMAPONG_RSP_TEST
 #include "../tests/rsp_fluid_smoke.h"
@@ -684,10 +671,8 @@ int main(void) {
 #ifdef PLASMAPONG_FLUID_HIGHPRI
     /* Register every simulation overlay before entering high-priority mode. */
     fluid_pressure_rsp_init(); fluid_dye_rsp_init();
-    fluid_prepare_rsp_init(); fluid_confinement_rsp_init();
-#if PLASMAPONG_PRESSURE_FAST_GRADIENT
+    fluid_prepare_rsp_init();
     fluid_gradient_short_rsp_init();
-#endif
 #ifdef PLASMAPONG_UPWIND_RSP
     fluid_upwind_rsp_init();
 #endif
@@ -695,18 +680,11 @@ int main(void) {
 #ifdef PLASMAPONG_RDP_VALIDATE
     rdpq_debug_start();
 #endif
-#ifdef PLASMAPONG_DYE_TEST
-    dye_cases();
-#endif
 #ifdef PLASMAPONG_UPWIND_TEST
     upwind_cases();
 #endif
-#if PLASMAPONG_PRESSURE_FAST_GRADIENT && defined(PLASMAPONG_PREPARE_TEST)
+#ifdef PLASMAPONG_PREPARE_TEST
     gradient_short_cases();
-#endif
-#ifdef PLASMAPONG_ADVECTION_TEST
-    advection_cases();
-    debugf("Advection PASS: 64 exact float-reference fields; source banks unchanged\n");
 #endif
 #ifdef PLASMAPONG_RSP_TEST
     rsp_fluid_smoke();
@@ -714,17 +692,10 @@ int main(void) {
     velocity_chain_cases();
 #endif
 #endif
-#ifdef PLASMAPONG_VELOCITY_TEST
-    velocity_cases();
-#endif
-#if defined(PLASMAPONG_VELOCITY_TEST) || defined(PLASMAPONG_PREPARE_TEST)
+#ifdef PLASMAPONG_PREPARE_TEST
 #ifdef PLASMAPONG_PREPARE_RSP
     prepare_cases();
-    gradient_cases();
 #endif
-#endif
-#ifdef PLASMAPONG_CONFINEMENT_TEST
-    confinement_cases();
 #endif
     dfs_init(DFS_DEFAULT_LOCATION);
     rdpq_font_t *font=rdpq_font_load_builtin(FONT_BUILTIN_DEBUG_VAR);
@@ -789,7 +760,7 @@ int main(void) {
     debugf("Plasma Pong 64: ready, %u-byte game state, %u MiB RDRAM\n",(unsigned)sizeof(game),(unsigned)get_memory_size()/(1024*1024));
     debugf("Fluid grid: %u x %u (%u cells), cell Q4 %u, pressure sweeps %u, compact %u\n",
         (unsigned)FW,(unsigned)FH,(unsigned)FN,(unsigned)PLASMAPONG_CELL_Q4,
-        (unsigned)PLASMAPONG_PRESSURE_PASSES,(unsigned)PLASMAPONG_PRESSURE_Q3);
+        (unsigned)PLASMAPONG_PRESSURE_PASSES,1u);
 #ifdef PLASMAPONG_USB_LOG
     debugf("Hardware benchmark: TV %s, completed-frame fence %u, fluid profile %u\n",
         get_tv_type()==TV_PAL?"PAL":get_tv_type()==TV_MPAL?"MPAL":"NTSC",
@@ -930,7 +901,7 @@ int main(void) {
                         (unsigned long long)(TIMER_MICROS_LL(sim_ticks)/sim_steps),(unsigned)(game_dt(&game)*1000000+.5f));
 #ifdef PLASMAPONG_FLUID_PROFILE
                     static const char *names[PROFILE_COUNT]={
-                        "velocity_advection","velocity_swap","curl","confinement",
+                        "velocity_advection","velocity_swap",
                         "divergence","pressure_solve","pressure_gradient",
                         "dye_advection","dye_swap","splat","pump","ball_dye","sample"
 #ifdef PLASMAPONG_UPWIND_RSP

@@ -1,7 +1,6 @@
 #include "fluid_upwind.h"
 #include "fluid_dye_fixed.h"
 #include <assert.h>
-#ifdef PLASMAPONG_UPWIND_GPU_LIMIT
 #include "rsp_reciprocal_table.inc"
 static uint32_t reciprocal(unsigned n) {
     if(!n) return 0x7fffffffu;
@@ -16,7 +15,6 @@ static int limited_component(int value,unsigned inverse,unsigned safe_limit) {
     int result=(int)((direction*safe_limit)>>15);
     return value<0?-result:result;
 }
-#endif
 unsigned fluid_upwind_step(float grid_dt) {
     assert(grid_dt>=0 && grid_dt<=.125f);
     return (unsigned)(grid_dt*1048576+.5f);
@@ -35,7 +33,6 @@ void fluid_upwind_clamp(FluidVelocityFixed *velocity,unsigned limit) {
         int u=velocity->u[k],v=velocity->v[k];
         int magnitude=(u<0?-u:u)+(v<0?-v:v);
         if(magnitude>(int)limit) {
-#ifdef PLASMAPONG_UPWIND_GPU_LIMIT
             if(!v) velocity->u[k]=(int16_t)(u<0?-(int)limit:(int)limit);
             else if(!u) velocity->v[k]=(int16_t)(v<0?-(int)limit:(int)limit);
             else {
@@ -43,10 +40,6 @@ void fluid_upwind_clamp(FluidVelocityFixed *velocity,unsigned limit) {
                 velocity->u[k]=(int16_t)limited_component(u,inverse,safe);
                 velocity->v[k]=(int16_t)limited_component(v,inverse,safe);
             }
-#else
-            velocity->u[k]=(int16_t)(u*(int)limit/magnitude);
-            velocity->v[k]=(int16_t)(v*(int)limit/magnitude);
-#endif
         }
     }
 }

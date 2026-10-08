@@ -11,7 +11,7 @@ RSPQ_EmptySavedState
     .quad 0
     .bss
     .align 4
-rows: .ds.b SHORT_ROW*(PLASMAPONG_PRESSURE_PASSES+1+PLASMAPONG_PRESSURE_WARM_START)
+rows: .ds.b SHORT_ROW*(PLASMAPONG_PRESSURE_PASSES+2)
 rows_end:
 divrows: .ds.b SHORT_ROW*PLASMAPONG_PRESSURE_PASSES
 divrows_end:
@@ -19,18 +19,14 @@ div_input: .ds.b WORD_ROW
 word_output: .ds.b WORD_ROW
 base_buffer: .ds.b 32
 short_cursor: .ds.b 4
-#if PLASMAPONG_PRESSURE_WARM_START
 warm_cursor: .ds.b 4
-#endif
     .text
 PressureSolve:
-#if PLASMAPONG_PRESSURE_WARM_START
     addiu t3,a0,WORD_ROW
     sw t3,%lo(warm_cursor)(zero)
     li t3,128
     mtc2 t3,$v22.e0
     vxor $v22,vzero,$v22.e0
-#endif
     beqz a2,q3_short_cursor_ready
     nop
     addiu a2,a2,SHORT_ROW
@@ -64,9 +60,7 @@ q3_zero:
     addiu t3,t3,4
     bne t3,t4,q3_zero
     nop
-#if PLASMAPONG_PRESSURE_WARM_START
 
-#endif
 q3_tick:
     slti t3,s3,HEIGHT-1
     beqz t3,q3_loaded
@@ -93,7 +87,6 @@ q3_tick:
     addiu t4,t4,8
     .set part,part+16
     .endr
-#if PLASMAPONG_PRESSURE_WARM_START
     /* Seed the first current row once; later current rows were loaded as the
        prior tick's below row. One extra ring slot protects the last sweep's
        above neighbour while this future row is populated. */
@@ -118,7 +111,6 @@ q3_warm_target:
     lw t8,%lo(warm_cursor)(zero)
     addiu t8,t8,WORD_ROW
     sw t8,%lo(warm_cursor)(zero)
-#endif
 q3_loaded:
     move s5,zero
     move s6,fp
@@ -153,18 +145,6 @@ q3_not_top:
     nop
     move a2,s6
 q3_not_bottom:
-#if !PLASMAPONG_PRESSURE_WARM_START
-    bnez s5,q3_old_row_ready
-    nop
-    /* Ring slots are reused after the final sweep. A first-sweep row must
-       start from zero, and its below neighbour is logically still zero. */
-    vxor $v08,vzero,vzero
-    .set part,0
-    .rept WIDTH/8
-    sqv $v08,part,s6
-    .set part,part+16
-    .endr
-#endif
 q3_old_row_ready:
     lh t3,0(s6)
     vxor $v08,vzero,vzero
@@ -194,11 +174,6 @@ q3_batch:
     mtc2 zero,$v06.e1
     mtc2 zero,$v06.e2
 q3_tail_ready:
-#if !PLASMAPONG_PRESSURE_WARM_START
-    bnez s5,q3_below_ready
-    nop
-    vxor $v03,vzero,vzero
-#endif
 q3_below_ready:
     vmulf $v01,$v02,$v21.e0
     vmacf $v01,$v03,$v21.e0
@@ -354,7 +329,6 @@ q3_done:
     j RSPQ_Loop
     nop
 
-#if PLASMAPONG_PRESSURE_WARM_START
 q3_load_warm:
     move v1,ra
     move s0,t8
@@ -384,4 +358,3 @@ q3_load_warm:
     sh t5,SHORT_ROW-2(t9)
     jr v1
     nop
-#endif

@@ -21,8 +21,6 @@ static void prepare_pixels16_case(const Fluid *f,bool speed,const uint32_t *expe
 }
 static void prepare_cases(void) {
     static Fluid f,saved;
-    static struct { _Alignas(16) uint8_t before[16]; FluidDyeTrace value[FLUID_TRACE_BATCHES]; uint8_t after[16]; } actual;
-    static _Alignas(16) FluidDyeTrace expected[FLUID_TRACE_BATCHES];
     static struct { _Alignas(16) uint32_t before[4],value[64*FH],after[4]; } pixels;
     static struct { _Alignas(16) uint32_t before[4]; int32_t value[FN]; uint32_t after[4]; } divergence;
     static uint32_t expected_pixels[64*FH];
@@ -62,20 +60,6 @@ static void prepare_cases(void) {
         for(unsigned k=0;k<FW;k++) assert(divergence.value[k]==0x3c3c3c3c && divergence.value[(FH-1)*FW+k]==0x3c3c3c3c);
         for(unsigned k=0;k<4;k++) assert(divergence.before[k]==0x3c3c3c3c && divergence.after[k]==0x3c3c3c3c);
         static const float steps[]={0,1.0f/(30*6),1.0f/(60*6),.125f,.2f/6,.0625f,.062499f,.000001f};
-        float dt=steps[trial%8];
-        memset(&actual,0xa5,sizeof(actual));
-        fluid_velocity_trace(expected,v,dt);
-        data_cache_hit_writeback_invalidate(&actual,sizeof(actual));
-        fluid_velocity_trace_rsp(actual.value,v,dt);
-        data_cache_hit_invalidate(&actual,sizeof(actual));
-        for(unsigned k=0;k<FLUID_TRACE_BATCHES;k++) {
-            if(memcmp(&expected[k],&actual.value[k],sizeof(expected[k]))) {
-                debugf("Trace mismatch trial %u vector %u\n",trial,k);
-                assert(0);
-            }
-        }
-        for(unsigned k=0;k<16;k++) assert(actual.before[k]==0xa5 && actual.after[k]==0xa5);
-        memset(&pixels,0x5a,sizeof(pixels));
         memset(expected_pixels,0x5a,sizeof(expected_pixels));
         fluid_pixels(&f,expected_pixels,64);
         data_cache_hit_writeback_invalidate(&pixels,sizeof(pixels));
@@ -131,7 +115,7 @@ static void prepare_cases(void) {
         assert(!memcmp(&f,&saved,sizeof(f)));
         for(unsigned k=0;k<4;k++) assert(pixels.before[k]==0x5a5a5a5a && pixels.after[k]==0x5a5a5a5a);
     }
-    debugf("Prepare PASS: 80 exact trace/dye-color/speed-color/divergence fields, queued pixel producers, overlay switches, full timestep range, padded pixels and DMA guards\n");
+    debugf("Prepare PASS: 80 exact dye-color/speed-color/divergence fields, queued pixel producers, overlay switches, full timestep range, padded pixels and DMA guards\n");
     debugf("View pixels PASS: 80 exact RELIEF and BANDS fields, queued uploads, stride/DMA guards and unchanged inputs\n");
     debugf("Packed pixels PASS: 80 dye and SPEED fields exactly match RGBA5551 quantization, padding and DMA guards\n");
 }

@@ -16,20 +16,15 @@ at the time of each capture, not additional work currently in progress.
 `just build` now produces the official, human-controlled `plasmapong.z64` using
 the retained configuration, without profiling or scripted input. `just deploy`
 and `just emulate` use it too. Objects live in `build/official64` to keep them
-separate from previous builds. `just build-fluid64` is only a compatibility alias.
-For historical comparisons, `just build-legacy` produces `plasmapong-legacy.z64`;
-`FLUID_PRESET=legacy` selects the old defaults in direct toolchain builds or via
-`just dev-loop NAME --define FLUID_PRESET=legacy`. Historical backend/scheduler
-recipes explicitly select that preset. New experiments use the official defaults.
-Portable C headers retain reference defaults; ROM settings come from the Makefile.
-The official configuration is:
-
-```text
-GRID_W=64 GRID_H=44 FORCE_FIXED=1
-PRESSURE_Q3=1 PRESSURE_FAST_GRADIENT=1 PRESSURE_WARM_START=1 PRESSURE_PASSES=1
-UPWIND=1 UPWIND_GPU_LIMIT=1 UPWIND_PREFETCH=1 UPWIND_INLINE_LIMIT=1
-VELOCITY_CHAIN=1 FLOW_DAMPING=.16f FLOW_CONFINEMENT=0.0f
-```
+separate from previous builds. There is one production solver: integer forces,
+streaming upwind transport with inline limiting and prefetching, warm compact
+pressure, and a chained RSP velocity pipeline. The old float/interpolation/Q12
+solvers, unused confinement overlay, legacy preset and alternate-build aliases
+have been removed. Retrieve historical implementations from Git rather than
+selecting a legacy build. Portable checks and previews use the same defaults.
+The remaining solver parameters are `GRID_W=64 GRID_H=44 CELL_Q4=72`,
+`PRESSURE_PASSES=1` and `FLOW_DAMPING=.16f`. Historical flag combinations below
+are records of earlier experiments, not current build instructions.
 
 | Ordinary console capture | Grid | Mean simulation update | FPS | Presentation misses | Audio underrun observations |
 | --- | --- | ---: | ---: | ---: | ---: |
@@ -55,6 +50,23 @@ Ares 4/8 MiB numerical fixtures passed, including 96 exact upwind fields and
 support visual inspection; comprehensive visual acceptance remains manual.
 Local evidence and immutable ROMs are retained under `build/dev-loop/` and are
 not committed. Source, fixtures, build settings and this result summary are.
+
+## Single-solver cleanup validation, 2026-10-08
+
+`official-solver-cleanup-01` validates removal of the retired float/storage
+variants, full-grid interpolation overlay, exact Q12 pressure implementation,
+confinement overlay, standalone limiter scan and obsolete trace/gradient commands.
+The CPU implementation of the current solver remains as the RSP oracle.
+Portable checks now exercise that model by default, including a 120-second
+full-game trace matching the pre-cleanup official result (`9d513a8b`).
+
+Both 4/8 MiB Ares runs passed 96 upwind fields, 96 compact-gradient fields,
+148 pressure fields, 32 full velocity-pipeline comparisons, and the pixel/divergence
+fixtures. The ordinary matched four-player tails console capture measured
+**9.489 ms/update, 59.944 FPS, 1,490 new frames over 1,490 VI, zero presentation
+misses and zero audio underrun observations**. Power OFF was verified after capture.
+This is a cleanup regression check, not evidence of a meaningful speedup over
+9.521 ms. The earlier all-effects limitation remains documented above.
 
 ## Run an experiment
 

@@ -35,9 +35,9 @@ in four-player tails stress gameplay on the NTSC-J console, with no presentation
 misses or audio underruns. Cycling all eight effects measured 59.87 FPS with
 11 missed presentations over 9,001 refreshes and no audio underruns. This uses
 approximate fixed-point transport and pressure; it changes the flow's appearance.
-`just deploy` and `just emulate` use this official version. The old solver is
-available only for comparisons through `just build-legacy`; `just build-fluid64`
-is a compatibility alias for `just build`.
+`just deploy` and `just emulate` use this official version. Retired solver
+implementations and alternate-build aliases have been removed; their history
+is available in Git. Portable checks and previews also default to this solver.
 See [the development-loop results](docs/development-loop.md#retained-checkpoint-2026-10-08)
 for settings, tests and remaining limits. Further optimisation is paused at this checkpoint.
 
@@ -206,16 +206,15 @@ badges. Arcade requires one emulated N64 pad in port 1; multiplayer requires two
 
 ## Implementation
 
-- `src/fluid.c`: 64 × 44 Eulerian grid covering a 288 × 198 arena. Velocity and
-  three dye concentrations use bilinear semi-Lagrangian advection. An 8-iteration
-  Gauss–Seidel pressure solve uses bounded Q12 integer arithmetic to reduce
-  divergence; curl confinement preserves
-  small swirls. Boundary cells enforce zero wall-normal velocity. Momentum and
-  dye decay gradually so old currents dissipate. Velocity damping is 0.08 per
-  second, with swirl confinement at 1.25: sustained jets build currents that
-  linger after release. The ball responds to flow with a 1.7 coupling strength
-  while retaining its 0.297 still-water drag and 290 speed cap. Velocity and dye use aligned
-  alternating buffers, with no full-grid copies between steps.
+- `src/fluid.c`: a 64 × 44 grid covering the 288 × 198 arena. Fractional Q4
+  velocity and Q13 dye use bounded upwind transport. One warm-started compact Q3
+  pressure sweep reduces divergence, with a public Q12 field for visualisation.
+  RSP row prefetching, inline velocity limiting and a chained velocity pipeline
+  minimise transfers and queue waits. Integer force kernels drive jets/suction;
+  smooth bilinear sampling couples the field to the ball. Wall-normal velocity
+  is zero, momentum damping is 0.16 per second, and no confinement stage runs.
+  Aligned alternating buffers avoid full-grid copies. Portable implementations
+  of the same model provide independent RSP fixtures and host gameplay checks.
 - Bat movement and Z jets inject momentum and dye into the grid. A is an
   intentional local pump/source/sink applied after pressure projection so the
   incompressibility solve does not immediately cancel the suction or burst.
@@ -244,7 +243,7 @@ badges. Arcade requires one emulated N64 pad in port 1; multiplayer requires two
   synchronized after the next simulation step and before reusing texture memory.
   Immutable drawing commands are recorded as RSPQ blocks; rendering follows the
   selected simulation frequency instead of generating duplicate frames between
-  updates. Game state occupies about 57 KiB;
+  updates. Game state size is reported at startup;
   the ROM does not require an Expansion Pak. Emulator debug output reports the
   average simulation cost every 150 active steps and draw cost every 150 frames.
   The fluid source uses `-O3` on N64, and shared timestep/radius factors are
@@ -276,6 +275,13 @@ actual runtime mix.
 UI drawing code with a host renderer. They show grid cells and a substitute font;
 the ROM uses hardware texture filtering and libdragon's own font. They are layout
 previews, not emulator captures.
+
+### Historical development notes
+
+The following chronological notes describe earlier revisions. Their solver
+backends, comparison commands and some source files have since been retired;
+use the build and validation instructions above for the current implementation.
+Old implementations remain recoverable from Git history.
 
 The normal ROM boots to the animated main menu in the existing Ares checkout with
 paraLLEl-RDP. The separate scripted-input ROM also runs gameplay and renders the

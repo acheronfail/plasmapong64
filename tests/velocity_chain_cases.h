@@ -1,7 +1,6 @@
 #ifndef VELOCITY_CHAIN_CASES_H
 #define VELOCITY_CHAIN_CASES_H
 #include "../src/fluid_upwind.h"
-#include "../src/fluid_confinement.h"
 #include <string.h>
 #include "../src/fluid_queue.h"
 /* The established synchronous stages are an independent scheduling oracle.
@@ -28,8 +27,6 @@ static void velocity_chain_cases(void) {
         fluid_upwind_velocity_rsp(next,old,dt/CELL,1-FLUID_DAMPING*dt,
             (expected.velocity_phase+=40503u)&65535u);
         expected.velocity_bank^=1;
-        if(FLUID_CONFINEMENT>0)
-            fluid_curl_confinement_rsp(next,expected.curl_fixed,fluid_confinement_strength(dt));
         fluid_project(&expected);
         rdpq_set_fill_color(RGBA32(trial,0,0,255));
         fluid_highpri_active=(trial&1)!=0;

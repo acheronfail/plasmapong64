@@ -10,18 +10,11 @@
 #define HEIGHT PLASMAPONG_GRID_H
 #define ROW_BYTES (WIDTH*2)
 #define PLANE_BYTES (WIDTH*HEIGHT*2)
-#ifdef PLASMAPONG_UPWIND_PREFETCH
 #define SOURCE_ROWS 4
-#else
-#define SOURCE_ROWS 3
-#endif
 #define SOURCE_BYTES (SOURCE_ROWS*ROW_BYTES)
     .data
 RSPQ_BeginOverlayHeader
     RSPQ_DefineCommand Advect,16
-#ifdef PLASMAPONG_UPWIND_GPU_LIMIT
-    RSPQ_DefineCommand Limit,16
-#endif
 RSPQ_EndOverlayHeader
 RSPQ_EmptySavedState
     .quad 0
@@ -32,9 +25,7 @@ urow: .ds.b ROW_BYTES
 vrow: .ds.b ROW_BYTES
 output: .ds.b ROW_BYTES*3
 params: .ds.b 32
-#ifdef PLASMAPONG_UPWIND_INLINE_LIMIT
 limit_saved: .ds.b 16
-#endif
     .text
 Advect:
     move s1,a0
@@ -59,7 +50,6 @@ Advect:
     lw t4,12(t3)
     mtc2 t4,$v25.e0
     vxor $v25,vzero,$v25.e0
-#ifdef PLASMAPONG_UPWIND_INLINE_LIMIT
     lw t4,4(t3)
     mtc2 t4,$v21.e0
     srl t5,t4,16
@@ -67,7 +57,6 @@ Advect:
     mtc2 t5,$v21.e1
     addiu t4,t4,1
     mtc2 t4,$v21.e2
-#endif
     lw k0,8(t3)
     ctc2 zero,COP2_CTRL_VCO
     move t8,s1
@@ -85,7 +74,6 @@ preload:
     addiu k1,k1,1
     bne k1,k0,preload
     nop
-#ifdef PLASMAPONG_UPWIND_INLINE_LIMIT
     /* Both initial velocity rows must be limited before either is consumed. */
     li t3,2
     bne k0,t3,initial_limit_done
@@ -101,17 +89,14 @@ preload:
     jal ClampLoadedRow
     nop
 initial_limit_done:
-#endif
     move s5,zero
     move s6,zero
     move a3,zero
 row:
-#ifdef PLASMAPONG_UPWIND_PREFETCH
     /* Retire the prior output before reusing it, and the prefetched source
        before consuming it. Source DMA runs alongside the preceding row math. */
     jal DMAWaitIdle
     nop
-#endif
     addiu a0,s6,-ROW_BYTES
     bgez a0,above_ready
     nop
@@ -136,26 +121,7 @@ not_top:
     b source_ready
     nop
 load_below:
-#ifndef PLASMAPONG_UPWIND_PREFETCH
-    move t8,s1
-    li t9,%lo(rows)
-    move k1,zero
-source_plane:
-    addu s0,t8,a3
-    addiu s0,s0,ROW_BYTES
-    addu s4,t9,a2
-    li t0,ROW_BYTES-1
-    li t1,ROW_BYTES
-    jal DMAExec
-    li t2,DMA_IN
-    addiu t8,t8,PLANE_BYTES
-    addiu t9,t9,SOURCE_BYTES
-    addiu k1,k1,1
-    bne k1,k0,source_plane
-    nop
-#endif
 source_ready:
-#ifdef PLASMAPONG_UPWIND_INLINE_LIMIT
     li t3,2
     bne k0,t3,source_limit_done
     nop
@@ -172,7 +138,6 @@ source_ready:
     jal ClampLoadedRow
     nop
 source_limit_done:
-#endif
     li t3,2
     bne k0,t3,load_velocity
     nop
@@ -196,17 +161,14 @@ load_velocity:
     li t1,ROW_BYTES
     jal DMAExec
     li t2,DMA_IN
-#ifdef PLASMAPONG_UPWIND_INLINE_LIMIT
     li t8,%lo(urow)
     li t9,%lo(vrow)
     addu v1,s2,a3
     jal ClampLoadedRow
     nop
-#endif
     li a1,%lo(urow)
     li fp,%lo(vrow)
 velocity_ready:
-#ifdef PLASMAPONG_UPWIND_PREFETCH
     slti t3,s5,HEIGHT-2
     beqz t3,prefetch_done
     nop
@@ -234,7 +196,6 @@ prefetch_plane:
     bne k1,k0,prefetch_plane
     nop
 prefetch_done:
-#endif
     move s7,zero
 .macro coefficient source,dest
     vabs $v03,\source,\source
@@ -319,11 +280,7 @@ store_plane:
     li t0,ROW_BYTES-1
     li t1,ROW_BYTES
     jal DMAExec
-#ifdef PLASMAPONG_UPWIND_PREFETCH
     li t2,DMA_OUT_ASYNC
-#else
-    li t2,DMA_OUT
-#endif
     addiu t8,t8,PLANE_BYTES
     addiu t9,t9,ROW_BYTES
     addiu k1,k1,1
@@ -341,16 +298,9 @@ store_plane:
     b row
     move s6,zero
 done:
-#if defined(PLASMAPONG_UPWIND_PREFETCH) || defined(PLASMAPONG_UPWIND_INLINE_LIMIT)
     jal DMAWaitIdle
     nop
-#endif
     j RSPQ_Loop
     nop
-#ifdef PLASMAPONG_UPWIND_GPU_LIMIT
-#include "rsp_upwind_limit.inc"
-#endif
 
-#ifdef PLASMAPONG_UPWIND_INLINE_LIMIT
 #include "rsp_upwind_inline_limit.inc"
-#endif

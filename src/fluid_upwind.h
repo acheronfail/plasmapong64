@@ -1,7 +1,7 @@
 #ifndef FLUID_UPWIND_H
 #define FLUID_UPWIND_H
 #include "fluid.h"
-/* Experimental local-grid advection. The shared limiter bounds combined speed
+/* Local-grid advection. The shared limiter bounds combined speed
    so |u|dt/h + |v|dt/h <=1. Dye and ball then see the same bounded velocity. */
 unsigned fluid_upwind_step(float grid_dt);
 unsigned fluid_upwind_limit(unsigned step);

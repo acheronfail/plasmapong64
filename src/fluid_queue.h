@@ -7,7 +7,6 @@ extern bool fluid_highpri_active;
 void fluid_pressure_rsp_init(void);
 void fluid_dye_rsp_init(void);
 void fluid_prepare_rsp_init(void);
-void fluid_confinement_rsp_init(void);
 #endif
 
 #ifdef PLASMAPONG_FLUID_HIGHPRI_YIELD

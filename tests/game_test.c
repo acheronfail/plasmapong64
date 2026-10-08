@@ -1,7 +1,5 @@
 #include "game.h"
-#ifdef PLASMAPONG_UPWIND
 #include "fluid_upwind.h"
-#endif
 #include <assert.h>
 #include <math.h>
 #include <stdio.h>
@@ -348,7 +346,6 @@ int main(void) {
             assert(fabsf(g.bvx-(p?-1:1)*launch)<.001f);
             release_energy[h]=energy(&g.fluid);
             float sample_x=g.bat[p].x+(p?-26:26),sample_y=g.bat[p].y+26;
-#ifdef PLASMAPONG_UPWIND
             /* The stability limiter is intentionally nonlinear at high speed.
                Prove this linear-scaling probe's four samples are below it. */
             int ix=(int)(sample_x/CELL-.5f),iy=(int)(sample_y/CELL-.5f);
@@ -358,7 +355,6 @@ int main(void) {
                 int a=fluid_velocity(&g.fluid)->u[k],b=fluid_velocity(&g.fluid)->v[k];
                 assert((unsigned)(abs(a)+abs(b))+4<cap);
             }
-#endif
             fluid_sample(&g.fluid,sample_x,sample_y,&u,&v);
             release_speed[h]=fabsf(u);
             assert(g.bat[p].charge==0 && !g.bat[p].sucking);
@@ -366,14 +362,9 @@ int main(void) {
         }
         assert(release_energy[0]==0 && release_energy[3]>0);
         assert(release_energy[1]<release_energy[2] && release_energy[2]<release_energy[3]);
-#ifdef PLASMAPONG_VELOCITY_FIXED
         /* Independently quantized injections can differ by one velocity LSB. */
         assert(fabsf(release_speed[1]-release_speed[3]*STEP)<1.0f/VELOCITY_SCALE);
         assert(fabsf(release_speed[2]-release_speed[3]*.5f)<1.0f/VELOCITY_SCALE);
-#else
-        assert(fabsf(release_speed[1]/release_speed[3]-STEP)<.00001f);
-        assert(fabsf(release_speed[2]/release_speed[3]-.5f)<.00001f);
-#endif
         /* Repeated one-frame taps must stay weaker than a continuous Z jet. */
         ready(); g.serve=100;
         for(int t=0;t<60;t++) { in[p].a=t%2==0; game_step(&g,in); }

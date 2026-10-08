@@ -7,14 +7,10 @@
 static int pressure_short(int value) { return value>32767?32767:value<-32768?-32768:value; }
 static void fluid_pressure_q3_cpu(int32_t *pressure,const int32_t *divergence) {
     int16_t p[FN];
-#if PLASMAPONG_PRESSURE_WARM_START
     for(int k=0;k<FN;k++) p[k]=(int16_t)pressure_short(pressure[k]>>9);
     for(int y=1;y<FH-1;y++) { p[y*FW]=p[y*FW+1]; p[y*FW+FW-1]=p[y*FW+FW-2]; }
     memcpy(p,p+FW,FW*sizeof(*p));
     memcpy(p+(FH-1)*FW,p+(FH-2)*FW,FW*sizeof(*p));
-#else
-    memset(p,0,sizeof(p));
-#endif
     for(int pass=0;pass<PLASMAPONG_PRESSURE_PASSES;pass++) {
         for(int y=1;y<FH-1;y++) {
             int previous[3]={0,0,p[y*FW]};

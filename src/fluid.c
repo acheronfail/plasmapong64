@@ -2,21 +2,11 @@
 #include "fluid.h"
 #include "fluid_profile.h"
 #include "fluid_pressure.h"
-#include "fluid_advection.h"
-#ifdef PLASMAPONG_UPWIND
 #include "fluid_upwind.h"
-#endif
 #include <math.h>
 #include <string.h>
-#ifdef PLASMAPONG_CONFINEMENT_FIXED
-#include "fluid_confinement.h"
-#endif
-#ifdef PLASMAPONG_VELOCITY_FIXED
 #include "fluid_velocity_fixed.h"
-#endif
-#ifdef PLASMAPONG_DYE_FIXED
 #include "fluid_dye_fixed.h"
-#endif
 #ifdef PLASMAPONG_FLUID_PROFILE
 FluidProfile fluid_profile;
 #endif
@@ -76,31 +66,19 @@ void fluid_queue_pc_report(void) {
 #endif
 _Static_assert((FW-2)%2==0,"pressure loop handles two interior cells at a time");
 _Static_assert((-1>>1)==-1,"fixed-point pressure requires arithmetic right shift");
-/* Q12 pressure: max |divergence| <= 32760 * 4096. Starting from zero,
-   each lexicographic pass increases max |pressure| by at most D/2 plus
-   rounding. Eight passes and their pre-shift sums stay inside int32_t.
-   The clamp is far outside ordinary play (even +/-1000 velocity gives
-   at most 12000 divergence). Velocity optionally uses Q4 storage and vector RSP advection. */
+/* Public pressure is Q12; the warm-started solver uses compact Q3 lanes. */
 #define PRESSURE_SCALE 4096
 static inline void ink_add(FluidInkValue *ink,float amount,float limit) {
-#ifdef PLASMAPONG_DYE_FIXED
     int value=*ink+(int)(amount*DYE_SCALE+.5f);
     int ceiling=(int)(limit*DYE_SCALE+.5f);
     *ink=(int16_t)(value>ceiling?ceiling:value<0?0:value);
-#else
-    *ink=minf(limit,*ink+amount);
-#endif
 }
 /* Separable interpolation shares coordinates across channels and needs only
    three multiplies per channel. */
 static inline float bilerp(const FluidFlowValue *a,int k,float tx,float ty) {
     float top=a[k]+tx*(a[k+1]-a[k]);
     float bottom=a[k+FW]+tx*(a[k+FW+1]-a[k+FW]);
-#ifdef PLASMAPONG_VELOCITY_FIXED
     return (top+ty*(bottom-top))*(1.0f/VELOCITY_SCALE);
-#else
-    return top+ty*(bottom-top);
-#endif
 }
 static void sample_pair(const FluidFlowValue *a,const FluidFlowValue *b,float x,float y,float *va,float *vb) {
     x=clampf(x,0,FW-1.001f); y=clampf(y,0,FH-1.001f);
@@ -121,74 +99,22 @@ static void walls(Fluid *f) {
     for(int y=0;y<FH;y++) velocity->u[y*FW]=velocity->u[y*FW+FW-1]=0;
     for(int x=0;x<FW;x++) velocity->v[x]=velocity->v[(FH-1)*FW+x]=0;
 }
-#if PLASMAPONG_PRESSURE_Q3
 #include "fluid_pressure_q3.h"
-#endif
 void fluid_pressure_cpu(int32_t *restrict pressure,const int32_t *restrict divergence) {
-#if PLASMAPONG_PRESSURE_Q3
     fluid_pressure_q3_cpu(pressure,divergence);
-    return;
-#endif
-    /* Solve the branch-free interior, then copy Neumann boundary pressure.
-       Keep the hot loop small enough for the R4300's instruction cache. */
-    memset(pressure,0,FW*sizeof(pressure[0]));
-    for(int pass=0;pass<PLASMAPONG_PRESSURE_PASSES;pass++) {
-        if(pass==0) {
-            /* Zero initial pressure makes the right/bottom neighbors zero.
-               Fill every interior cell without clearing the whole grid. */
-            for(int y=1;y<FH-1;y++) {
-                int32_t left=0;
-                for(int x=1;x<FW-1;x++) {
-                    int k=y*FW+x;
-                    pressure[k]=left=(divergence[k]+left+pressure[k-FW])>>2;
-                }
-            }
-        } else for(int y=1;y<FH-1;y++) {
-            int k=y*FW+1;
-            int32_t left=pressure[k-1];
-            for(int x=1;x<FW-1;x+=2,k+=2) {
-                /* Prepare independent neighbor sums before the serial left
-                   dependency. Keep the same lexicographic eight-pass solve. */
-                int32_t a=(divergence[k]+pressure[k+1])+
-                        (pressure[k-FW]+pressure[k+FW]);
-                int32_t b=(divergence[k+1]+pressure[k+2])+
-                        (pressure[k-FW+1]+pressure[k+FW+1]);
-                pressure[k]=left=(a+left)>>2;
-                pressure[k+1]=left=(b+left)>>2;
-            }
-        }
-        for(int y=1;y<FH-1;y++) {
-            pressure[y*FW]=pressure[y*FW+1];
-            pressure[y*FW+FW-1]=pressure[y*FW+FW-2];
-        }
-        /* Both row starts are 16-byte aligned. Give GCC the alignment at
-           the copy site to avoid MIPS unaligned load/store pairs. */
-        memcpy(__builtin_assume_aligned(pressure,16),
-               __builtin_assume_aligned(pressure+FW,16),FW*sizeof(pressure[0]));
-        memcpy(__builtin_assume_aligned(pressure+(FH-1)*FW,16),
-               __builtin_assume_aligned(pressure+(FH-2)*FW,16),FW*sizeof(pressure[0]));
-    }
 }
 static inline void subtract_gradient(FluidFlowValue *v,int32_t difference) {
-#ifdef PLASMAPONG_VELOCITY_FIXED
     /* pressure Q12 -> velocity Q4: divide by 2*CELL*4096/16. */
     const int divisor=PLASMAPONG_CELL_Q4*32,half=divisor/2;
     int change=difference>=0?(difference+half)/divisor:-((-difference+half)/divisor);
     *v=fluid_flow_clamp(*v-change);
-#else
-    *v-=difference*(.5f/(CELL*PRESSURE_SCALE));
-#endif
 }
 void fluid_project(Fluid *f) {
     FluidFlow *velocity=fluid_velocity(f);
     PROFILE_BEGIN();
     walls(f);
 #ifdef PLASMAPONG_PROJECTION_CHAIN
-#if PLASMAPONG_PRESSURE_FAST_GRADIENT
     fluid_projection_short_rsp(velocity,f->divergence,f->pressure,f->pressure_short);
-#else
-    fluid_projection_rsp(velocity,f->divergence,f->pressure);
-#endif
     /* Attribute the complete chained operation to projection's solve stage. */
     PROFILE_END(PROFILE_PRESSURE);
 #else
@@ -198,12 +124,7 @@ void fluid_project(Fluid *f) {
     /* Only interior divergence is consumed by the Neumann pressure solve. */
     for(int y=1;y<FH-1;y++) for(int x=1;x<FW-1;x++) {
         int k=y*FW+x;
-#ifdef PLASMAPONG_VELOCITY_FIXED
         f->divergence[k]=-(PLASMAPONG_CELL_Q4*8)*(velocity->u[k+1]-velocity->u[k-1]+velocity->v[k+FW]-velocity->v[k-FW]);
-#else
-        float divergence=-.5f*CELL*(velocity->u[k+1]-velocity->u[k-1]+velocity->v[k+FW]-velocity->v[k-FW]);
-        f->divergence[k]=(int32_t)(clampf(divergence,-32760,32760)*PRESSURE_SCALE);
-#endif
     }
 #endif
     PROFILE_END(PROFILE_DIVERGENCE);
@@ -213,9 +134,6 @@ void fluid_project(Fluid *f) {
     fluid_pressure_cpu(f->pressure,f->divergence);
 #endif
     PROFILE_END(PROFILE_PRESSURE);
-#ifdef PLASMAPONG_GRADIENT_RSP
-    fluid_gradient_rsp(velocity,f->pressure);
-#else
     for(int y=1;y<FH-1;y++) for(int x=1;x<FW-1;x++) {
         int k=y*FW+x;
         subtract_gradient(&velocity->u[k],f->pressure[k+1]-f->pressure[k-1]);
@@ -234,23 +152,10 @@ void fluid_project(Fluid *f) {
         subtract_gradient(&velocity->v[k],f->pressure[k+FW]-f->pressure[k-FW]);
     }
     walls(f);
-#endif
     PROFILE_END(PROFILE_GRADIENT);
 #endif
 }
 /* Blend existing pigment channels to keep all four jets in the plasma palette. */
-#if !defined(PLASMAPONG_SPLAT_PLAN) || !defined(PLASMAPONG_DYE_FIXED)
-static void player_ink(FluidInk *ink,int k,float amount,int player) {
-    if(player==2) {
-        ink_add(&ink->blue[k],amount*.65f,3);
-        ink_add(&ink->gold[k],amount*.35f,.65f);
-    } else if(player==3) {
-        ink_add(&ink->blue[k],amount*.55f,3);
-        ink_add(&ink->red[k],amount*.65f,3);
-    } else ink_add(player?&ink->red[k]:&ink->blue[k],amount,3);
-}
-#endif
-#if defined(PLASMAPONG_SPLAT_PLAN) && defined(PLASMAPONG_DYE_FIXED)
 typedef struct {
     int16_t *a,*b;
     float wa,wb;
@@ -269,123 +174,25 @@ static inline void splat_ink_add(const SplatInk *p,int k,float amount) {
         p->b[k]=b>p->cb?p->cb:b<0?0:b;
     }
 }
-#endif
 /* Work in storage units on the fixed backend. Power-of-two scaling keeps
    the original float operations and nearest rounding exactly equivalent,
    while avoiding decode/encode and the redundant wider storage clamp. */
 static inline void force_add(FluidFlowValue *cell,float delta) {
-#ifdef PLASMAPONG_VELOCITY_FIXED
     float value=*cell+delta;
     if(value>420*VELOCITY_SCALE) *cell=420*VELOCITY_SCALE;
     else if(value<-420*VELOCITY_SCALE) *cell=-420*VELOCITY_SCALE;
     else *cell=(int16_t)(value+(value<0?-.5f:.5f));
-#else
-    *cell=clampf(*cell+delta,-420,420);
-#endif
 }
-#ifdef PLASMAPONG_FORCE_FIXED
 #include "fluid_force_fixed.h"
-#endif
 void fluid_splat(Fluid *f,float x,float y,float radius,float u,float v,float dye,int player) {
-    FluidFlow *velocity=fluid_velocity(f);
-    FluidInk *ink_grid=fluid_dye(f);
     PROFILE_BEGIN();
-#ifdef PLASMAPONG_FORCE_FIXED
     fluid_force_splat(f,x,y,radius,u,v,dye,player);
-    PROFILE_END(PROFILE_SPLAT);
-    return;
-#endif
-#if defined(PLASMAPONG_SPLAT_PLAN) && defined(PLASMAPONG_DYE_FIXED)
-    SplatInk ink=splat_ink_plan(ink_grid,player);
-#endif
-    const float inv_radius2=1/(radius*radius);
-#ifdef PLASMAPONG_VELOCITY_FIXED
-    u*=VELOCITY_SCALE; v*=VELOCITY_SCALE;
-#endif
-    int x0=(int)clampf((x-radius)/CELL,0,FW-1),x1=(int)clampf((x+radius)/CELL,0,FW-1);
-    int y0=(int)clampf((y-radius)/CELL,0,FH-1),y1=(int)clampf((y+radius)/CELL,0,FH-1);
-    for(int iy=y0;iy<=y1;iy++) for(int ix=x0;ix<=x1;ix++) {
-        float dx=(ix+.5f)*CELL-x,dy=(iy+.5f)*CELL-y;
-        float w=maxf(0,1-(dx*dx+dy*dy)*inv_radius2); w*=w;
-        int k=iy*FW+ix;
-#ifdef PLASMAPONG_VELOCITY_FIXED
-        if(w==0) {
-            /* The bounding square extends outside the circular footprint.
-               Retain the original velocity and pigment clamps there, but
-               avoid converting an unchanged fixed-point value to float. */
-            const int limit=420*VELOCITY_SCALE;
-            int a=velocity->u[k],b=velocity->v[k];
-            velocity->u[k]=a<-limit?-limit:a>limit?limit:a;
-            velocity->v[k]=b<-limit?-limit:b>limit?limit:b;
-#if defined(PLASMAPONG_SPLAT_PLAN) && defined(PLASMAPONG_DYE_FIXED)
-            splat_ink_add(&ink,k,0);
-#else
-            player_ink(ink_grid,k,0,player);
-#endif
-            continue;
-        }
-#endif
-        force_add(&velocity->u[k],u*w);
-        force_add(&velocity->v[k],v*w);
-#if defined(PLASMAPONG_SPLAT_PLAN) && defined(PLASMAPONG_DYE_FIXED)
-        splat_ink_add(&ink,k,dye*w);
-#else
-        player_ink(ink_grid,k,dye*w,player);
-#endif
-    }
     PROFILE_END(PROFILE_SPLAT);
 }
 void fluid_pump(Fluid *f,float x,float y,float radius,float strength,float dt,int player) {
-    FluidFlow *velocity=fluid_velocity(f);
-    FluidInk *ink_grid=fluid_dye(f);
     PROFILE_BEGIN();
-#ifdef PLASMAPONG_FORCE_FIXED
     fluid_force_pump(f,x,y,radius,strength,dt,player);
     PROFILE_END(PROFILE_PUMP);
-    return;
-#endif
-#if defined(PLASMAPONG_SPLAT_PLAN) && defined(PLASMAPONG_DYE_FIXED)
-    SplatInk ink=splat_ink_plan(ink_grid,player);
-#endif
-    const float inv_radius2=1/(radius*radius);
-    /* A pump is an intentional local source/sink. Apply after projection, so
-       pressure does not immediately cancel suction; next step redistributes it. */
-    int x0=(int)clampf((x-radius)/CELL,0,FW-1),x1=(int)clampf((x+radius)/CELL,0,FW-1);
-    int y0=(int)clampf((y-radius)/CELL,0,FH-1),y1=(int)clampf((y+radius)/CELL,0,FH-1);
-    for(int iy=y0;iy<=y1;iy++) for(int ix=x0;ix<=x1;ix++) {
-        float dx=(ix+.5f)*CELL-x,dy=(iy+.5f)*CELL-y,d2=dx*dx+dy*dy;
-        if(d2>=radius*radius) continue;
-        float w=1-d2*inv_radius2;
-        float force=strength*w*dt/sqrtf(d2+9);
-        int k=iy*FW+ix;
-#ifdef PLASMAPONG_VELOCITY_FIXED
-        /* Power-of-two scaling commutes with the original float operations.
-           Keep the same nearest rounding and 420-pixel/s clamp in Q4 units. */
-        float fixed_force=force*VELOCITY_SCALE;
-        force_add(&velocity->u[k],dx*fixed_force);
-        force_add(&velocity->v[k],dy*fixed_force);
-#else
-        velocity->u[k]=fluid_flow_encode(clampf(fluid_flow_decode(velocity->u[k])+dx*force,-420,420));
-        velocity->v[k]=fluid_flow_encode(clampf(fluid_flow_decode(velocity->v[k])+dy*force,-420,420));
-#endif
-        if(strength>0) {
-#if defined(PLASMAPONG_SPLAT_PLAN) && defined(PLASMAPONG_DYE_FIXED)
-            splat_ink_add(&ink,k,strength*dt*.0015f*w);
-#else
-            player_ink(ink_grid,k,strength*dt*.0015f*w,player);
-#endif
-        }
-    }
-    PROFILE_END(PROFILE_PUMP);
-}
-static inline void add_confinement(FluidFlowValue *v,float amount) {
-#ifdef PLASMAPONG_VELOCITY_FIXED
-    amount*=VELOCITY_SCALE;
-    int delta=(int)(amount+(amount<0?-.5f:.5f));
-    *v=fluid_flow_clamp(*v+delta);
-#else
-    *v+=amount;
-#endif
 }
 void fluid_velocity_step(Fluid *f,float dt) {
 #ifdef PLASMAPONG_VELOCITY_CHAIN
@@ -411,72 +218,15 @@ void fluid_velocity_step(Fluid *f,float dt) {
 #endif
     FluidFlow *next=&f->velocity[f->velocity_bank^1];
     const float grid_dt=dt/CELL,decay=1-FLUID_DAMPING*dt;
-    /* Semi-Lagrangian advection: bounded even during a strong jet. */
-#ifdef PLASMAPONG_UPWIND
+    /* Local upwind transport with a shared velocity bound. */
 #ifdef PLASMAPONG_UPWIND_RSP
     fluid_upwind_velocity_rsp(next,velocity,grid_dt,decay,(f->velocity_phase+=40503u)&65535u);
 #else
     fluid_upwind_velocity_cpu(next,velocity,grid_dt,decay,(f->velocity_phase+=40503u)&65535u);
 #endif
-#elif defined(PLASMAPONG_VELOCITY_FIXED)
-    fluid_advect_velocity_fixed(next,velocity,grid_dt,decay,(f->velocity_phase+=40503u)&65535u);
-#else
-    fluid_advect_velocity(next,velocity,grid_dt,decay);
-#endif
     PROFILE_END(PROFILE_VELOCITY_ADVECTION);
     f->velocity_bank^=1; velocity=next;
     PROFILE_END(PROFILE_VELOCITY_SWAP);
-    /* Zero confinement is a cheaper fluid model: no swirl-restoration force,
-       and its private curl scratch need not be generated. */
-    if(FLUID_CONFINEMENT>0) {
-#ifdef PLASMAPONG_CONFINEMENT_FIXED
-#ifdef PLASMAPONG_CONFINEMENT_CHAIN
-    fluid_curl_confinement_rsp(velocity,f->curl_fixed,fluid_confinement_strength(dt));
-    /* Chained stages are attributed together: their intermediate output is
-       consumed by RSP before the CPU regains ownership. */
-    PROFILE_END(PROFILE_CONFINEMENT);
-#else
-#ifdef PLASMAPONG_CONFINEMENT_RSP
-    fluid_curl_rsp(f->curl_fixed,velocity);
-#else
-    fluid_curl_fixed(f->curl_fixed,velocity);
-#endif
-    PROFILE_END(PROFILE_CURL);
-#ifdef PLASMAPONG_CONFINEMENT_RSP
-    fluid_confinement_rsp(velocity,f->curl_fixed,fluid_confinement_strength(dt));
-#else
-    fluid_confinement_fixed(velocity,f->curl_fixed,fluid_confinement_strength(dt));
-#endif
-    PROFILE_END(PROFILE_CONFINEMENT);
-#endif
-#else
-    const float confinement=CELL*FLUID_CONFINEMENT*dt;
-    /* Curl confinement returns small vortices lost to coarse-grid advection. */
-    for(int y=1;y<FH-1;y++) for(int x=1;x<FW-1;x++) {
-        int k=y*FW+x;
-#ifdef PLASMAPONG_VELOCITY_FIXED
-        f->curl[k]=(velocity->v[k+1]-velocity->v[k-1]-velocity->u[k+FW]+velocity->u[k-FW])*(.5f/(CELL*VELOCITY_SCALE));
-#else
-        f->curl[k]=(velocity->v[k+1]-velocity->v[k-1]-velocity->u[k+FW]+velocity->u[k-FW])*.5f/CELL;
-#endif
-    }
-    PROFILE_END(PROFILE_CURL);
-    for(int y=2;y<FH-2;y++) for(int x=2;x<FW-2;x++) {
-        int k=y*FW+x;
-        float nx=fabsf(f->curl[k+1])-fabsf(f->curl[k-1]);
-        float ny=fabsf(f->curl[k+FW])-fabsf(f->curl[k-FW]);
-        float inv=1/sqrtf(nx*nx+ny*ny+.00001f);
-#ifdef PLASMAPONG_VELOCITY_FIXED
-        add_confinement(&velocity->u[k],ny*(inv*f->curl[k]*confinement));
-        add_confinement(&velocity->v[k],-nx*(inv*f->curl[k]*confinement));
-#else
-        velocity->u[k]+=ny*(inv*f->curl[k]*confinement);
-        velocity->v[k]-=nx*(inv*f->curl[k]*confinement);
-#endif
-    }
-    PROFILE_END(PROFILE_CONFINEMENT);
-#endif
-    }
     fluid_project(f);
 #endif
 }
@@ -486,22 +236,12 @@ void fluid_dye_step(Fluid *f,float dt) {
     PROFILE_BEGIN();
     FluidInk *next=&f->dye[f->dye_bank^1];
     const float grid_dt=dt/CELL,decay=1-.22f*dt,gold_decay=1-1.1f*dt;
-#ifdef PLASMAPONG_DYE_FIXED
     /* Deterministic temporal rounding; state remains safe to copy by value. */
     unsigned rounding=(f->dye_phase+=40503u)&65535u;
-#endif
-#ifdef PLASMAPONG_UPWIND
 #ifdef PLASMAPONG_UPWIND_RSP
     fluid_upwind_ink_rsp(next,ink_grid,velocity,grid_dt,decay,gold_decay,rounding);
 #else
     fluid_upwind_ink_cpu(next,ink_grid,velocity,grid_dt,decay,gold_decay,rounding);
-#endif
-#elif defined(PLASMAPONG_DYE_RSP)
-    fluid_advect_ink_rsp(next,ink_grid,velocity,grid_dt,decay,gold_decay,rounding);
-#elif defined(PLASMAPONG_DYE_FIXED)
-    fluid_advect_ink_reference(next,ink_grid,velocity,grid_dt,decay,gold_decay,rounding);
-#else
-    fluid_advect_dye(next,ink_grid,velocity,grid_dt,decay,gold_decay);
 #endif
     PROFILE_END(PROFILE_DYE_ADVECTION);
     f->dye_bank^=1;
@@ -586,19 +326,11 @@ void fluid_menu_source(Fluid *f,unsigned slot,float x,float y,float u,float v,fl
 }
 #endif
 static inline uint32_t dye_color(const FluidInk *ink_grid,int k) {
-#ifdef PLASMAPONG_DYE_FIXED
     int r=ink_grid->red[k],b=ink_grid->blue[k],g=ink_grid->gold[k];
     int red=(5*DYE_SCALE+210*r+20*b+255*g)>>13;
     int green=(9*DYE_SCALE+64*r+155*b+205*g)>>13;
     int blue=(22*DYE_SCALE+92*r+225*b+25*g)>>13;
     red=red>255?255:red; green=green>255?255:green; blue=blue>255?255:blue;
-#else
-    float r=ink_grid->red[k],b=ink_grid->blue[k],g=ink_grid->gold[k];
-    /* Cyan and coral currents mix with a small, faster-fading gold ball trail. */
-    int red=(int)clampf(5+210*r+20*b+255*g,0,255);
-    int green=(int)clampf(9+64*r+155*b+205*g,0,255);
-    int blue=(int)clampf(22+92*r+225*b+25*g,0,255);
-#endif
     return (uint32_t)((red<<16)|(green<<8)|blue);
 }
 uint32_t fluid_color(const Fluid *f,int k) { return dye_color(fluid_dye(f),k); }
@@ -629,15 +361,9 @@ static inline uint32_t speed_palette_color(unsigned speed) {
 }
 
 static inline uint32_t speed_color(const FluidFlow *flow,int k) {
-#ifdef PLASMAPONG_VELOCITY_FIXED
     int u=flow->u[k],v=flow->v[k];
     u=u<0?-u:u; v=v<0?-v:v;
     int speed=(u>v?u+v/2:v+u/2)/VELOCITY_SCALE;
-#else
-    int u=(int)fabsf(fluid_flow_decode(flow->u[k]));
-    int v=(int)fabsf(fluid_flow_decode(flow->v[k]));
-    int speed=u>v?u+v/2:v+u/2;
-#endif
     return speed_palette_color((unsigned)speed);
 }
 
@@ -695,18 +421,10 @@ static const uint32_t *view_palette(FluidView view) {
     return view==FLUID_VIEW_BANDS?bands:signed_colors;
 }
 static int view_flow(FluidFlowValue value) {
-#ifdef PLASMAPONG_VELOCITY_FIXED
     return value;
-#else
-    return (int)(value*VELOCITY_SCALE);
-#endif
 }
 static int view_density(const FluidInk *ink,int k) {
-#ifdef PLASMAPONG_DYE_FIXED
     return ink->red[k]+ink->blue[k]+ink->gold[k];
-#else
-    return (int)((ink->red[k]+ink->blue[k]+ink->gold[k])*DYE_SCALE);
-#endif
 }
 static uint32_t view_color(const Fluid *f,int k,FluidView view,const uint32_t *palette) {
     const FluidFlow *v=fluid_velocity(f);
@@ -739,7 +457,7 @@ static uint32_t view_color(const Fluid *f,int k,FluidView view,const uint32_t *p
     }
     int n;
     if(view==FLUID_VIEW_VORTEX) {
-        /* Recompute from current projected velocity: confinement scratch has
+        /* Recompute from current projected velocity: pressure scratch has
            already been overwritten by divergence. Screen y increases down. */
         n=(view_flow(v->v[right])-view_flow(v->v[left])-
            view_flow(v->u[below])+view_flow(v->u[above]))/16;

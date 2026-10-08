@@ -1,26 +1,17 @@
 #ifndef FLUID_CONFIG_H
 #define FLUID_CONFIG_H
 #ifndef PLASMAPONG_GRID_W
-#define PLASMAPONG_GRID_W 48
+#define PLASMAPONG_GRID_W 64
 #endif
 #ifndef PLASMAPONG_GRID_H
-#define PLASMAPONG_GRID_H 33
+#define PLASMAPONG_GRID_H 44
 #endif
 #ifndef PLASMAPONG_CELL_Q4
-#define PLASMAPONG_CELL_Q4 96
+#define PLASMAPONG_CELL_Q4 72
 #endif
-#ifndef PLASMAPONG_PRESSURE_Q3
-#define PLASMAPONG_PRESSURE_Q3 0
-#endif
-#ifndef PLASMAPONG_PRESSURE_FAST_GRADIENT
-#define PLASMAPONG_PRESSURE_FAST_GRADIENT 0
-#endif
-#ifndef PLASMAPONG_PRESSURE_WARM_START
-#define PLASMAPONG_PRESSURE_WARM_START 0
-#endif
-/* Portable reference defaults; the Makefile supplies the official ROM settings. */
+/* Shared official defaults for portable checks and ROM builds. */
 #ifndef PLASMAPONG_PRESSURE_PASSES
-#define PLASMAPONG_PRESSURE_PASSES 8
+#define PLASMAPONG_PRESSURE_PASSES 1
 #endif
 #if PLASMAPONG_PRESSURE_PASSES < 1 || PLASMAPONG_PRESSURE_PASSES > 8
 #error pressure passes must be between one and eight

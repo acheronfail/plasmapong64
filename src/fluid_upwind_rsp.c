@@ -12,7 +12,7 @@ void fluid_upwind_rsp_init(void) {
 /* Keep the backend initialization contract when the streaming overlay replaces
    the complete-grid dye/velocity overlay. */
 void fluid_dye_rsp_init(void) { fluid_upwind_rsp_init(); }
-typedef struct { uint32_t step,unused,channels,rounding,decay[3],pad; } UpwindParams;
+typedef struct { uint32_t step,limits,channels,rounding,decay[3],pad; } UpwindParams;
 static void channels(int16_t *next,const int16_t *source,FluidVelocityFixed *velocity,
         unsigned count,float grid_dt,const unsigned *decay,unsigned rounding,bool wait) {
     static _Alignas(16) UpwindParams params;
@@ -21,39 +21,21 @@ static void channels(int16_t *next,const int16_t *source,FluidVelocityFixed *vel
     fluid_upwind_rsp_init();
     PROFILE_BEGIN();
     unsigned step=fluid_upwind_step(grid_dt);
-#ifndef PLASMAPONG_UPWIND_GPU_LIMIT
-    fluid_upwind_clamp(velocity,fluid_upwind_limit(step));
-#endif
     PROFILE_END(count==3?PROFILE_UPWIND_LIMIT_DYE:PROFILE_UPWIND_LIMIT_VELOCITY);
     params=(UpwindParams){.step=step,.channels=count,.rounding=rounding};
-#ifdef PLASMAPONG_UPWIND_INLINE_LIMIT
     unsigned limit=fluid_upwind_limit(step);
-    params.unused=limit|(fluid_upwind_safe_limit(limit)<<16);
-#endif
+    params.limits=limit|(fluid_upwind_safe_limit(limit)<<16);
     for(unsigned i=0;i<count;i++) { assert(decay[i]<=32768); params.decay[i]=decay[i]; }
     data_cache_hit_writeback(&params,sizeof(params));
-#ifdef PLASMAPONG_UPWIND_GPU_LIMIT
     data_cache_hit_writeback_invalidate(velocity,sizeof(*velocity));
-#else
-    data_cache_hit_writeback(velocity,sizeof(*velocity));
-#endif
     data_cache_hit_writeback(source,count*FN*sizeof(*source));
     data_cache_hit_invalidate(next,count*FN*sizeof(*next));
     fluid_queue_begin();
-#ifdef PLASMAPONG_UPWIND_GPU_LIMIT
-#ifndef PLASMAPONG_UPWIND_INLINE_LIMIT
-    unsigned limit=fluid_upwind_limit(step);
-    if(limit<2*VELOCITY_LIMIT)
-        rspq_write(overlay,1,PhysicalAddr(velocity->u),PhysicalAddr(velocity->v),limit,fluid_upwind_safe_limit(limit));
-#endif
-#endif
     rspq_write(overlay,0,PhysicalAddr(source),PhysicalAddr(velocity),PhysicalAddr(next),PhysicalAddr(&params));
     if(!wait) return;
     fluid_queue_wait();
     data_cache_hit_invalidate(next,count*FN*sizeof(*next));
-#ifdef PLASMAPONG_UPWIND_GPU_LIMIT
     data_cache_hit_invalidate(velocity,sizeof(*velocity));
-#endif
     PROFILE_END(count==3?PROFILE_UPWIND_JOB_DYE:PROFILE_UPWIND_JOB_VELOCITY);
 }
 void fluid_upwind_velocity_rsp(FluidVelocityFixed *next,FluidVelocityFixed *velocity,

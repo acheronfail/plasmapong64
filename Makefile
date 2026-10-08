@@ -1,83 +1,26 @@
-# Official fluid configuration. Historical backend comparisons opt into legacy.
-FLUID_PRESET ?= current
-ifeq ($(FLUID_PRESET),current)
+# One production fluid solver; tune its parameters without selecting old backends.
+ifneq ($(FLUID_PRESET),)
+$(error FLUID_PRESET was removed; use the official defaults)
+endif
 GRID_W ?= 64
 GRID_H ?= 44
-FORCE_FIXED ?= 1
-UPWIND ?= 1
-UPWIND_GPU_LIMIT ?= 1
-UPWIND_PREFETCH ?= 1
-UPWIND_INLINE_LIMIT ?= 1
-VELOCITY_CHAIN ?= 1
-FLOW_DAMPING ?= .16f
-FLOW_CONFINEMENT ?= 0.0f
+CELL_Q4 ?= $(if $(filter 64,$(GRID_W)),72,96)
 PRESSURE_PASSES ?= 1
-PRESSURE_Q3 ?= 1
-PRESSURE_FAST_GRADIENT ?= 1
-PRESSURE_WARM_START ?= 1
+FLOW_DAMPING ?= .16f
 BUILD_DIR ?= build/official64
 ROM ?= plasmapong
-else ifneq ($(FLUID_PRESET),legacy)
-$(error FLUID_PRESET must be current or legacy)
-endif
-
-ADVECTION_CHAIN ?= 1
-ADVECTION_PIPELINE ?= 1
-GRADIENT_PIPELINE ?= 1
 CPU_LTO ?= 1
-GRID_W ?= 48
-GRID_H ?= 33
-CELL_Q4 ?= $(if $(filter 64,$(GRID_W)),72,96)
-TRACE_ROWS ?= $(if $(filter 33,$(GRID_H)),3,1)
-CONFINEMENT_CHAIN ?= 1
-PROJECTION_CHAIN ?= 1
 PIXELS_CHAIN ?= 1
 HIRES_FONT_FORMAT ?= RGBA16
-SPLAT_PLAN ?= 1
-FORCE_FIXED ?= 0
-UPWIND ?= 0
-UPWIND_RSP ?= $(UPWIND)
-UPWIND_GPU_LIMIT ?= 0
-UPWIND_PREFETCH ?= 0
-UPWIND_INLINE_LIMIT ?= 0
-VELOCITY_CHAIN ?= 0
-FLOW_DAMPING ?= .08f
-FLOW_CONFINEMENT ?= 1.25f
-SOUND_STEADY ?= 1
-PRESSURE_VECTOR_SUM ?= 1
-PRESSURE_PASSES ?= 8
-PRESSURE_Q3 ?= 0
-PRESSURE_FAST_GRADIENT ?= 0
-PRESSURE_WARM_START ?= 0
 AUDIO_STREAM ?= 1
+SOUND_STEADY ?= 1
 EXPANSION_BANKS ?= 1
 SPEED_RSP ?= 1
-GRADIENT_RSP ?= 1
-PREPARE_RSP ?= 1
-FLUID_RSP ?= 1
-DYE_RSP ?= 1
-DYE_FIXED ?= $(DYE_RSP)
-VELOCITY_RSP ?= 1
-VELOCITY_FIXED ?= $(VELOCITY_RSP)
-CONFINEMENT_RSP ?= 1
-CONFINEMENT_FIXED ?= $(CONFINEMENT_RSP)
-# Real-console defaults: keep simulation jobs out of the drawing backlog, but
-# release high priority between batches so rendering overlaps CPU work.
-# Queue profiling and comparison backends retain their supported scheduling.
-FLUID_HIGHPRI ?= $(if $(filter 1,$(QUEUE_PROFILE)),0,$(if $(filter 11111,$(FLUID_RSP)$(DYE_RSP)$(VELOCITY_RSP)$(CONFINEMENT_RSP)$(PREPARE_RSP)),1,0))
-FLUID_HIGHPRI_YIELD ?= $(FLUID_HIGHPRI)
-MENU_STAMPS ?= $(if $(filter 11,$(VELOCITY_FIXED)$(DYE_FIXED)),1,0)
+MENU_STAMPS ?= 1
 MENU_LABEL_BLOCK ?= $(if $(filter 1,$(FRAME_BLOCK)),0,1)
-# Keep default objects separate from the old CPU build and comparison builds.
-ifeq ($(CONFINEMENT_RSP),1)
-BUILD_DIR ?= build/rsp_confinement
-ROM ?= plasmapong
-else ifeq ($(CONFINEMENT_FIXED),1)
-BUILD_DIR ?= build/confinement_cpu
-ROM ?= plasmapong-confinement-cpu
-endif
-BUILD_DIR ?= build/$(if $(filter 1,$(VELOCITY_RSP)),rsp_velocity,$(if $(filter 1,$(VELOCITY_FIXED)),velocity_cpu,$(if $(filter 1,$(DYE_RSP)),rsp_dye,$(if $(filter 1,$(DYE_FIXED)),dye_cpu,$(if $(filter 1,$(FLUID_RSP)),rsp,cpu)))))
-ROM ?= $(if $(filter 1,$(VELOCITY_RSP)),plasmapong-float-confinement,$(if $(filter 1,$(VELOCITY_FIXED)),plasmapong-velocity-cpu,$(if $(filter 1,$(DYE_RSP)),plasmapong-float-velocity,$(if $(filter 1,$(DYE_FIXED)),plasmapong-dye-cpu,plasmapong-float))))
+FLUID_HIGHPRI ?= 1
+FLUID_HIGHPRI_YIELD ?= 1
+
 .DEFAULT_GOAL := all
 ifeq ($(N64_INST),)
 $(error N64_INST is unset. Use ./tools/build-rom.sh or install libdragon)
@@ -90,82 +33,20 @@ $(error GRID_W currently supports 48 or 64)
 endif
 ifeq ($(GRID_W),64)
 ifneq ($(GRID_H)$(CELL_Q4),4472)
-$(error GRID_W=64 currently requires GRID_H=44 CELL_Q4=72)
-endif
-ifneq ($(TRACE_ROWS),1)
-$(error the 44-row grid requires TRACE_ROWS=1)
-endif
-ifneq ($(UPWIND)$(UPWIND_RSP)$(PRESSURE_Q3),111)
-$(error GRID_W=64 requires UPWIND=1 UPWIND_RSP=1 PRESSURE_Q3=1)
+$(error GRID_W=64 requires GRID_H=44 CELL_Q4=72)
 endif
 else
 ifneq ($(GRID_H)$(CELL_Q4),3396)
-$(error GRID_W=48 currently requires GRID_H=33 CELL_Q4=96)
+$(error GRID_W=48 requires GRID_H=33 CELL_Q4=96)
 endif
-endif
-ifeq ($(VELOCITY_CHAIN),1)
-ifneq ($(UPWIND)$(UPWIND_RSP)$(UPWIND_GPU_LIMIT)$(CONFINEMENT_CHAIN)$(CONFINEMENT_RSP)$(PRESSURE_FAST_GRADIENT)$(FLUID_RSP)$(PREPARE_RSP)$(FLUID_HIGHPRI),111111111)
-$(error VELOCITY_CHAIN=1 requires complete high-priority upwind/compact-projection RSP backends)
-endif
-N64_CFLAGS += -DPLASMAPONG_VELOCITY_CHAIN
-N64_RSPASFLAGS += -DPLASMAPONG_VELOCITY_CHAIN
-endif
-N64_CFLAGS += -DPLASMAPONG_FLOW_DAMPING=$(FLOW_DAMPING)
-N64_CFLAGS += -DPLASMAPONG_FLOW_CONFINEMENT=$(FLOW_CONFINEMENT)
-ifeq ($(UPWIND),1)
-ifneq ($(VELOCITY_FIXED)$(DYE_FIXED),11)
-$(error UPWIND=1 requires fixed velocity and dye)
-endif
-N64_CFLAGS += -DPLASMAPONG_UPWIND
 endif
 ifeq ($(filter $(PRESSURE_PASSES),1 2 3 4 5 6 7 8),)
 $(error PRESSURE_PASSES must be between 1 and 8)
 endif
-N64_CFLAGS += -DPLASMAPONG_PRESSURE_PASSES=$(PRESSURE_PASSES)
+N64_CFLAGS += -DPLASMAPONG_FLOW_DAMPING=$(FLOW_DAMPING) -DPLASMAPONG_PRESSURE_PASSES=$(PRESSURE_PASSES)
 N64_RSPASFLAGS += -DPLASMAPONG_PRESSURE_PASSES=$(PRESSURE_PASSES)
-N64_CFLAGS += -DPLASMAPONG_PRESSURE_Q3=$(PRESSURE_Q3)
-N64_RSPASFLAGS += -DPLASMAPONG_PRESSURE_Q3=$(PRESSURE_Q3)
-N64_CFLAGS += -DPLASMAPONG_PRESSURE_WARM_START=$(PRESSURE_WARM_START)
-N64_RSPASFLAGS += -DPLASMAPONG_PRESSURE_WARM_START=$(PRESSURE_WARM_START)
-ifeq ($(PRESSURE_WARM_START),1)
-ifneq ($(PRESSURE_Q3),1)
-$(error PRESSURE_WARM_START=1 requires PRESSURE_Q3=1)
-endif
-endif
-ifeq ($(UPWIND_INLINE_LIMIT),1)
-ifneq ($(UPWIND)$(UPWIND_RSP)$(UPWIND_GPU_LIMIT),111)
-$(error UPWIND_INLINE_LIMIT=1 requires UPWIND=1 UPWIND_RSP=1 UPWIND_GPU_LIMIT=1)
-endif
-N64_CFLAGS += -DPLASMAPONG_UPWIND_INLINE_LIMIT
-N64_RSPASFLAGS += -DPLASMAPONG_UPWIND_INLINE_LIMIT
-endif
-ifeq ($(UPWIND_PREFETCH),1)
-ifneq ($(UPWIND)$(UPWIND_RSP),11)
-$(error UPWIND_PREFETCH=1 requires UPWIND=1 UPWIND_RSP=1)
-endif
-N64_RSPASFLAGS += -DPLASMAPONG_UPWIND_PREFETCH
-endif
-ifeq ($(UPWIND_GPU_LIMIT),1)
-ifneq ($(UPWIND)$(UPWIND_RSP),11)
-$(error UPWIND_GPU_LIMIT=1 requires UPWIND=1 UPWIND_RSP=1)
-endif
-N64_CFLAGS += -DPLASMAPONG_UPWIND_GPU_LIMIT
-N64_RSPASFLAGS += -DPLASMAPONG_UPWIND_GPU_LIMIT
-endif
-N64_CFLAGS += -DPLASMAPONG_PRESSURE_FAST_GRADIENT=$(PRESSURE_FAST_GRADIENT)
-ifeq ($(PRESSURE_FAST_GRADIENT),1)
-ifneq ($(PRESSURE_Q3)$(FLUID_RSP)$(PREPARE_RSP),111)
-$(error PRESSURE_FAST_GRADIENT=1 requires PRESSURE_Q3=1 FLUID_RSP=1 PREPARE_RSP=1)
-endif
-src_short_gradient := src/fluid_gradient_short_rsp.c
-rsp_short_gradient := $(BUILD_DIR)/src/rsp_gradient_short.o
-endif
-ifeq ($(FORCE_FIXED),1)
-ifneq ($(VELOCITY_FIXED)$(DYE_FIXED)$(SPLAT_PLAN),111)
-$(error FORCE_FIXED=1 requires fixed velocity/dye and SPLAT_PLAN=1)
-endif
-N64_CFLAGS += -DPLASMAPONG_FORCE_FIXED
-endif
+N64_CFLAGS += -DPLASMAPONG_VELOCITY_CHAIN -DPLASMAPONG_UPWIND_RSP -DPLASMAPONG_FLUID_RSP -DPLASMAPONG_PREPARE_RSP -DPLASMAPONG_PROJECTION_CHAIN
+N64_RSPASFLAGS += -DPLASMAPONG_VELOCITY_CHAIN
 ifeq ($(PIXELS_CHAIN),1)
 N64_CFLAGS += -DPLASMAPONG_PIXELS_CHAIN
 endif
@@ -174,18 +55,13 @@ N64_CFLAGS += -flto
 # n64.mk links through g++; keep these as driver flags, not -Wl options.
 N64_CXXFLAGS += -flto
 endif
-src := src/main.c src/game.c src/arcade.c src/fluid.c src/fluid_advection.c src/ui.c src/sound.c src/save.c src/save_n64.c $(src_short_gradient)
-rsp_obj += $(rsp_short_gradient)
-ifeq ($(UPWIND),1)
-src += src/fluid_upwind.c
-ifeq ($(UPWIND_RSP),1)
-ifneq ($(FLUID_RSP),1)
-$(error UPWIND_RSP=1 requires FLUID_RSP=1)
-endif
-src += src/fluid_upwind_rsp.c
-rsp_obj += $(BUILD_DIR)/src/rsp_upwind.o
-N64_CFLAGS += -DPLASMAPONG_UPWIND_RSP
-endif
+src := src/main.c src/game.c src/arcade.c src/fluid.c src/ui.c src/sound.c src/save.c src/save_n64.c \
+       src/fluid_dye_fixed.c src/fluid_upwind.c src/fluid_upwind_rsp.c src/fluid_rsp.c \
+       src/fluid_prepare_rsp.c src/fluid_gradient_short_rsp.c
+rsp_obj := $(addprefix $(BUILD_DIR)/src/,rsp_fluid.o rsp_upwind.o rsp_prepare.o rsp_gradient_short.o)
+# This pinned n64.mk does not sanitize hyphens in embedded ucode symbols.
+ifneq ($(findstring -,$(BUILD_DIR)),)
+$(error BUILD_DIR must not contain hyphens)
 endif
 ifeq ($(RDP_TAIL_SYNC),1)
 src += src/rdpq_tail_sync.c
@@ -195,109 +71,14 @@ ifeq ($(EXPANSION_BANKS),1)
 src += src/expansion_n64.c
 N64_LDFLAGS += --wrap malloc_uncached_aligned
 endif
-ifeq ($(FLUID_RSP),1)
-# This pinned n64.mk does not sanitize hyphens in embedded ucode symbols.
-ifneq ($(findstring -,$(BUILD_DIR)),)
-$(error FLUID_RSP requires BUILD_DIR without hyphens; use build/rsp or build/rsp_benchmark)
-endif
-src += src/fluid_rsp.c
-rsp_obj += $(BUILD_DIR)/src/rsp_fluid.o
-N64_CFLAGS += -DPLASMAPONG_FLUID_RSP
-endif
-ifeq ($(DYE_FIXED),1)
-src += src/fluid_dye_fixed.c
-N64_CFLAGS += -DPLASMAPONG_DYE_FIXED
-endif
-ifeq ($(DYE_RSP),1)
-ifneq ($(DYE_FIXED),1)
-$(error DYE_RSP=1 requires DYE_FIXED=1)
-endif
-ifneq ($(FLUID_RSP),1)
-$(error DYE_RSP=1 requires FLUID_RSP=1)
-endif
-ifneq ($(UPWIND_RSP),1)
-src += src/fluid_dye_rsp.c
-rsp_obj += $(BUILD_DIR)/src/rsp_dye.o
-endif
-N64_CFLAGS += -DPLASMAPONG_DYE_RSP
-endif
-ifeq ($(VELOCITY_FIXED),1)
-ifneq ($(DYE_FIXED),1)
-$(error VELOCITY_FIXED=1 requires DYE_FIXED=1)
-endif
-src += src/fluid_velocity_fixed.c
-N64_CFLAGS += -DPLASMAPONG_VELOCITY_FIXED
-endif
-ifeq ($(VELOCITY_RSP),1)
-ifneq ($(DYE_RSP),1)
-$(error VELOCITY_RSP=1 requires DYE_RSP=1)
-endif
-ifneq ($(VELOCITY_FIXED),1)
-$(error VELOCITY_RSP=1 requires VELOCITY_FIXED=1)
-endif
-N64_CFLAGS += -DPLASMAPONG_VELOCITY_RSP
-endif
-ifeq ($(CONFINEMENT_FIXED),1)
-ifneq ($(VELOCITY_FIXED),1)
-$(error CONFINEMENT_FIXED=1 requires VELOCITY_FIXED=1)
-endif
-src += src/fluid_confinement.c
-N64_CFLAGS += -DPLASMAPONG_CONFINEMENT_FIXED
-endif
-ifeq ($(CONFINEMENT_RSP),1)
-ifneq ($(findstring -,$(BUILD_DIR)),)
-$(error CONFINEMENT_RSP requires BUILD_DIR without hyphens)
-endif
-ifneq ($(CONFINEMENT_FIXED),1)
-$(error CONFINEMENT_RSP=1 requires CONFINEMENT_FIXED=1)
-endif
-src += src/fluid_confinement_rsp.c
-rsp_obj += $(BUILD_DIR)/src/rsp_confinement.o
-N64_CFLAGS += -DPLASMAPONG_CONFINEMENT_RSP
-ifeq ($(CONFINEMENT_CHAIN),1)
-N64_CFLAGS += -DPLASMAPONG_CONFINEMENT_CHAIN
-endif
-endif
-ifeq ($(PREPARE_RSP)$(VELOCITY_RSP),11)
-src += src/fluid_prepare_rsp.c
-rsp_obj += $(BUILD_DIR)/src/rsp_prepare.o
-N64_CFLAGS += -DPLASMAPONG_PREPARE_RSP
-ifeq ($(PROJECTION_CHAIN)$(FLUID_RSP)$(GRADIENT_RSP),111)
-N64_CFLAGS += -DPLASMAPONG_PROJECTION_CHAIN
-endif
-ifeq ($(ADVECTION_CHAIN),1)
-N64_CFLAGS += -DPLASMAPONG_ADVECTION_CHAIN
-endif
-ifeq ($(GRADIENT_RSP),1)
-N64_CFLAGS += -DPLASMAPONG_GRADIENT_RSP
-endif
 ifeq ($(SPEED_RSP),1)
 N64_CFLAGS += -DPLASMAPONG_SPEED_RSP
 endif
-endif
-ifeq ($(CONFINEMENT_TEST),1)
-ifneq ($(CONFINEMENT_FIXED),1)
-$(error CONFINEMENT_TEST=1 requires CONFINEMENT_FIXED=1)
-endif
-N64_CFLAGS += -DPLASMAPONG_CONFINEMENT_TEST
-endif
-ifeq ($(VELOCITY_TEST),1)
-ifneq ($(VELOCITY_FIXED),1)
-$(error VELOCITY_TEST=1 requires VELOCITY_FIXED=1)
-endif
-N64_CFLAGS += -DPLASMAPONG_VELOCITY_TEST
-endif
 ifeq ($(RSP_TEST),1)
-ifneq ($(FLUID_RSP),1)
-$(error RSP_TEST=1 requires FLUID_RSP=1)
-endif
 N64_CFLAGS += -DPLASMAPONG_RSP_TEST
 endif
 N64_CFLAGS += -Wall -Wextra -Werror
 ifeq ($(UPWIND_TEST),1)
-ifneq ($(UPWIND)$(UPWIND_RSP),11)
-$(error UPWIND_TEST=1 requires UPWIND=1 UPWIND_RSP=1)
-endif
 N64_CFLAGS += -DPLASMAPONG_UPWIND_TEST
 endif
 ifeq ($(PREPARE_TEST),1)
@@ -306,37 +87,12 @@ endif
 ifeq ($(AUDIO_STREAM),1)
 N64_CFLAGS += -DPLASMAPONG_AUDIO_STREAM
 endif
-ifneq ($(filter $(TRACE_ROWS),1 3),$(TRACE_ROWS))
-$(error TRACE_ROWS must be 1 or 3)
-endif
-N64_RSPASFLAGS += -DPLASMAPONG_TRACE_ROWS=$(TRACE_ROWS)
-ifeq ($(ADVECTION_PIPELINE),1)
-N64_RSPASFLAGS += -DPLASMAPONG_ADVECTION_PIPELINE
-endif
-ifeq ($(GRADIENT_PIPELINE),1)
-N64_RSPASFLAGS += -DPLASMAPONG_GRADIENT_PIPELINE
-endif
-ifeq ($(PRESSURE_VECTOR_SUM),1)
-N64_RSPASFLAGS += -DPLASMAPONG_PRESSURE_VECTOR_SUM
-endif
-ifeq ($(SPLAT_PLAN),1)
-N64_CFLAGS += -DPLASMAPONG_SPLAT_PLAN
-endif
 ifeq ($(SOUND_STEADY),1)
 N64_CFLAGS += -DPLASMAPONG_SOUND_STEADY
 $(BUILD_DIR)/src/sound.o: CFLAGS += -O3
 endif
 ifeq ($(RDP_VALIDATE),1)
 N64_CFLAGS += -DPLASMAPONG_RDP_VALIDATE
-endif
-ifeq ($(ADVECTION_TEST),1)
-N64_CFLAGS += -DPLASMAPONG_ADVECTION_TEST
-endif
-ifeq ($(DYE_TEST),1)
-ifneq ($(DYE_RSP),1)
-$(error DYE_TEST=1 requires DYE_RSP=1)
-endif
-N64_CFLAGS += -DPLASMAPONG_DYE_TEST
 endif
 ifeq ($(DRAW_SYNC_PROFILE),1)
 N64_CFLAGS += -DPLASMAPONG_DRAW_SYNC_PROFILE
@@ -348,8 +104,8 @@ ifeq ($(FLUID_PROFILE),1)
 N64_CFLAGS += -DPLASMAPONG_FLUID_PROFILE
 endif
 ifeq ($(QUEUE_PROFILE),1)
-ifneq ($(FLUID_PROFILE)$(VELOCITY_RSP),11)
-$(error QUEUE_PROFILE=1 requires FLUID_PROFILE=1 and VELOCITY_RSP=1)
+ifneq ($(FLUID_PROFILE),1)
+$(error QUEUE_PROFILE=1 requires FLUID_PROFILE=1)
 endif
 N64_CFLAGS += -DPLASMAPONG_QUEUE_PROFILE
 endif
@@ -409,15 +165,12 @@ ifeq ($(INK16),1)
 N64_CFLAGS += -DPLASMAPONG_INK16
 endif
 ifeq ($(INK16_RSP),1)
-ifneq ($(PREPARE_RSP)$(SPEED_RSP)$(PIXELS_CHAIN),111)
-$(error INK16_RSP=1 requires PREPARE_RSP=1 SPEED_RSP=1 PIXELS_CHAIN=1)
+ifneq ($(SPEED_RSP)$(PIXELS_CHAIN),11)
+$(error INK16_RSP=1 requires SPEED_RSP=1 PIXELS_CHAIN=1)
 endif
 N64_CFLAGS += -DPLASMAPONG_INK16 -DPLASMAPONG_INK16_RSP
 endif
 ifeq ($(MENU_STAMPS),1)
-ifneq ($(VELOCITY_FIXED)$(DYE_FIXED),11)
-$(error MENU_STAMPS=1 requires VELOCITY_FIXED=1 DYE_FIXED=1)
-endif
 N64_CFLAGS += -DPLASMAPONG_MENU_STAMPS
 endif
 ifeq ($(MENU_LABEL_BLOCK),1)
@@ -427,9 +180,6 @@ endif
 N64_CFLAGS += -DPLASMAPONG_MENU_LABEL_BLOCK
 endif
 ifeq ($(FLUID_HIGHPRI),1)
-ifneq ($(FLUID_RSP)$(DYE_RSP)$(VELOCITY_RSP)$(CONFINEMENT_RSP)$(PREPARE_RSP),11111)
-$(error FLUID_HIGHPRI=1 requires all five RSP backends)
-endif
 ifeq ($(QUEUE_PROFILE),1)
 $(error FLUID_HIGHPRI=1 cannot use the low-priority QUEUE_PROFILE syncpoint)
 endif
@@ -442,7 +192,7 @@ endif
 N64_CFLAGS += -DPLASMAPONG_FLUID_HIGHPRI_YIELD
 endif
 # Inline the fluid sampling loops without expanding the rest of the ROM.
-$(BUILD_DIR)/src/fluid.o $(BUILD_DIR)/src/fluid_advection.o $(BUILD_DIR)/src/fluid_dye_fixed.o $(BUILD_DIR)/src/fluid_velocity_fixed.o $(BUILD_DIR)/src/fluid_confinement.o: CFLAGS += -O3
+$(BUILD_DIR)/src/fluid.o $(BUILD_DIR)/src/fluid_dye_fixed.o: CFLAGS += -O3
 $(BUILD_DIR)/src/game.o $(BUILD_DIR)/src/ui.o: CFLAGS += -O3
 $(BUILD_DIR)/src/main.o: CFLAGS += -O3
 ifneq ($(SMOKE_MENU_VIEW),)
