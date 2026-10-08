@@ -21,6 +21,7 @@ static void place_bats(Game *g) {
     g->bat[3]=(Bat){.x=ARENA_W*.5f,.y=20};
 }
 static void attach_ball(Game *g,int p,float distance) {
+    distance*=game_object_scale(g);
     g->bx=g->bat[p].x+normal_x(game_side(g,p))*distance;
     g->by=g->bat[p].y+normal_y(game_side(g,p))*distance;
 }
@@ -157,7 +158,7 @@ static void corner_bounce(Game *g) {
         float x=corner&1?game_right(g)-g->bx:g->bx-game_left(g);
         float y=corner&2?ARENA_H-g->by:g->by;
         /* Unit diagonal normal is (nx,ny)/sqrt(2). Keep the whole ball inside. */
-        float penetration=CORNER_SIZE+BALL_RADIUS*1.41421356f-x-y;
+        float penetration=CORNER_SIZE+game_ball_radius(g)*1.41421356f-x-y;
         if(penetration<=0) continue;
         g->bx+=nx*penetration*.5f; g->by+=ny*penetration*.5f;
         float velocity=g->bvx*nx+g->bvy*ny;
@@ -168,6 +169,7 @@ static void corner_bounce(Game *g) {
     }
 }
 static void ball_step(Game *g) {
+    const float radius=game_ball_radius(g);
     const float step=game_dt(g); const float emission=game_emission(g);
     if(g->serve>0) { g->serve=maxf(0,g->serve-step); return; }
     if(g->held>=0) {
@@ -195,13 +197,13 @@ static void ball_step(Game *g) {
             if(game_alive(g,p)) side_player[game_side(g,p)]=(int)p;
         bool top=side_player[3]<0;
         bool bottom=side_player[2]<0;
-        if(top && g->by<BALL_RADIUS) { g->by=BALL_RADIUS; g->bvy=fabsf(g->bvy); g->sound_events|=SOUND_WALL; }
-        if(bottom && g->by>ARENA_H-BALL_RADIUS) { g->by=ARENA_H-BALL_RADIUS; g->bvy=-fabsf(g->bvy); g->sound_events|=SOUND_WALL; }
-        if(side_player[0]<0 && g->bx<game_left(g)+BALL_RADIUS) {
-            g->bx=game_left(g)+BALL_RADIUS; g->bvx=fabsf(g->bvx); g->sound_events|=SOUND_WALL;
+        if(top && g->by<radius) { g->by=radius; g->bvy=fabsf(g->bvy); g->sound_events|=SOUND_WALL; }
+        if(bottom && g->by>ARENA_H-radius) { g->by=ARENA_H-radius; g->bvy=-fabsf(g->bvy); g->sound_events|=SOUND_WALL; }
+        if(side_player[0]<0 && g->bx<game_left(g)+radius) {
+            g->bx=game_left(g)+radius; g->bvx=fabsf(g->bvx); g->sound_events|=SOUND_WALL;
         }
-        if(side_player[1]<0 && g->bx>game_right(g)-BALL_RADIUS) {
-            g->bx=game_right(g)-BALL_RADIUS; g->bvx=-fabsf(g->bvx); g->sound_events|=SOUND_WALL;
+        if(side_player[1]<0 && g->bx>game_right(g)-radius) {
+            g->bx=game_right(g)-radius; g->bvx=-fabsf(g->bvx); g->sound_events|=SOUND_WALL;
         }
         for(unsigned p=0;p<game_players(g);p++) {
             if(!game_alive(g,p)) continue;
@@ -214,26 +216,27 @@ static void ball_step(Game *g) {
             float dx=g->bx-px,dy=g->by-py;
             float rvx=g->bvx-b->vx,rvy=g->bvy-b->vy;
             float normal=dx*nx+dy*ny,tangent=side<2?dy:dx;
-            float half=game_bat_half(g,p),capture=half+4;
+            float half=game_bat_half(g,p),capture=half+4*game_object_scale(g);
             if(b->sucking && normal>=0 && dx*dx+dy*dy<capture*capture &&
                rvx*rvx+rvy*rvy<145*145 && u*u+v*v<210*210) {
                 g->held=p; attach_ball(g,p,8); return;
             }
             /* Circle versus the solid paddle rectangle. The nearest point
                gives rear/edge/corner hits their own outward contact normal. */
-            float hx=side<2?3:half,hy=side<2?half:3;
+            float depth=game_bat_depth(g);
+            float hx=side<2?depth:half,hy=side<2?half:depth;
             float cx=dx-clampf(dx,-hx,hx),cy=dy-clampf(dy,-hy,hy);
             float distance2=cx*cx+cy*cy;
-            if(distance2>=BALL_RADIUS*BALL_RADIUS) continue;
+            if(distance2>=radius*radius) continue;
             float penetration;
             if(distance2>0) {
                 float distance=sqrtf(distance2);
-                cx/=distance; cy/=distance; penetration=BALL_RADIUS-distance;
+                cx/=distance; cy/=distance; penetration=radius-distance;
             } else {
                 /* Recover an embedded centre through the nearest face. */
                 float ex=hx-fabsf(dx),ey=hy-fabsf(dy);
-                if(ex<ey) { cx=dx<0?-1:1; cy=0; penetration=BALL_RADIUS+ex; }
-                else { cx=0; cy=dy<0?-1:1; penetration=BALL_RADIUS+ey; }
+                if(ex<ey) { cx=dx<0?-1:1; cy=0; penetration=radius+ex; }
+                else { cx=0; cy=dy<0?-1:1; penetration=radius+ey; }
             }
             g->bx+=cx*penetration; g->by+=cy*penetration;
             float approach=rvx*cx+rvy*cy;
@@ -254,8 +257,8 @@ static void ball_step(Game *g) {
             fluid_splat(&g->fluid,g->bx,g->by,13,cx*35,cy*35,.35f,game_player_palette(g,p));
         }
         corner_bounce(g);
-        int missed=g->bx<game_left(g)-BALL_RADIUS?0:g->bx>game_right(g)+BALL_RADIUS?1:
-            g->by>ARENA_H+BALL_RADIUS?2:g->by<-BALL_RADIUS?3:-1;
+        int missed=g->bx<game_left(g)-radius?0:g->bx>game_right(g)+radius?1:
+            g->by>ARENA_H+radius?2:g->by<-radius?3:-1;
         if(missed>=0 && side_player[missed]>=0) {
             missed=side_player[missed];
             g->sound_events|=SOUND_GOAL;
@@ -454,7 +457,7 @@ void game_step(Game *g,const Input physical[MAX_PLAYERS]) {
         unsigned side=game_side(g,p);
         Bat *b=&g->bat[p]; float nx=normal_x(side),ny=normal_y(side);
         float x=b->x,y=b->y;
-        float end=game_bat_half(g,p)+2+(game_square(g)?CORNER_SIZE:0);
+        float end=game_bat_half(g,p)+2*game_object_scale(g)+(game_square(g)?CORNER_SIZE:0);
         /* Duels can approach within two outlined paddle widths of centre. */
         float depth=game_square(g)?SQUARE_BAT_DEPTH:ARENA_W*.5f-20;
         if(side<2) {

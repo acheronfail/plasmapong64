@@ -193,7 +193,8 @@ static void square_court(const Game *g) {
     rect(left+CORNER_SIZE,OY-2,right-left-2*CORNER_SIZE,2,g->players==4 && game_alive(g,3)?VIOLET:0x737d8a);
 }
 /* Rotate a paddle's details, including its charge and recovery meters. */
-static void bat_rect(int p,float x,float y,float dx,float dy,float w,float h,uint32_t c) {
+static void bat_rect(float scale,int p,float x,float y,float dx,float dy,float w,float h,uint32_t c) {
+    dx*=scale; dy*=scale; w*=scale; h*=scale;
     if(p<2) rect(x+dx,y+dy,w,h,c);
     else rect(x+dy,y+dx,h,w,c);
 }
@@ -409,13 +410,14 @@ void ui_draw(const Game *g) {
             rect(x,OY,2,ARENA_H,player_colors[game_player_palette(g,p)]);
         }
     }
+    const float object_scale=game_object_scale(g);
     float suction_radius=0;
     bool radius_ready=false;
     for(unsigned p=0;p<game_players(g);p++) {
         if(!game_alive(g,p)) continue;
         unsigned palette=game_player_palette(g,p);
         const Bat *b=&g->bat[p]; uint32_t c=player_colors[palette];
-        float half=game_bat_half(g,p);
+        float half=game_bat_half(g,p)/object_scale;
         bool broken=b->cooldown_ticks>0;
         if(broken) c=0x737d8a;
         float x=OX+b->x,y=OY+b->y;
@@ -423,17 +425,17 @@ void ui_draw(const Game *g) {
             if(!radius_ready) { suction_radius=24+2*sinf(g->elapsed*7); radius_ready=true; }
             ring(g,x,y,suction_radius,c);
             if(g->held==(int)p)
-                bat_rect(game_side(g,p),x,y,-9,half+5,18*b->charge,2,b->charge>=1?0x40ff70:c);
+                bat_rect(object_scale,game_side(g,p),x,y,-9,half+5,18*b->charge,2,b->charge>=1?0x40ff70:c);
         }
         if(b->burst>0) ring(g,x,y,12+(1-b->burst/.25f)*30,c);
-        bat_rect(game_side(g,p),x,y,-5,-half-2,10,half*2+4,broken?0x36323c:player_outlines[palette]);
-        bat_rect(game_side(g,p),x,y,-3,-half,6,half*2,c);
-        bat_rect(game_side(g,p),x,y,-1,-half+2,2,half*2-4,broken?0x434753:WHITE);
+        bat_rect(object_scale,game_side(g,p),x,y,-5,-half-2,10,half*2+4,broken?0x36323c:player_outlines[palette]);
+        bat_rect(object_scale,game_side(g,p),x,y,-3,-half,6,half*2,c);
+        bat_rect(object_scale,game_side(g,p),x,y,-1,-half+2,2,half*2-4,broken?0x434753:WHITE);
         if(broken) {
-            bat_rect(game_side(g,p),x,y,-3,-4,4,2,0xff3030); bat_rect(game_side(g,p),x,y,-1,-2,4,2,0xff3030);
-            bat_rect(game_side(g,p),x,y,-3,0,4,2,0xff3030);
-            bat_rect(game_side(g,p),x,y,-9,half+5,18,2,0x36323c);
-            bat_rect(game_side(g,p),x,y,-9,half+5,18*(float)b->cooldown_ticks/SUCTION_COOLDOWN_TICKS,2,0xff3030);
+            bat_rect(object_scale,game_side(g,p),x,y,-3,-4,4,2,0xff3030); bat_rect(object_scale,game_side(g,p),x,y,-1,-2,4,2,0xff3030);
+            bat_rect(object_scale,game_side(g,p),x,y,-3,0,4,2,0xff3030);
+            bat_rect(object_scale,game_side(g,p),x,y,-9,half+5,18,2,0x36323c);
+            bat_rect(object_scale,game_side(g,p),x,y,-9,half+5,18*(float)b->cooldown_ticks/SUCTION_COOLDOWN_TICKS,2,0xff3030);
         }
     }
     if(!game_square(g)) {
@@ -456,14 +458,14 @@ void ui_draw(const Game *g) {
             rect(x-1,y-1,2,2,hot?0xff3030:0x556b84);
         }
     }
-    /* An eight-pixel filled circle, snapped so its strips share pixel edges. */
+    /* Scale the filled circle with its collision radius in square matches. */
     float ball_x=roundf(bx),ball_y=roundf(by);
     uint32_t ball_color=hot?0xff3030:GOLD;
-    rect(ball_x-2,ball_y-4,4,1,ball_color);
-    rect(ball_x-3,ball_y-3,6,1,ball_color);
-    rect(ball_x-4,ball_y-2,8,4,ball_color);
-    rect(ball_x-3,ball_y+2,6,1,ball_color);
-    rect(ball_x-2,ball_y+3,4,1,ball_color);
+    rect(ball_x-2*object_scale,ball_y-4*object_scale,4*object_scale,object_scale,ball_color);
+    rect(ball_x-3*object_scale,ball_y-3*object_scale,6*object_scale,object_scale,ball_color);
+    rect(ball_x-4*object_scale,ball_y-2*object_scale,8*object_scale,4*object_scale,ball_color);
+    rect(ball_x-3*object_scale,ball_y+2*object_scale,6*object_scale,object_scale,ball_color);
+    rect(ball_x-2*object_scale,ball_y+3*object_scale,4*object_scale,object_scale,ball_color);
     if(g->phase==LOBBY) {
         if(g->mode==ARCADE) {
             if(!g->connected[0]) panel("ONE PLAYER REQUIRED","Connect a pad to port 1","[START] PLAY  [B] MENU");

@@ -98,19 +98,23 @@ static inline unsigned game_player_palette(const Game *g,unsigned p) {
     unsigned level=g->arcade.level?g->arcade.level-1:0;
     return pairs[level%4][p];
 }
-static inline float game_bat_half(const Game *g,unsigned p) {
-    if(g->mode!=ARCADE || p!=0 || g->arcade.level<=1) return BAT_HALF;
-    /* Lose one pixel of total height per level, stopping at 16 pixels. */
-    unsigned shrink=g->arcade.level-1;
-    if(shrink>12) shrink=12;
-    return BAT_HALF-.5f*shrink;
-}
 static inline unsigned game_tick_units(const Game *g) { (void)g; return 1u; }
 static inline float game_dt(const Game *g) { (void)g; return STEP; }
 static inline float game_emission(const Game *g) { (void)g; return .5f; }
 static inline unsigned game_players(const Game *g) { return g->mode==ARCADE?2:g->players; }
 static inline bool game_elimination(const Game *g) { return game_players(g)>2; }
 static inline bool game_square(const Game *g) { return game_elimination(g) && !g->final_duel; }
+/* Same visible square, 20% more court measured in paddle/ball lengths. */
+static inline float game_object_scale(const Game *g) { return game_square(g)?(1.0f/1.2f):1.0f; }
+static inline float game_ball_radius(const Game *g) { return BALL_RADIUS*game_object_scale(g); }
+static inline float game_bat_depth(const Game *g) { return 3.0f*game_object_scale(g); }
+static inline float game_bat_half(const Game *g,unsigned p) {
+    if(g->mode!=ARCADE || p!=0 || g->arcade.level<=1) return BAT_HALF*game_object_scale(g);
+    /* Lose one pixel of total height per level, stopping at 16 pixels. */
+    unsigned shrink=g->arcade.level-1;
+    if(shrink>12) shrink=12;
+    return BAT_HALF-.5f*shrink;
+}
 static inline unsigned game_side(const Game *g,unsigned p) { return g->player_side[p]; }
 static inline float game_left(const Game *g) { return game_square(g)?(ARENA_W-ARENA_H)*.5f:0; }
 static inline float game_right(const Game *g) { return ARENA_W-game_left(g); }

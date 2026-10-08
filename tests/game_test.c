@@ -85,7 +85,7 @@ static void paddle_contact_tests(void) {
             contact_ready(rates[rate]);
             float cx=face<2?nx*(face?-1:1):tx*(face==2?-1:1);
             float cy=face<2?ny*(face?-1:1):ty*(face==2?-1:1);
-            float extent=(face<2?3:game_bat_half(&g,p))+BALL_RADIUS;
+            float extent=(face<2?game_bat_depth(&g):game_bat_half(&g,p))+game_ball_radius(&g);
             g.bx=g.bat[p].x+cx*(extent+.25f);
             g.by=g.bat[p].y+cy*(extent+.25f);
             g.bvx=-cx*200; g.bvy=-cy*200;
@@ -97,11 +97,11 @@ static void paddle_contact_tests(void) {
         }
         /* A ball already behind and travelling away must never jump forward. */
         contact_ready(rates[rate]);
-        g.bx=g.bat[p].x-nx*5.5f; g.by=g.bat[p].y-ny*5.5f;
+        g.bx=g.bat[p].x-nx*(game_bat_depth(&g)+game_ball_radius(&g)-.5f); g.by=g.bat[p].y-ny*(game_bat_depth(&g)+game_ball_radius(&g)-.5f);
         g.bvx=-nx*20; g.bvy=-ny*20;
         game_step(&g,in);
         assert(!(g.sound_events&sound));
-        assert((g.bx-g.bat[p].x)*nx+(g.by-g.bat[p].y)*ny<=-6);
+        assert((g.bx-g.bat[p].x)*nx+(g.by-g.bat[p].y)*ny<=-(game_bat_depth(&g)+game_ball_radius(&g)));
         assert(g.bvx*nx+g.bvy*ny<0);
         /* Round ball corners: rebound diagonally, but do not hit the empty
            square outside the radius at the tip of the expanded rectangle. */
@@ -109,23 +109,23 @@ static void paddle_contact_tests(void) {
             contact_ready(rates[rate]);
             float cx=(nx*back+tx*end)*.70710678f;
             float cy=(ny*back+ty*end)*.70710678f;
-            g.bx=g.bat[p].x+nx*back*3+tx*end*BAT_HALF+cx*3.25f;
-            g.by=g.bat[p].y+ny*back*3+ty*end*BAT_HALF+cy*3.25f;
+            g.bx=g.bat[p].x+nx*back*game_bat_depth(&g)+tx*end*game_bat_half(&g,p)+cx*(game_ball_radius(&g)+.25f);
+            g.by=g.bat[p].y+ny*back*game_bat_depth(&g)+ty*end*game_bat_half(&g,p)+cy*(game_ball_radius(&g)+.25f);
             g.bvx=-cx*100; g.bvy=-cy*100;
             game_step(&g,in);
             assert((g.sound_events&sound) && g.bvx*cx+g.bvy*cy>90);
             assert(fabsf(g.bvx*cy-g.bvy*cx)<.05f);
             contact_ready(rates[rate]);
-            g.bx=g.bat[p].x+nx*back*5.5f+tx*end*(BAT_HALF+2.5f);
-            g.by=g.bat[p].y+ny*back*5.5f+ty*end*(BAT_HALF+2.5f);
+            g.bx=g.bat[p].x+nx*back*(game_bat_depth(&g)+game_ball_radius(&g)*.8333333f)+tx*end*(game_bat_half(&g,p)+game_ball_radius(&g)*.8333333f);
+            g.by=g.bat[p].y+ny*back*(game_bat_depth(&g)+game_ball_radius(&g)*.8333333f)+ty*end*(game_bat_half(&g,p)+game_ball_radius(&g)*.8333333f);
             g.bvx=g.bvy=0;
             game_step(&g,in);
             assert(!(g.sound_events&sound) && g.bvx==0 && g.bvy==0);
         }
         /* A moving edge can strike a resting ball, transferring edge motion. */
         contact_ready(rates[rate]);
-        g.bx=g.bat[p].x+tx*(BAT_HALF+3.25f);
-        g.by=g.bat[p].y+ty*(BAT_HALF+3.25f);
+        g.bx=g.bat[p].x+tx*(game_bat_half(&g,p)+game_ball_radius(&g)+.25f);
+        g.by=g.bat[p].y+ty*(game_bat_half(&g,p)+game_ball_radius(&g)+.25f);
         g.bvx=g.bvy=0; in[p].x=tx; in[p].y=-ty;
         game_step(&g,in);
         assert((g.sound_events&sound) && g.bvx*tx+g.bvy*ty>200);

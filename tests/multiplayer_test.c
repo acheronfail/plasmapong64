@@ -54,6 +54,8 @@ int main(void) {
     for(unsigned players=3;players<=4;players++) {
         ready(players);
         assert(game_right(&g)-game_left(&g)==ARENA_H);
+        assert(fabsf(BAT_HALF/game_bat_half(&g,0)-1.2f)<.0001f);
+        assert(fabsf(BALL_RADIUS/game_ball_radius(&g)-1.2f)<.0001f);
         assert(g.bat[2].y==ARENA_H-20);
         if(players==4) assert(g.bat[3].y==20);
         for(unsigned p=0;p<players;p++) {
@@ -93,6 +95,7 @@ int main(void) {
         for(unsigned p=0;p<4;p++) if(p!=left && p!=right)
             for(unsigned life=0;life<3;life++) miss(p);
         assert(g.final_duel && !game_square(&g) && game_elimination(&g));
+        assert(game_bat_half(&g,left)==BAT_HALF && game_ball_radius(&g)==BALL_RADIUS);
         assert(g.players==4 && game_left(&g)==0 && game_right(&g)==ARENA_W);
         assert(g.lives[left]==2 && g.lives[right]==1 && g.serve>0 && g.held==-1);
         assert(game_side(&g,left)==0 && game_side(&g,right)==1);
@@ -117,7 +120,7 @@ int main(void) {
         assert(g.phase==PLAY && game_square(&g) && !g.final_duel && g.players==4);
         for(unsigned p=0;p<4;p++) assert(g.lives[p]==3 && game_side(&g,p)==p);
     }
-    ready(3); g.by=3; g.bvy=-150; game_step(&g,in);
+    ready(3); g.by=game_ball_radius(&g); g.bvy=-150; game_step(&g,in);
     assert(g.bvy>0 && (g.sound_events&SOUND_WALL));
     for(unsigned p=2;p<4;p++) {
         ready(4); float x=g.bat[p].x; in[p].x=1; game_step(&g,in); assert(g.bat[p].x>x);
@@ -171,9 +174,9 @@ int main(void) {
         in[3].x=-1; in[3].y=-1;
         game_step(&g,in);
     }
-    assert(g.bat[0].x+5<g.bat[3].x-BAT_HALF-2);
-    assert(g.bat[3].y+5<g.bat[0].y-BAT_HALF-2);
-    assert(g.bat[2].x+BAT_HALF+2<g.bat[1].x-5);
-    assert(g.bat[1].y+BAT_HALF+2<g.bat[2].y-5);
+    assert(g.bat[0].x+5*game_object_scale(&g)<g.bat[3].x-game_bat_half(&g,3)-2*game_object_scale(&g));
+    assert(g.bat[3].y+5*game_object_scale(&g)<g.bat[0].y-game_bat_half(&g,0)-2*game_object_scale(&g));
+    assert(g.bat[2].x+game_bat_half(&g,2)+2*game_object_scale(&g)<g.bat[1].x-5*game_object_scale(&g));
+    assert(g.bat[1].y+game_bat_half(&g,1)+2*game_object_scale(&g)<g.bat[2].y-5*game_object_scale(&g));
     puts("PASS: 2P/3P/4P gating, sparse ports, square arena, diagonal reflections/paddle clearance, four-side collisions, lives, elimination walls, rematch, disconnects, rotated movement/jet/grab/launch/break, player pigments");
 }
