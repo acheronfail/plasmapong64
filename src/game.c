@@ -210,6 +210,7 @@ static void ball_step(Game *g) {
             bool crossed=oldnormal>=6 && normal<=6;
             bool overlap=fabsf(normal)<6;
             if((crossed||overlap) && fabsf(tangent)<half+BALL_RADIUS && rvx*nx+rvy*ny<0) {
+                g->rumble_ticks[p]=g->rumble_ticks[p]>RUMBLE_HIT_TICKS?g->rumble_ticks[p]:RUMBLE_HIT_TICKS;
                 g->sound_events|=p==0?SOUND_BAT1:p==1?SOUND_BAT2:SOUND_BAT_OTHER;
                 /* A forward stroke adds power along this paddle's normal. */
                 float push=maxf(0,b->vx*nx+b->vy*ny);
@@ -270,6 +271,10 @@ void game_step(Game *g,const Input physical[MAX_PLAYERS]) {
     }
     const Input *in=effective;
     g->sound_events=0;
+    for(unsigned p=0;p<MAX_PLAYERS;p++) {
+        if(g->phase!=PLAY || !game_alive(g,p) || !g->connected[p]) g->rumble_ticks[p]=0;
+        else if(g->rumble_ticks[p]) g->rumble_ticks[p]--;
+    }
     bool start=false,confirm=false,back=false;
     for(unsigned p=0;p<MAX_PLAYERS;p++) {
         if(!menu && (p>=(g->mode==ARCADE?1:g->players) || (g->phase!=FINISHED && !game_alive(g,p)))) continue;
@@ -430,6 +435,7 @@ void game_step(Game *g,const Input physical[MAX_PLAYERS]) {
             b->sucking=false;
             if(g->held==(int)p) {
                 b->burst=.25f;
+                g->rumble_ticks[p]=RUMBLE_BURST_TICKS;
                 /* Spend stored charge only when releasing a caught ball. */
                 fluid_pump(&g->fluid,b->x,b->y,40,2800,.13f*b->charge,game_player_palette(g,p));
                 fluid_splat(&g->fluid,b->x+nx*12,b->y+ny*12,27,(nx*240+(p<2?0:b->vx*.35f))*b->charge,

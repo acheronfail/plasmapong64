@@ -87,6 +87,9 @@ int main(void) {
         ready(4); float ny=p==2?-1:1;
         g.bx=g.bat[p].x; g.by=g.bat[p].y+ny*8; g.bvy=-ny*200;
         game_step(&g,in); assert(g.bvy*ny>0 && (g.sound_events&SOUND_BAT_OTHER));
+        assert(g.rumble_ticks[p]==RUMBLE_HIT_TICKS);
+        for(unsigned t=0;t<RUMBLE_HIT_TICKS;t++) game_step(&g,in);
+        assert(!g.rumble_ticks[p]);
         ready(4); in[p].a=true; g.bx=g.bat[p].x; g.by=g.bat[p].y+ny*12; g.bvy=-ny*50;
         game_step(&g,in); assert(g.held==(int)p);
         in[p].x=1; game_step(&g,in); assert(g.bx==g.bat[p].x);
@@ -94,10 +97,14 @@ int main(void) {
         for(unsigned t=1;t<SUCTION_CHARGE_TICKS;t++) game_step(&g,in);
         assert(g.bat[p].charge==1);
         in[p].a=false; game_step(&g,in); assert(g.held==-1 && g.bvy*ny>240);
+        assert(g.rumble_ticks[p]==RUMBLE_BURST_TICKS);
+        for(unsigned t=0;t<RUMBLE_BURST_TICKS;t++) game_step(&g,in);
+        assert(!g.rumble_ticks[p]);
         ready(4); g.serve=100; g.held=p; in[p].a=true;
         for(unsigned t=0;t<SUCTION_BREAK_TICKS;t++) game_step(&g,in);
         assert(g.held==-1 && g.bat[p].cooldown_ticks==SUCTION_COOLDOWN_TICKS);
         assert(g.sound_events&SOUND_BREAK_OTHER);
+        assert(!g.rumble_ticks[p]);
         ready(4); g.serve=100; in[p].z=true;
         for(int t=0;t<30;t++) game_step(&g,in);
         float u,v; fluid_sample(&g.fluid,g.bat[p].x,g.bat[p].y+ny*24,&u,&v); assert(v*ny>0);

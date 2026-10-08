@@ -14,6 +14,8 @@
 /* Tick counters use 60 Hz units in both selectable update modes. */
 #define BAT_HALF 14.0f
 #define BALL_RADIUS 3.0f
+#define RUMBLE_HIT_TICKS 4u
+#define RUMBLE_BURST_TICKS 15u
 #define BALL_HOT_SPEED 240.0f
 #define SUCTION_CHARGE_TICKS (1u*GAME_HZ)
 /* About 67ms to release at full charge before breaking. */
@@ -65,6 +67,7 @@ typedef struct {
     float menu_label_widths[4]; /* Screen pixels, measured by the UI. */
     uint32_t menu_rng;
     unsigned menu_ticks, sound_events;
+    unsigned rumble_ticks[MAX_PLAYERS];
     Bat bat[MAX_PLAYERS];
     Input previous[MAX_PLAYERS];
     float bx,by,bvx,bvy,serve,elapsed;

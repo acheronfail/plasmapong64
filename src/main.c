@@ -948,6 +948,18 @@ int main(void) {
                 }
             }
         }
+/* Match logical players to physical ports; the arcade CPU has no motor. */
+        bool rumble[MAX_PLAYERS]={0};
+        if(game.phase==PLAY) {
+            for(unsigned p=0;p<(game.mode==ARCADE?1:game.players);p++)
+                if(game_alive(&game,p) && game.connected[p] && game.rumble_ticks[p])
+                    rumble[game.player_port[p]]=true;
+        }
+        for(unsigned p=0;p<MAX_PLAYERS;p++) {
+            joypad_port_t port=(joypad_port_t)p;
+            if(joypad_get_rumble_supported(port) && joypad_get_rumble_active(port)!=rumble[p])
+                joypad_set_rumble_active(port,rumble[p]);
+        }
 #ifdef PLASMAPONG_AUDIO_STREAM
         audio_background();
 #endif
