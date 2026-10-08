@@ -8,6 +8,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import zipfile
 from n64_power import configured_power_url
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -19,6 +20,7 @@ def main():
     parser.add_argument('--define', action='append', default=[], metavar='KEY=VALUE', help='candidate build setting; repeat as needed')
     parser.add_argument('--workload', choices=('menu', '2p', '4p', 'effects'), default='4p')
     parser.add_argument('--profile', action='store_true', help='diagnostic stage timings; compare separately from ordinary captures')
+    parser.add_argument('--kernel-checks', action='store_true', help='run exact RSP numerical fixtures in validation ROMs only')
     parser.add_argument('--windows', type=int, default=10)
     parser.add_argument('--ares-windows', type=int, default=2)
     parser.add_argument('--ares', default='../ares/build/rundir/bin/ares')
@@ -47,10 +49,19 @@ def main():
     manifest['revision'] = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
     (run / 'source.patch').write_bytes(subprocess.check_output(['git', 'diff', 'HEAD'], cwd=ROOT))
     manifest['git_status'] = subprocess.check_output(['git', 'status', '--short'], cwd=ROOT, text=True)
-    # Snapshot tracked source plus untracked experiment files, excluding ignored ROMs/logs.
+    # Retain contents as well as hashes: untracked prototypes cannot be recovered
+    # from git diff when an unsuccessful experiment is removed.
     paths = subprocess.check_output(['git', 'ls-files', '-z', '--cached', '--others', '--exclude-standard'], cwd=ROOT).decode().split('\0')
-    manifest['source_sha256'] = {p: hashlib.sha256((ROOT / p).read_bytes()).hexdigest()
-                                 for p in paths if p and (ROOT / p).is_file()}
+    manifest['source_sha256'] = {}
+    archive = run / 'source.zip'
+    with zipfile.ZipFile(archive, 'x', zipfile.ZIP_DEFLATED) as snapshot:
+        for path in paths:
+            if not path or not (ROOT / path).is_file():
+                continue
+            content = (ROOT / path).read_bytes()
+            manifest['source_sha256'][path] = hashlib.sha256(content).hexdigest()
+            snapshot.writestr(path, content)
+    manifest['source_archive_sha256'] = hashlib.sha256(archive.read_bytes()).hexdigest()
 
     def execute(command, log):
         manifest['commands'].append(command)
@@ -73,7 +84,10 @@ def main():
         execute([sys.executable, 'tests/dev_loop_test.py'], 'loop-tests.log')
         if not args.skip_check:
             execute(['./tools/check.sh'], 'check.log')
-        execute(['./tools/build-rom.sh', '-j4'] + common + ['RDP_VALIDATE=1', 'ROM=' + name + '-validate', 'BUILD_DIR=' + build + '_validate'], 'build-validate.log')
+        fixtures = ['RSP_TEST=1', 'DYE_TEST=1', 'VELOCITY_TEST=1', 'CONFINEMENT_TEST=1'] if args.kernel_checks else []
+        if args.kernel_checks and 'UPWIND=1' in args.define:
+            fixtures = ['RSP_TEST=1', 'UPWIND_TEST=1', 'PREPARE_TEST=1', 'CONFINEMENT_TEST=1']
+        execute(['./tools/build-rom.sh', '-j4'] + common + fixtures + ['RDP_VALIDATE=1', 'ROM=' + name + '-validate', 'BUILD_DIR=' + build + '_validate'], 'build-validate.log')
         for memory in (8, 4):
             command = [sys.executable, 'tools/benchmark-ares.py', name + '-validate.z64', str(run / f'ares-{memory}m.log'),
                        '--ares', args.ares, '--memory-mib', str(memory), '--windows', str(args.ares_windows), '--timeout', '240']

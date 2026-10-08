@@ -56,7 +56,7 @@ static void prepare_cases(void) {
         data_cache_hit_invalidate(&divergence,sizeof(divergence));
         for(int y=1;y<FH-1;y++) for(int x=1;x<FW-1;x++) {
             int k=y*FW+x;
-            int32_t want=-768*(v->u[k+1]-v->u[k-1]+v->v[k+FW]-v->v[k-FW]);
+            int32_t want=-(PLASMAPONG_CELL_Q4*8)*(v->u[k+1]-v->u[k-1]+v->v[k+FW]-v->v[k-FW]);
             assert(divergence.value[k]==want);
         }
         for(unsigned k=0;k<FW;k++) assert(divergence.value[k]==0x3c3c3c3c && divergence.value[(FH-1)*FW+k]==0x3c3c3c3c);

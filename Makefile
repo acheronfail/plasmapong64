@@ -2,14 +2,30 @@ ADVECTION_CHAIN ?= 1
 ADVECTION_PIPELINE ?= 1
 GRADIENT_PIPELINE ?= 1
 CPU_LTO ?= 1
-TRACE_ROWS ?= 3
+GRID_W ?= 48
+GRID_H ?= 33
+CELL_Q4 ?= $(if $(filter 64,$(GRID_W)),72,96)
+TRACE_ROWS ?= $(if $(filter 33,$(GRID_H)),3,1)
 CONFINEMENT_CHAIN ?= 1
 PROJECTION_CHAIN ?= 1
 PIXELS_CHAIN ?= 1
 HIRES_FONT_FORMAT ?= RGBA16
 SPLAT_PLAN ?= 1
+FORCE_FIXED ?= 0
+UPWIND ?= 0
+UPWIND_RSP ?= $(UPWIND)
+UPWIND_GPU_LIMIT ?= 0
+UPWIND_PREFETCH ?= 0
+UPWIND_INLINE_LIMIT ?= 0
+VELOCITY_CHAIN ?= 0
+FLOW_DAMPING ?= .08f
+FLOW_CONFINEMENT ?= 1.25f
 SOUND_STEADY ?= 1
 PRESSURE_VECTOR_SUM ?= 1
+PRESSURE_PASSES ?= 8
+PRESSURE_Q3 ?= 0
+PRESSURE_FAST_GRADIENT ?= 0
+PRESSURE_WARM_START ?= 0
 AUDIO_STREAM ?= 1
 EXPANSION_BANKS ?= 1
 SPEED_RSP ?= 1
@@ -44,6 +60,89 @@ ifeq ($(N64_INST),)
 $(error N64_INST is unset. Use ./tools/build-rom.sh or install libdragon)
 endif
 include $(N64_INST)/include/n64.mk
+N64_CFLAGS += -DPLASMAPONG_GRID_W=$(GRID_W) -DPLASMAPONG_GRID_H=$(GRID_H) -DPLASMAPONG_CELL_Q4=$(CELL_Q4)
+N64_RSPASFLAGS += -DPLASMAPONG_GRID_W=$(GRID_W) -DPLASMAPONG_GRID_H=$(GRID_H) -DPLASMAPONG_CELL_Q4=$(CELL_Q4)
+ifneq ($(filter $(GRID_W),48 64),$(GRID_W))
+$(error GRID_W currently supports 48 or 64)
+endif
+ifeq ($(GRID_W),64)
+ifneq ($(GRID_H)$(CELL_Q4),4472)
+$(error GRID_W=64 currently requires GRID_H=44 CELL_Q4=72)
+endif
+ifneq ($(TRACE_ROWS),1)
+$(error the 44-row grid requires TRACE_ROWS=1)
+endif
+ifneq ($(UPWIND)$(UPWIND_RSP)$(PRESSURE_Q3),111)
+$(error GRID_W=64 requires UPWIND=1 UPWIND_RSP=1 PRESSURE_Q3=1)
+endif
+else
+ifneq ($(GRID_H)$(CELL_Q4),3396)
+$(error GRID_W=48 currently requires GRID_H=33 CELL_Q4=96)
+endif
+endif
+ifeq ($(VELOCITY_CHAIN),1)
+ifneq ($(UPWIND)$(UPWIND_RSP)$(UPWIND_GPU_LIMIT)$(CONFINEMENT_CHAIN)$(CONFINEMENT_RSP)$(PRESSURE_FAST_GRADIENT)$(FLUID_RSP)$(PREPARE_RSP)$(FLUID_HIGHPRI),111111111)
+$(error VELOCITY_CHAIN=1 requires complete high-priority upwind/compact-projection RSP backends)
+endif
+N64_CFLAGS += -DPLASMAPONG_VELOCITY_CHAIN
+N64_RSPASFLAGS += -DPLASMAPONG_VELOCITY_CHAIN
+endif
+N64_CFLAGS += -DPLASMAPONG_FLOW_DAMPING=$(FLOW_DAMPING)
+N64_CFLAGS += -DPLASMAPONG_FLOW_CONFINEMENT=$(FLOW_CONFINEMENT)
+ifeq ($(UPWIND),1)
+ifneq ($(VELOCITY_FIXED)$(DYE_FIXED),11)
+$(error UPWIND=1 requires fixed velocity and dye)
+endif
+N64_CFLAGS += -DPLASMAPONG_UPWIND
+endif
+ifeq ($(filter $(PRESSURE_PASSES),1 2 3 4 5 6 7 8),)
+$(error PRESSURE_PASSES must be between 1 and 8)
+endif
+N64_CFLAGS += -DPLASMAPONG_PRESSURE_PASSES=$(PRESSURE_PASSES)
+N64_RSPASFLAGS += -DPLASMAPONG_PRESSURE_PASSES=$(PRESSURE_PASSES)
+N64_CFLAGS += -DPLASMAPONG_PRESSURE_Q3=$(PRESSURE_Q3)
+N64_RSPASFLAGS += -DPLASMAPONG_PRESSURE_Q3=$(PRESSURE_Q3)
+N64_CFLAGS += -DPLASMAPONG_PRESSURE_WARM_START=$(PRESSURE_WARM_START)
+N64_RSPASFLAGS += -DPLASMAPONG_PRESSURE_WARM_START=$(PRESSURE_WARM_START)
+ifeq ($(PRESSURE_WARM_START),1)
+ifneq ($(PRESSURE_Q3),1)
+$(error PRESSURE_WARM_START=1 requires PRESSURE_Q3=1)
+endif
+endif
+ifeq ($(UPWIND_INLINE_LIMIT),1)
+ifneq ($(UPWIND)$(UPWIND_RSP)$(UPWIND_GPU_LIMIT),111)
+$(error UPWIND_INLINE_LIMIT=1 requires UPWIND=1 UPWIND_RSP=1 UPWIND_GPU_LIMIT=1)
+endif
+N64_CFLAGS += -DPLASMAPONG_UPWIND_INLINE_LIMIT
+N64_RSPASFLAGS += -DPLASMAPONG_UPWIND_INLINE_LIMIT
+endif
+ifeq ($(UPWIND_PREFETCH),1)
+ifneq ($(UPWIND)$(UPWIND_RSP),11)
+$(error UPWIND_PREFETCH=1 requires UPWIND=1 UPWIND_RSP=1)
+endif
+N64_RSPASFLAGS += -DPLASMAPONG_UPWIND_PREFETCH
+endif
+ifeq ($(UPWIND_GPU_LIMIT),1)
+ifneq ($(UPWIND)$(UPWIND_RSP),11)
+$(error UPWIND_GPU_LIMIT=1 requires UPWIND=1 UPWIND_RSP=1)
+endif
+N64_CFLAGS += -DPLASMAPONG_UPWIND_GPU_LIMIT
+N64_RSPASFLAGS += -DPLASMAPONG_UPWIND_GPU_LIMIT
+endif
+N64_CFLAGS += -DPLASMAPONG_PRESSURE_FAST_GRADIENT=$(PRESSURE_FAST_GRADIENT)
+ifeq ($(PRESSURE_FAST_GRADIENT),1)
+ifneq ($(PRESSURE_Q3)$(FLUID_RSP)$(PREPARE_RSP),111)
+$(error PRESSURE_FAST_GRADIENT=1 requires PRESSURE_Q3=1 FLUID_RSP=1 PREPARE_RSP=1)
+endif
+src_short_gradient := src/fluid_gradient_short_rsp.c
+rsp_short_gradient := $(BUILD_DIR)/src/rsp_gradient_short.o
+endif
+ifeq ($(FORCE_FIXED),1)
+ifneq ($(VELOCITY_FIXED)$(DYE_FIXED)$(SPLAT_PLAN),111)
+$(error FORCE_FIXED=1 requires fixed velocity/dye and SPLAT_PLAN=1)
+endif
+N64_CFLAGS += -DPLASMAPONG_FORCE_FIXED
+endif
 ifeq ($(PIXELS_CHAIN),1)
 N64_CFLAGS += -DPLASMAPONG_PIXELS_CHAIN
 endif
@@ -52,7 +151,19 @@ N64_CFLAGS += -flto
 # n64.mk links through g++; keep these as driver flags, not -Wl options.
 N64_CXXFLAGS += -flto
 endif
-src := src/main.c src/game.c src/arcade.c src/fluid.c src/fluid_advection.c src/ui.c src/sound.c src/save.c src/save_n64.c
+src := src/main.c src/game.c src/arcade.c src/fluid.c src/fluid_advection.c src/ui.c src/sound.c src/save.c src/save_n64.c $(src_short_gradient)
+rsp_obj += $(rsp_short_gradient)
+ifeq ($(UPWIND),1)
+src += src/fluid_upwind.c
+ifeq ($(UPWIND_RSP),1)
+ifneq ($(FLUID_RSP),1)
+$(error UPWIND_RSP=1 requires FLUID_RSP=1)
+endif
+src += src/fluid_upwind_rsp.c
+rsp_obj += $(BUILD_DIR)/src/rsp_upwind.o
+N64_CFLAGS += -DPLASMAPONG_UPWIND_RSP
+endif
+endif
 ifeq ($(RDP_TAIL_SYNC),1)
 src += src/rdpq_tail_sync.c
 N64_CFLAGS += -I/libdragon/src/rdpq
@@ -67,7 +178,7 @@ ifneq ($(findstring -,$(BUILD_DIR)),)
 $(error FLUID_RSP requires BUILD_DIR without hyphens; use build/rsp or build/rsp_benchmark)
 endif
 src += src/fluid_rsp.c
-rsp_obj := $(BUILD_DIR)/src/rsp_fluid.o
+rsp_obj += $(BUILD_DIR)/src/rsp_fluid.o
 N64_CFLAGS += -DPLASMAPONG_FLUID_RSP
 endif
 ifeq ($(DYE_FIXED),1)
@@ -81,8 +192,10 @@ endif
 ifneq ($(FLUID_RSP),1)
 $(error DYE_RSP=1 requires FLUID_RSP=1)
 endif
+ifneq ($(UPWIND_RSP),1)
 src += src/fluid_dye_rsp.c
 rsp_obj += $(BUILD_DIR)/src/rsp_dye.o
+endif
 N64_CFLAGS += -DPLASMAPONG_DYE_RSP
 endif
 ifeq ($(VELOCITY_FIXED),1)
@@ -158,6 +271,15 @@ endif
 N64_CFLAGS += -DPLASMAPONG_RSP_TEST
 endif
 N64_CFLAGS += -Wall -Wextra -Werror
+ifeq ($(UPWIND_TEST),1)
+ifneq ($(UPWIND)$(UPWIND_RSP),11)
+$(error UPWIND_TEST=1 requires UPWIND=1 UPWIND_RSP=1)
+endif
+N64_CFLAGS += -DPLASMAPONG_UPWIND_TEST
+endif
+ifeq ($(PREPARE_TEST),1)
+N64_CFLAGS += -DPLASMAPONG_PREPARE_TEST
+endif
 ifeq ($(AUDIO_STREAM),1)
 N64_CFLAGS += -DPLASMAPONG_AUDIO_STREAM
 endif

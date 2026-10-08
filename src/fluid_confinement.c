@@ -3,7 +3,7 @@
 #include <string.h>
 #include "rsp_rsqrt_table.inc"
 _Static_assert((-1>>1)==-1,"fixed-point confinement requires arithmetic shifts");
-_Static_assert(FW==48 && FH==33,"confinement grid layout");
+_Static_assert(FW%8==0 && FH>=5,"confinement vector layout");
 void fluid_curl_fixed(int16_t *curl,const FluidVelocityFixed *v) {
     memset(curl,0,FW*sizeof(*curl));
     memset(curl+(FH-1)*FW,0,FW*sizeof(*curl));
@@ -17,7 +17,7 @@ void fluid_curl_fixed(int16_t *curl,const FluidVelocityFixed *v) {
     }
 }
 unsigned fluid_confinement_strength(float dt) {
-    assert(CELL==6.0f && dt>=0 && dt<=.25f);
+    assert(dt>=0 && dt<=.25f);
     /* Grid and velocity scales cancel: curl * confinement * dt. */
     return (unsigned)(dt*FLUID_CONFINEMENT*32768+.5f);
 }

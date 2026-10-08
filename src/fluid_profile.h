@@ -1,7 +1,8 @@
 #ifndef FLUID_PROFILE_H
 #define FLUID_PROFILE_H
 /* Opt-in N64 elapsed-time instrumentation; absent from production builds.
-   Stages are disjoint. Interrupt/audio time remains included. */
+   Primary stages are disjoint. Named upwind components are nested diagnostics
+   and must not be added to those primary totals. Interrupt/audio time is included. */
 #ifdef PLASMAPONG_FLUID_PROFILE
 #include <libdragon.h>
 enum {
@@ -9,6 +10,10 @@ enum {
     PROFILE_CONFINEMENT, PROFILE_DIVERGENCE, PROFILE_PRESSURE,
     PROFILE_GRADIENT, PROFILE_DYE_ADVECTION, PROFILE_DYE_SWAP,
     PROFILE_SPLAT, PROFILE_PUMP, PROFILE_BALL_DYE, PROFILE_SAMPLE,
+#ifdef PLASMAPONG_UPWIND_RSP
+    PROFILE_UPWIND_LIMIT_VELOCITY, PROFILE_UPWIND_JOB_VELOCITY,
+    PROFILE_UPWIND_LIMIT_DYE, PROFILE_UPWIND_JOB_DYE,
+#endif
 #ifdef PLASMAPONG_QUEUE_PROFILE
     PROFILE_QUEUE_WAIT,
 #endif

@@ -4,8 +4,9 @@ static void rsp_fluid_smoke(void) {
     static _Alignas(16) int32_t input[FN+8],output[FN+8],expected[FN];
     uint32_t seed=0x12345678;
     const int32_t limit=32760*4096,guard=0x12345678;
+    enum { TRIALS=64+2*(FH-2)>128?64+2*(FH-2):128 };
     uint64_t cpu_ticks=0,rsp_ticks=0;
-    for(unsigned trial=0;trial<128;trial++) {
+    for(unsigned trial=0;trial<TRIALS;trial++) {
         for(unsigned k=0;k<FN+8;k++) input[k]=output[k]=guard;
         for(unsigned k=0;k<FN;k++) {
             seed=seed*1664525u+1013904223u;
@@ -19,7 +20,7 @@ static void rsp_fluid_smoke(void) {
             /* Impulses at both interior side edges of every row exercise
                wavefront wraparound and the top/bottom copied boundaries. */
             if(trial>=64) {
-                unsigned row=1+(trial-64)%31, column=(trial&1)?1:FW-2;
+                unsigned row=1+((trial-64)/2)%(FH-2), column=(trial&1)?1:FW-2;
                 d=k==row*FW+column?((trial&2)?limit:-limit):0;
             }
             input[k+4]=d;
@@ -44,16 +45,20 @@ static void rsp_fluid_smoke(void) {
         uint32_t after_hash=0;
         for(unsigned k=0;k<FN+8;k++) after_hash=after_hash*31u+(uint32_t)input[k];
         assert(after_hash==input_hash);
-        for(unsigned k=0;k<FN;k++)
+        for(unsigned k=0;k<FN;k++) {
+            if(output[k+4]!=expected[k])
+                debugf("Pressure mismatch trial %u cell %u: RSP %ld CPU %ld\n",trial,k,
+                    (long)output[k+4],(long)expected[k]);
             assertf(output[k+4]==expected[k],
                 "pressure trial %u cell %u: RSP %ld CPU %ld",trial,k,
                 (long)output[k+4],(long)expected[k]);
+        }
         for(unsigned k=0;k<4;k++) {
             assert(input[k]==guard && input[FN+4+k]==guard);
             assert(output[k]==guard && output[FN+4+k]==guard);
         }
     }
-    debugf("RSP pressure PASS: 128 bit-exact fields, DMA guards, overlay switches; CPU %llu us, RSP %llu us per solve\n",
-        (unsigned long long)(TIMER_MICROS_LL(cpu_ticks)/128),
-        (unsigned long long)(TIMER_MICROS_LL(rsp_ticks)/128));
+    debugf("RSP pressure PASS: %u bit-exact fields, DMA guards, overlay switches; CPU %llu us, RSP %llu us per solve\n",TRIALS,
+        (unsigned long long)(TIMER_MICROS_LL(cpu_ticks)/TRIALS),
+        (unsigned long long)(TIMER_MICROS_LL(rsp_ticks)/TRIALS));
 }

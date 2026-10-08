@@ -28,6 +28,17 @@ captures and controls are recorded in the hardware benchmark notes below.
 See [the final console bottleneck and fix](docs/hardware-performance.md) for
 the concise findings and acceptance results.
 
+The finer fluid candidate is available with `just build-fluid64`, producing
+`plasmapong-fluid64.z64` with normal player controls. It simulates **64×44 cells**
+(78% more than 48×33) and measured **59.95 FPS / 9.52 ms per simulation update**
+in four-player tails stress gameplay on the NTSC-J console, with no presentation
+misses or audio underruns. Cycling all eight effects measured 59.87 FPS with
+11 missed presentations over 9,001 refreshes and no audio underruns. This uses
+approximate fixed-point transport and pressure; it changes the flow's appearance.
+The original `just build` configuration remains available as the comparison control.
+See [the development-loop results](docs/development-loop.md#retained-checkpoint-2026-10-08)
+for settings, tests and remaining limits. Optimisation is paused at this checkpoint.
+
 A console performance overlay is enabled for testing: **L** on controller port 1
 shows/hides it; **R** resets its counters. `FPS` shows newly presented frames per
 second followed by measured video refresh rate. `MISS` counts repeated refreshes
@@ -165,7 +176,7 @@ menu. Deployment uploads to the SD card; it does not automatically start a game.
 The first Docker build needs network access to fetch the pinned image and
 libdragon revision. Subsequent builds use Docker's cache. If you already have a
 compatible libdragon install, `N64_INST=/your/toolchain make -j4` also works.
-`just check` needs only a C11 compiler and the system math library.
+`just check` needs Python 3, a C11 compiler and the system math library.
 
 ### GitHub releases
 

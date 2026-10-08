@@ -1,6 +1,12 @@
 /* Exact CPU-equivalent backtraces, RGBA32 dye conversion and divergence. RSPQ owns gp
  * and v00/v30/v31. Each command reloads scratch; buffers own cache lines. */
 #include <rsp_queue.inc>
+#include "fluid_config.h"
+#define WIDTH PLASMAPONG_GRID_W
+#define HEIGHT PLASMAPONG_GRID_H
+#define ROW_BYTES (WIDTH*2)
+#define WORD_ROW (WIDTH*4)
+#define PLANE_BYTES (WIDTH*HEIGHT*2)
     .set noreorder
     .set at
     .data
@@ -28,17 +34,17 @@ RSPQ_EmptySavedState
 #define PLASMAPONG_TRACE_ROWS 3
 #endif
 #define TRACE_ROWS PLASMAPONG_TRACE_ROWS
-scratch: .ds.b 1904
+scratch: .ds.b (9*ROW_BYTES+1040)
     .set input0,scratch
-    .set input1,scratch+288
-    .set input2,scratch+576
-    .set result,scratch+672
+    .set input1,scratch+(3*ROW_BYTES)
+    .set input2,scratch+(6*ROW_BYTES)
+    .set result,scratch+(7*ROW_BYTES)
     .set grad_above,scratch
-    .set grad_middle,scratch+192
-    .set grad_below,scratch+384
-    .set grad_u,scratch+576
-    .set grad_v,scratch+672
-    .set speed_palette,scratch+864
+    .set grad_middle,scratch+WORD_ROW
+    .set grad_below,scratch+(4*ROW_BYTES)
+    .set grad_u,scratch+(6*ROW_BYTES)
+    .set grad_v,scratch+(7*ROW_BYTES)
+    .set speed_palette,scratch+(9*ROW_BYTES)
     .text
 .macro transfer base, buffer, size, direction
     move s0,\base
@@ -73,7 +79,7 @@ Trace:
     mtc2 t3,$v23.e3
     li t3,32728             /* upper boundary fraction: (4096-5)*8 */
     mtc2 t3,$v23.e4
-    li t3,96
+    li t3,ROW_BYTES
     mtc2 t3,$v23.e5
     li t3,2
     mtc2 t3,$v23.e6
@@ -102,8 +108,8 @@ Trace:
     sqv $v24,0,t3
 trace_chunk:
     /* Share each DMA setup across rows; the selected count divides 33. */
-    transfer s1,input0,96*TRACE_ROWS,DMA_IN
-    transfer s2,input1,96*TRACE_ROWS,DMA_IN
+    transfer s1,input0,ROW_BYTES*TRACE_ROWS,DMA_IN
+    transfer s2,input1,ROW_BYTES*TRACE_ROWS,DMA_IN
     move s7,zero
 trace_row:
     move s6,zero
@@ -149,8 +155,8 @@ trace_batch:
     vxor $v27,vzero,$v26.e1
     vmrg \cell,$v27,\cell
 .endm
-    coordinate $v01,$v24,47,$v08,$v09
-    coordinate $v02,$v25,32,$v10,$v11
+    coordinate $v01,$v24,WIDTH-1,$v08,$v09
+    coordinate $v02,$v25,HEIGHT-1,$v10,$v11
     vmudn $v10,$v10,$v23.e5
     vmudn $v08,$v08,$v23.e6
     vadd $v08,$v08,$v10
@@ -167,19 +173,19 @@ trace_batch:
     sqv $v11,32,t3
     vadd $v24,$v24,$v23.e3
     addiu s6,s6,8
-    slti t3,s6,48
+    slti t3,s6,WIDTH
     bnez t3,trace_batch
     nop
     addiu s5,s5,1
-    addiu s7,s7,96
-    slti t3,s7,96*TRACE_ROWS
+    addiu s7,s7,ROW_BYTES
+    slti t3,s7,ROW_BYTES*TRACE_ROWS
     bnez t3,trace_row
     nop
-    transfer s3,result,288*TRACE_ROWS,DMA_OUT
-    addiu s1,s1,96*TRACE_ROWS
-    addiu s2,s2,96*TRACE_ROWS
-    addiu s3,s3,288*TRACE_ROWS
-    slti t3,s5,33
+    transfer s3,result,(3*ROW_BYTES)*TRACE_ROWS,DMA_OUT
+    addiu s1,s1,ROW_BYTES*TRACE_ROWS
+    addiu s2,s2,ROW_BYTES*TRACE_ROWS
+    addiu s3,s3,(3*ROW_BYTES)*TRACE_ROWS
+    slti t3,s5,HEIGHT
     bnez t3,trace_chunk
     nop
     j RSPQ_Loop
@@ -198,7 +204,7 @@ Pixels:
     move s1,a0
     move s2,a1
     move s3,a2
-    li s5,33
+    li s5,HEIGHT
     li t3,255
     mtc2 t3,$v20.e0
     li t3,256
@@ -242,16 +248,16 @@ Pixels:
     vxor $v15,vzero,$v15.e0
     ctc2 zero,COP2_CTRL_VCO
 pixels_row:
-    transfer s1,input0,96,DMA_IN
-    addiu s7,s1,3168
-    transfer s7,input1,96,DMA_IN
-    addiu s7,s1,6336
-    transfer s7,input2,96,DMA_IN
+    transfer s1,input0,ROW_BYTES,DMA_IN
+    addiu s7,s1,PLANE_BYTES
+    transfer s7,input1,ROW_BYTES,DMA_IN
+    addiu s7,s1,2*PLANE_BYTES
+    transfer s7,input2,ROW_BYTES,DMA_IN
     li t3,2
     bne a3,t3,pixels_no_shade_dma
     nop
-    transfer fp,speed_palette,96,DMA_IN
-    addiu fp,fp,96
+    transfer fp,speed_palette,ROW_BYTES,DMA_IN
+    addiu fp,fp,ROW_BYTES
 pixels_no_shade_dma:
     move s6,zero
 pixels_batch:
@@ -320,19 +326,19 @@ pixels_pack16:
     sqv $v04,0,t3
 pixels_next:
     addiu s6,s6,16
-    slti t3,s6,96
+    slti t3,s6,ROW_BYTES
     bnez t3,pixels_batch
     nop
     li t3,1
     beq a3,t3,pixels_dma16
     nop
-    transfer s2,result,192,DMA_OUT
+    transfer s2,result,WORD_ROW,DMA_OUT
     b pixels_dma_done
     nop
 pixels_dma16:
-    transfer s2,result,96,DMA_OUT
+    transfer s2,result,ROW_BYTES,DMA_OUT
 pixels_dma_done:
-    addiu s1,s1,96
+    addiu s1,s1,ROW_BYTES
     addu s2,s2,s3
     addiu s5,s5,-1
     bnez s5,pixels_row
@@ -341,18 +347,43 @@ pixels_dma_done:
     nop
 /* a0=u, a1=v, a2=divergence. Only interior rows are consumed by pressure. */
 Divergence:
-    addiu s1,a0,96
+#ifdef PLASMAPONG_VELOCITY_CHAIN
+    /* Bit 31 requests virtual zero wall normals for an RSP-owned input.
+       Final gradient writes the physical walls; standalone callers use zero. */
+    srl k0,a2,31
+    sll a2,a2,1
+    srl a2,a2,1
+#endif
+    addiu s1,a0,ROW_BYTES
     move s2,a1
-    addiu s3,a2,192
-    li s5,31
-    li t3,-768
+    addiu s3,a2,WORD_ROW
+    li s5,HEIGHT-2
+    li t3,-(PLASMAPONG_CELL_Q4*8)
     mtc2 t3,$v20.e0
     ctc2 zero,COP2_CTRL_VCO
 divergence_row:
-    transfer s1,input0,96,DMA_IN
-    transfer s2,input1,96,DMA_IN
-    addiu s7,s2,192
-    transfer s7,input2,96,DMA_IN
+    transfer s1,input0,ROW_BYTES,DMA_IN
+    transfer s2,input1,ROW_BYTES,DMA_IN
+    addiu s7,s2,WORD_ROW
+    transfer s7,input2,ROW_BYTES,DMA_IN
+#ifdef PLASMAPONG_VELOCITY_CHAIN
+    vnand $v21,vzero,vzero
+    vnand $v22,vzero,vzero
+    beqz k0,divergence_walls_ready
+    nop
+    sh zero,%lo(input0)(zero)
+    sh zero,%lo(input0)+ROW_BYTES-2(zero)
+    li t3,HEIGHT-2
+    bne s5,t3,divergence_not_top
+    nop
+    vxor $v21,vzero,vzero
+divergence_not_top:
+    li t3,1
+    bne s5,t3,divergence_walls_ready
+    nop
+    vxor $v22,vzero,vzero
+divergence_walls_ready:
+#endif
     move s6,zero
 divergence_batch:
     addiu t3,s6,%lo(input0)
@@ -360,6 +391,10 @@ divergence_batch:
     addiu t5,s6,%lo(input2)
     lqv $v01,0,t4
     lqv $v02,0,t5
+#ifdef PLASMAPONG_VELOCITY_CHAIN
+    vand $v01,$v01,$v21
+    vand $v02,$v02,$v22
+#endif
     addiu t6,t3,-2
     lqv $v03,0,t6
     lrv $v03,16,t6
@@ -381,15 +416,15 @@ divergence_batch:
     .set lane,lane+1
     .endr
     addiu s6,s6,16
-    slti t3,s6,96
+    slti t3,s6,ROW_BYTES
     bnez t3,divergence_batch
     nop
     sw zero,%lo(result)(zero)
-    sw zero,%lo(result)+188(zero)
-    transfer s3,result,192,DMA_OUT
-    addiu s1,s1,96
-    addiu s2,s2,96
-    addiu s3,s3,192
+    sw zero,%lo(result)+WORD_ROW-4(zero)
+    transfer s3,result,WORD_ROW,DMA_OUT
+    addiu s1,s1,ROW_BYTES
+    addiu s2,s2,ROW_BYTES
+    addiu s3,s3,WORD_ROW
     addiu s5,s5,-1
     bnez s5,divergence_row
     nop
@@ -405,13 +440,25 @@ Gradient:
     move s2,a1
     move s3,a2
     li s5,0
-    li t3,1536
+    li t3,PLASMAPONG_CELL_Q4*16
     mtc2 t3,$v20.e0
+#if PLASMAPONG_CELL_Q4 == 72
+    li t3,256
+#else
     li t3,64
+#endif
     mtc2 t3,$v20.e1
+#if PLASMAPONG_CELL_Q4 == 72
+    li t3,36409
+#else
     li t3,43691
+#endif
     mtc2 t3,$v20.e2
+#if PLASMAPONG_CELL_Q4 == 72
+    li t3,3
+#else
     li t3,32768
+#endif
     mtc2 t3,$v20.e3
     li t3,1024
     mtc2 t3,$v20.e4
@@ -422,26 +469,31 @@ Gradient:
     li t3,16383
     mtc2 t3,$v20.e7
     vnor $v21,vzero,vzero
+#if PLASMAPONG_CELL_Q4 == 72
+    li t3,2048
+    mtc2 t3,$v22.e0
+    vxor $v22,vzero,$v22.e0
+#endif
     ctc2 zero,COP2_CTRL_VCO
     li fp,%lo(grad_above)
     li k0,%lo(grad_middle)
     li k1,%lo(grad_below)
-    transfer s3,grad_middle,192,DMA_IN
+    transfer s3,grad_middle,WORD_ROW,DMA_IN
 gradient_row:
     /* Retain above/current rows: each pressure row is fetched only once.
        The unused above/below scratch on normal walls is masked on output. */
-    li t3,32
+    li t3,HEIGHT-1
     beq s5,t3,gradient_loaded
     nop
-    addiu s0,s3,192
+    addiu s0,s3,WORD_ROW
     move s4,k1
-    li t0,191
-    li t1,192
+    li t0,WORD_ROW-1
+    li t1,WORD_ROW
     jal DMAExec
     li t2,DMA_IN
 gradient_loaded:
-    transfer s1,grad_u,96,DMA_IN
-    transfer s2,grad_v,96,DMA_IN
+    transfer s1,grad_u,ROW_BYTES,DMA_IN
+    transfer s2,grad_v,ROW_BYTES,DMA_IN
     move s6,zero
 gradient_batch:
     sll t3,s6,1
@@ -496,6 +548,35 @@ gradient_batch:
     gradient_gather \prefetch
     vadd \right_hi,\right_hi,vzero
     gradient_gather \prefetch
+#if PLASMAPONG_CELL_Q4 == 72
+    /* n=(abs(d)+1152)>>8. For n<2^21, floor(n/9) is exactly
+       floor(n*233017/2^21); 233017=3*65536+36409. Accumulate product>>16
+       using unsigned low halves, then divide by 32 with signed saturation. */
+    vmudn $v08,\right_hi,$v20.e1
+    gradient_gather \prefetch
+    vmudl $v09,\right_lo,$v20.e1
+    gradient_gather \prefetch
+    vor $v08,$v08,$v09
+    gradient_gather \prefetch
+    vmudl $v09,\right_hi,$v20.e1
+    gradient_gather \prefetch
+    vmudl $v05,$v08,$v20.e2
+    gradient_gather \prefetch
+    vmadm $v05,$v09,$v20.e2
+    gradient_gather \prefetch
+    vmadn $v05,$v08,$v20.e3
+    gradient_gather \prefetch
+    vmadh $v05,$v09,$v20.e3
+    gradient_gather \prefetch
+    vsar $v08,COP2_ACC_LO
+    gradient_gather \prefetch
+    vsar $v09,COP2_ACC_MD
+    gradient_gather \prefetch
+    vmudh $v05,$v09,$v22.e0
+    gradient_gather \prefetch
+    vmadm $v08,$v22,$v08
+    gradient_gather \prefetch
+#else
     /* Low 16 bits of n; the 17th bit is high>=1024. */
     vmudn $v08,\right_hi,$v20.e1
     gradient_gather \prefetch
@@ -524,6 +605,7 @@ gradient_batch:
     gradient_gather \prefetch
     vmrg $v08,$v09,$v08
     gradient_gather \prefetch
+#endif
     vabs $v08,$v06,$v08
     gradient_gather \prefetch
     lqv $v10,0,t4
@@ -537,6 +619,15 @@ gradient_batch:
     sqv $v10,0,t4
     gradient_gather \prefetch
     gradient_gather \prefetch
+#if PLASMAPONG_CELL_Q4 == 72
+    .if \prefetch
+    /* Complete the final vertical low-half lane: this reciprocal path has one
+       fewer arithmetic instruction than divide-by-three. Allow load latency. */
+    gradient_gather \prefetch
+    nop
+    nop
+    .endif
+#endif
 .endm
 #ifdef PLASMAPONG_GRADIENT_PIPELINE
     /* Fill the independent vertical source bank during horizontal arithmetic.
@@ -565,35 +656,34 @@ gradient_batch:
     gradient_axis $v01,$v02,$v03,$v04
 #endif
     addiu s6,s6,16
-    slti t3,s6,96
+    slti t3,s6,ROW_BYTES
     bnez t3,gradient_batch
     nop
     sh zero,%lo(grad_u)(zero)
-    sh zero,%lo(grad_u)+94(zero)
+    sh zero,%lo(grad_u)+ROW_BYTES-2(zero)
     beqz s5,gradient_zero_v
-    li t3,32
+    li t3,HEIGHT-1
     bne s5,t3,gradient_store
     nop
 gradient_zero_v:
     li t3,%lo(grad_v)
-    sqv vzero,0,t3
-    sqv vzero,16,t3
-    sqv vzero,32,t3
-    sqv vzero,48,t3
-    sqv vzero,64,t3
-    sqv vzero,80,t3
+    .set zero_offset,0
+    .rept WIDTH/8
+    sqv vzero,zero_offset,t3
+    .set zero_offset,zero_offset+16
+    .endr
 gradient_store:
-    transfer s1,grad_u,96,DMA_OUT
-    transfer s2,grad_v,96,DMA_OUT
+    transfer s1,grad_u,ROW_BYTES,DMA_OUT
+    transfer s2,grad_v,ROW_BYTES,DMA_OUT
     move t3,fp
     move fp,k0
     move k0,k1
     move k1,t3
-    addiu s1,s1,96
-    addiu s2,s2,96
-    addiu s3,s3,192
+    addiu s1,s1,ROW_BYTES
+    addiu s2,s2,ROW_BYTES
+    addiu s3,s3,WORD_ROW
     addiu s5,s5,1
-    slti t3,s5,33
+    slti t3,s5,HEIGHT
     bnez t3,gradient_row
     nop
     j RSPQ_Loop
@@ -606,7 +696,7 @@ SpeedPixels:
     move s1,a0
     move s2,a1
     andi s3,a2,0x7fff
-    li s5,33
+    li s5,HEIGHT
     transfer a3,speed_palette,1040,DMA_IN
     li t3,32768
     mtc2 t3,$v20.e0
@@ -618,9 +708,9 @@ SpeedPixels:
     mtc2 t3,$v20.e3
     ctc2 zero,COP2_CTRL_VCO
 speed_row:
-    transfer s1,input0,96,DMA_IN
-    addiu s7,s1,3168
-    transfer s7,input1,96,DMA_IN
+    transfer s1,input0,ROW_BYTES,DMA_IN
+    addiu s7,s1,PLANE_BYTES
+    transfer s7,input1,ROW_BYTES,DMA_IN
     move s6,zero
 speed_batch:
     addiu t3,s6,%lo(input0)
@@ -665,19 +755,19 @@ speed_pack16:
     .endr
 speed_next:
     addiu s6,s6,16
-    slti t3,s6,96
+    slti t3,s6,ROW_BYTES
     bnez t3,speed_batch
     nop
     andi t6,a2,0x8000
     bnez t6,speed_dma16
     nop
-    transfer s2,result,192,DMA_OUT
+    transfer s2,result,WORD_ROW,DMA_OUT
     b speed_dma_done
     nop
 speed_dma16:
-    transfer s2,result,96,DMA_OUT
+    transfer s2,result,ROW_BYTES,DMA_OUT
 speed_dma_done:
-    addiu s1,s1,96
+    addiu s1,s1,ROW_BYTES
     addu s2,s2,s3
     addiu s5,s5,-1
     bnez s5,speed_row

@@ -3,9 +3,10 @@
  * RSPQ owns gp and v00/v30/v31. DMAExec clobbers s0/s4/t0/t1/t2/at.
  */
 #include <rsp_queue.inc>
+#include "fluid_config.h"
     .set noreorder
     .set at
-#define ROW 96
+#define ROW (PLASMAPONG_GRID_W*2)
     .data
 RSPQ_BeginOverlayHeader
     RSPQ_DefineCommand Curl,12
@@ -47,14 +48,14 @@ Curl:
     addiu s1,a0,ROW
     addiu s2,a1,ROW
     addiu s3,a2,ROW
-    li s5,31
+    li s5,PLASMAPONG_GRID_H-2
     ctc2 zero,COP2_CTRL_VCO
 curl_row:
     row_in s1,-ROW,above
     row_in s1,ROW,below
     row_in s2,0,middle
     move s6,zero
-    li s7,6
+    li s7,PLASMAPONG_GRID_W/8
 curl_batch:
     addiu t3,s6,%lo(above)
     addiu t4,s6,%lo(below)
@@ -91,17 +92,27 @@ Confine:
     addiu s1,a0,ROW*2
     addiu s2,a1,ROW*2
     addiu s3,a2,ROW*2
-    li s5,29
+    li s5,PLASMAPONG_GRID_H-4
     mtc2 a3,$v25.e0
     li t3,-16383
     mtc2 t3,$v26.e0
     li t3,16383
     mtc2 t3,$v27.e0
     ctc2 zero,COP2_CTRL_VCO
-confine_row:
+    /* Curl is read-only throughout this command. Keep a rolling three-row
+       window: only the new below row needs a DMA after the first output. */
     row_in s3,-ROW,above
     row_in s3,0,middle
-    row_in s3,ROW,below
+    li a0,%lo(above)
+    li a1,%lo(middle)
+    li a2,%lo(below)
+confine_row:
+    addiu s0,s3,ROW
+    move s4,a2
+    li t0,ROW-1
+    li t1,ROW
+    jal DMAExec
+    li t2,DMA_IN
     row_in s1,0,urow
     row_in s2,0,vrow
     /* Preserve x=0,1,46,47; only the interior 44 columns receive forces. */
@@ -114,11 +125,11 @@ confine_row:
     sw t5,%lo(edges)+8(zero)
     sw t6,%lo(edges)+12(zero)
     move s6,zero
-    li s7,6
+    li s7,PLASMAPONG_GRID_W/8
 confine_batch:
-    addiu t3,s6,%lo(above)
-    addiu t4,s6,%lo(below)
-    addiu t5,s6,%lo(middle)
+    addu t3,s6,a0
+    addu t4,s6,a2
+    addu t5,s6,a1
     addiu t6,s6,%lo(urow)
     addiu t7,s6,%lo(vrow)
     lqv $v01,0,t3
@@ -200,6 +211,10 @@ confine_batch:
     row_out s2,vrow
     addiu s1,s1,ROW
     addiu s2,s2,ROW
+    move t3,a0
+    move a0,a1
+    move a1,a2
+    move a2,t3
     addiu s5,s5,-1
     bnez s5,confine_row
     addiu s3,s3,ROW

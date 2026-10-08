@@ -2,6 +2,28 @@
 set -eu
 cd "$(dirname "$0")/.."
 mkdir -p build
+cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic tests/gradient_reciprocal_test.c -o build/gradient-reciprocal-test
+./build/gradient-reciprocal-test
+cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -DPLASMAPONG_UPWIND_GPU_LIMIT -Isrc src/fluid_upwind.c src/fluid_dye_fixed.c src/fluid_velocity_fixed.c tests/reciprocal_limit_test.c -lm -o build/reciprocal-limit-test
+./build/reciprocal-limit-test
+python3 tests/force_approx_test.py
+cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -Isrc src/fluid_upwind.c src/fluid_dye_fixed.c src/fluid_velocity_fixed.c tests/upwind_test.c -lm -o build/upwind-test
+./build/upwind-test
+for scenario in game arcade; do
+    cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -DPLASMAPONG_UPWIND -DPLASMAPONG_PRESSURE_Q3=1 -DPLASMAPONG_FORCE_FIXED -DPLASMAPONG_SPLAT_PLAN -DPLASMAPONG_DYE_FIXED -DPLASMAPONG_VELOCITY_FIXED -DPLASMAPONG_CONFINEMENT_FIXED -Isrc src/game.c src/arcade.c src/fluid.c src/fluid_upwind.c src/fluid_advection.c src/fluid_dye_fixed.c src/fluid_velocity_fixed.c src/fluid_confinement.c "tests/${scenario}_test.c" -lm -o "build/${scenario}-upwind-test"
+    "./build/${scenario}-upwind-test"
+done
+# Real finer-grid gameplay must preserve world-space mechanics as well as
+# numerical fixtures. Four-and-a-half-pixel cells retain the same arena size.
+for scenario in game arcade multiplayer fps; do
+    cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -DPLASMAPONG_GRID_W=64 -DPLASMAPONG_GRID_H=44 -DPLASMAPONG_CELL_Q4=72 -DPLASMAPONG_UPWIND -DPLASMAPONG_PRESSURE_Q3=1 -DPLASMAPONG_FORCE_FIXED -DPLASMAPONG_SPLAT_PLAN -DPLASMAPONG_DYE_FIXED -DPLASMAPONG_VELOCITY_FIXED -DPLASMAPONG_CONFINEMENT_FIXED -Isrc src/game.c src/arcade.c src/fluid.c src/fluid_upwind.c src/fluid_advection.c src/fluid_dye_fixed.c src/fluid_velocity_fixed.c src/fluid_confinement.c "tests/${scenario}_test.c" -lm -o "build/${scenario}-grid64-test"
+    "./build/${scenario}-grid64-test"
+done
+# Approximate force kernels must retain gameplay/arcade interactions and stability.
+for scenario in game arcade; do
+    cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -DPLASMAPONG_FORCE_FIXED -DPLASMAPONG_SPLAT_PLAN -DPLASMAPONG_DYE_FIXED -DPLASMAPONG_VELOCITY_FIXED -DPLASMAPONG_CONFINEMENT_FIXED -Isrc src/game.c src/arcade.c src/fluid.c src/fluid_advection.c src/fluid_dye_fixed.c src/fluid_velocity_fixed.c src/fluid_confinement.c "tests/${scenario}_test.c" -lm -o "build/${scenario}-integer-force-test"
+    "./build/${scenario}-integer-force-test"
+done
 cc -std=c11 -O2 -Wall -Wextra -Werror -pedantic -Isrc tests/perf_test.c -o build/perf-test
 ./build/perf-test
 cc -std=c11 -O3 -Wall -Wextra -Werror -pedantic -Isrc src/fluid_advection.c src/fluid_dye_fixed.c tests/dye_test.c -lm -o build/dye-test

@@ -1,7 +1,7 @@
 #include "fluid_velocity_fixed.h"
 #include <assert.h>
 _Static_assert((-1>>1)==-1,"fixed-point trace requires arithmetic shifts");
-_Static_assert(FW==48 && FH==33,"Q4 pressure/trace grid");
+_Static_assert(FW%8==0 && FH>=5,"complete Q4 trace vectors");
 static int quantize(float v) {
     v*=VELOCITY_SCALE;
     if(v>VELOCITY_LIMIT) return VELOCITY_LIMIT;
@@ -19,7 +19,7 @@ void fluid_velocity_pack(FluidVelocityFixed *packed,FluidDyeTrace *trace,
 void fluid_velocity_trace(FluidDyeTrace *trace,const FluidVelocityFixed *velocity,float grid_dt) {
     /* Q12 coordinates, Q20 timestep. No per-cell float backtrace or fractional
        conversions. The coefficient is shared by the whole grid. */
-    assert(CELL==6.0f && grid_dt>=0 && grid_dt<=.125f);
+    assert(grid_dt>=0 && grid_dt<=.125f);
     int step=(int)(grid_dt*1048576+.5f);
     for(int y=0;y<FH;y++) for(int x=0;x<FW;x++) {
         int k=y*FW+x;
@@ -50,6 +50,7 @@ void fluid_velocity_fixed_reference(FluidVelocityFixed *next,const FluidVelocity
         out[k]=(int16_t)((value*(int)decay*2+(int)rounding)>>16);
     }
 }
+#ifndef PLASMAPONG_UPWIND_RSP
 void fluid_advect_velocity_fixed(FluidVelocityFixed *next,const FluidVelocityFixed *velocity,
         float grid_dt,float decay,unsigned rounding) {
     static _Alignas(16) FluidDyeTrace trace[FLUID_TRACE_BATCHES];
@@ -70,3 +71,4 @@ void fluid_advect_velocity_fixed(FluidVelocityFixed *next,const FluidVelocityFix
     fluid_velocity_fixed_reference(next,velocity,trace,d,rounding);
 #endif
 }
+#endif

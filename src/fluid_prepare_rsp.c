@@ -8,7 +8,7 @@ static uint32_t overlay_id;
 #ifdef PLASMAPONG_AUDIO_STREAM
 extern void audio_background(void);
 #endif
-_Static_assert(FW==48 && FH==33 && sizeof(FluidDyeTrace)==48,"RSP preparation grid/trace layout");
+_Static_assert((FW==48 || FW==64) && FH>=5 && sizeof(FluidDyeTrace)==48,"RSP preparation grid/trace layout");
 _Static_assert(FLUID_SPEED_PALETTE_SIZE==260,"RSP speed palette DMA layout");
 _Static_assert(DYE_SCALE==8192 && VELOCITY_LIMIT==16383,"RSP preparation lane ranges");
 _Static_assert(sizeof(FluidVelocityFixed)%16==0 && sizeof(FluidDyeFixed)%16==0 &&
@@ -61,15 +61,23 @@ void fluid_pixels16_rsp_begin(const Fluid *f,uint16_t *pixels,unsigned stride) {
     rspq_write(overlay_id,5,PhysicalAddr(ink),PhysicalAddr(pixels),stride*sizeof(*pixels),1);
 }
 
-void fluid_divergence_rsp_begin(int32_t *divergence,const FluidVelocityFixed *velocity) {
+static void divergence_begin(int32_t *divergence,const FluidVelocityFixed *velocity,bool owned) {
     assert(((uintptr_t)divergence&15)==0 && ((uintptr_t)velocity&15)==0);
     prepare_init();
-    data_cache_hit_writeback(velocity,sizeof(*velocity));
+    if(!owned) data_cache_hit_writeback(velocity,sizeof(*velocity));
     /* Only complete interior rows are replaced. */
     data_cache_hit_invalidate(divergence+FW,(FH-2)*FW*sizeof(*divergence));
     fluid_queue_begin();
-    rspq_write(overlay_id,2,PhysicalAddr(velocity->u),PhysicalAddr(velocity->v),PhysicalAddr(divergence));
+    rspq_write(overlay_id,2,PhysicalAddr(velocity->u),PhysicalAddr(velocity->v),PhysicalAddr(divergence)|(owned?0x80000000u:0));
 }
+void fluid_divergence_rsp_begin(int32_t *divergence,const FluidVelocityFixed *velocity) {
+    divergence_begin(divergence,velocity,false);
+}
+#ifdef PLASMAPONG_VELOCITY_CHAIN
+void fluid_divergence_walled_rsp_begin(int32_t *divergence,const FluidVelocityFixed *velocity) {
+    divergence_begin(divergence,velocity,true);
+}
+#endif
 void fluid_divergence_rsp(int32_t *divergence,const FluidVelocityFixed *velocity) {
     fluid_divergence_rsp_begin(divergence,velocity);
     prepare_wait();

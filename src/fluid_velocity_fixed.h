@@ -24,9 +24,17 @@ void fluid_velocity_trace_rsp(FluidDyeTrace *trace,const FluidVelocityFixed *vel
 /* Gradient accepts |pressure| <= 32760*4096 and enforces zero normal walls. */
 void fluid_gradient_rsp(FluidVelocityFixed *velocity,const int32_t *pressure);
 void fluid_divergence_rsp(int32_t *divergence,const FluidVelocityFixed *velocity);
+#ifdef PLASMAPONG_VELOCITY_CHAIN
+void fluid_divergence_walled_rsp_begin(int32_t *divergence,const FluidVelocityFixed *velocity);
+#endif
 void fluid_divergence_rsp_begin(int32_t *divergence,const FluidVelocityFixed *velocity);
 /* Chained divergence -> pressure -> gradient, synchronous at this boundary. */
 void fluid_projection_rsp(FluidVelocityFixed *velocity,int32_t *divergence,int32_t *pressure);
+#if PLASMAPONG_PRESSURE_FAST_GRADIENT
+void fluid_gradient_short_rsp_init(void);
+void fluid_gradient_short_rsp(FluidVelocityFixed *velocity,const int16_t *pressure);
+void fluid_projection_short_rsp(FluidVelocityFixed *velocity,int32_t *divergence,int32_t *pressure,int16_t *short_pressure);
+#endif
 void fluid_speed_pixels_rsp(const Fluid *f,uint32_t *pixels,unsigned stride);
 void fluid_pixels_rsp(const Fluid *f,uint32_t *pixels,unsigned stride);
 /* Queue-only texture producers. Subsequent RDP uploads must use the same

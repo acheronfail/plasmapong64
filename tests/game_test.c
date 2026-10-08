@@ -1,7 +1,11 @@
 #include "game.h"
+#ifdef PLASMAPONG_UPWIND
+#include "fluid_upwind.h"
+#endif
 #include <assert.h>
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 static uint32_t hash_float(uint32_t hash,float value) {
     uint32_t bits; memcpy(&bits,&value,sizeof(bits));
@@ -343,7 +347,19 @@ int main(void) {
             float launch=hold_ticks[h]==GAME_HZ?290:200*hold_ticks[h]*STEP;
             assert(fabsf(g.bvx-(p?-1:1)*launch)<.001f);
             release_energy[h]=energy(&g.fluid);
-            fluid_sample(&g.fluid,g.bat[p].x+(p?-22:22),g.bat[p].y+24,&u,&v);
+            float sample_x=g.bat[p].x+(p?-26:26),sample_y=g.bat[p].y+26;
+#ifdef PLASMAPONG_UPWIND
+            /* The stability limiter is intentionally nonlinear at high speed.
+               Prove this linear-scaling probe's four samples are below it. */
+            int ix=(int)(sample_x/CELL-.5f),iy=(int)(sample_y/CELL-.5f);
+            unsigned cap=fluid_upwind_limit(fluid_upwind_step(STEP/CELL));
+            for(int dy=0;dy<2;dy++) for(int dx=0;dx<2;dx++) {
+                int k=(iy+dy)*FW+ix+dx;
+                int a=fluid_velocity(&g.fluid)->u[k],b=fluid_velocity(&g.fluid)->v[k];
+                assert((unsigned)(abs(a)+abs(b))+4<cap);
+            }
+#endif
+            fluid_sample(&g.fluid,sample_x,sample_y,&u,&v);
             release_speed[h]=fabsf(u);
             assert(g.bat[p].charge==0 && !g.bat[p].sucking);
             game_step(&g,in); assert(g.bat[p].charge==0);
@@ -438,8 +454,10 @@ int main(void) {
        paint a new coloured patch. Check both mirrored ends against no suction. */
     for(int p=0;p<2;p++) {
         ready(); g.serve=100;
-        int x=p?FW-9:8;
-        fluid_dye(&g.fluid)->red[15*FW+x]=fluid_ink_encode(1);
+        /* Seed the same physical spot in both grid resolutions: changing cell
+           size must not move this test's dye near the edge of suction reach. */
+        int x=(int)((p?ARENA_W-51:51)/CELL),y=(int)((ARENA_H*.5f-6)/CELL);
+        fluid_dye(&g.fluid)->red[y*FW+x]=fluid_ink_encode(1);
         static Game without_suction; without_suction=g;
         in[p].a=true;
         Input idle[MAX_PLAYERS]={{.connected=true},{.connected=true}};
@@ -469,12 +487,16 @@ int main(void) {
         game_step(&g,in); assert(g.held==-1 && game_ball_hot(&g));
     }
     ready();
-    fluid_hot_ball_dye(&g.fluid,123,93,.4f);
+    fluid_hot_ball_dye(&g.fluid,20.5f*CELL,15.5f*CELL,.4f);
     int hot_trail=15*FW+20;
+    float hot_left=fluid_ink_decode(fluid_dye(&g.fluid)->red[hot_trail-1]);
     for(int i=0;i<FN;i++) fluid_velocity(&g.fluid)->u[i]=fluid_flow_encode(CELL/STEP);
     fluid_dye_step(&g.fluid,STEP);
     assert(fluid_ink_decode(fluid_dye(&g.fluid)->red[hot_trail+1])>.35f);
-    assert(fluid_ink_decode(fluid_dye(&g.fluid)->red[hot_trail])<.15f);
+    /* The radius stays eight physical pixels, so its neighbouring-cell dose
+       grows on the finer grid. Verify the translated profile, not a dose
+       threshold specific to six-pixel cells. Include fixed rounding/CFL error. */
+    assert(fabsf(fluid_ink_decode(fluid_dye(&g.fluid)->red[hot_trail])-hot_left*(1-.22f*STEP))<3.0f/DYE_SCALE);
     assert(gold_sum(&g.fluid)==0);
     ready(); g.serve=1; game_step(&g,in); assert(gold_sum(&g.fluid)==0);
     ready(); g.held=0; game_step(&g,in); assert(gold_sum(&g.fluid)==0);

@@ -3,6 +3,9 @@
 #include "fluid_profile.h"
 #include "fluid_pressure.h"
 #include "fluid_advection.h"
+#ifdef PLASMAPONG_UPWIND
+#include "fluid_upwind.h"
+#endif
 #include <math.h>
 #include <string.h>
 #ifdef PLASMAPONG_CONFINEMENT_FIXED
@@ -118,11 +121,18 @@ static void walls(Fluid *f) {
     for(int y=0;y<FH;y++) velocity->u[y*FW]=velocity->u[y*FW+FW-1]=0;
     for(int x=0;x<FW;x++) velocity->v[x]=velocity->v[(FH-1)*FW+x]=0;
 }
+#if PLASMAPONG_PRESSURE_Q3
+#include "fluid_pressure_q3.h"
+#endif
 void fluid_pressure_cpu(int32_t *restrict pressure,const int32_t *restrict divergence) {
+#if PLASMAPONG_PRESSURE_Q3
+    fluid_pressure_q3_cpu(pressure,divergence);
+    return;
+#endif
     /* Solve the branch-free interior, then copy Neumann boundary pressure.
        Keep the hot loop small enough for the R4300's instruction cache. */
     memset(pressure,0,FW*sizeof(pressure[0]));
-    for(int pass=0;pass<8;pass++) {
+    for(int pass=0;pass<PLASMAPONG_PRESSURE_PASSES;pass++) {
         if(pass==0) {
             /* Zero initial pressure makes the right/bottom neighbors zero.
                Fill every interior cell without clearing the whole grid. */
@@ -162,7 +172,8 @@ void fluid_pressure_cpu(int32_t *restrict pressure,const int32_t *restrict diver
 static inline void subtract_gradient(FluidFlowValue *v,int32_t difference) {
 #ifdef PLASMAPONG_VELOCITY_FIXED
     /* pressure Q12 -> velocity Q4: divide by 2*CELL*4096/16. */
-    int change=difference>=0?(difference+1536)/3072:-((-difference+1536)/3072);
+    const int divisor=PLASMAPONG_CELL_Q4*32,half=divisor/2;
+    int change=difference>=0?(difference+half)/divisor:-((-difference+half)/divisor);
     *v=fluid_flow_clamp(*v-change);
 #else
     *v-=difference*(.5f/(CELL*PRESSURE_SCALE));
@@ -173,7 +184,11 @@ void fluid_project(Fluid *f) {
     PROFILE_BEGIN();
     walls(f);
 #ifdef PLASMAPONG_PROJECTION_CHAIN
+#if PLASMAPONG_PRESSURE_FAST_GRADIENT
+    fluid_projection_short_rsp(velocity,f->divergence,f->pressure,f->pressure_short);
+#else
     fluid_projection_rsp(velocity,f->divergence,f->pressure);
+#endif
     /* Attribute the complete chained operation to projection's solve stage. */
     PROFILE_END(PROFILE_PRESSURE);
 #else
@@ -184,7 +199,7 @@ void fluid_project(Fluid *f) {
     for(int y=1;y<FH-1;y++) for(int x=1;x<FW-1;x++) {
         int k=y*FW+x;
 #ifdef PLASMAPONG_VELOCITY_FIXED
-        f->divergence[k]=-768*(velocity->u[k+1]-velocity->u[k-1]+velocity->v[k+FW]-velocity->v[k-FW]);
+        f->divergence[k]=-(PLASMAPONG_CELL_Q4*8)*(velocity->u[k+1]-velocity->u[k-1]+velocity->v[k+FW]-velocity->v[k-FW]);
 #else
         float divergence=-.5f*CELL*(velocity->u[k+1]-velocity->u[k-1]+velocity->v[k+FW]-velocity->v[k-FW]);
         f->divergence[k]=(int32_t)(clampf(divergence,-32760,32760)*PRESSURE_SCALE);
@@ -268,10 +283,18 @@ static inline void force_add(FluidFlowValue *cell,float delta) {
     *cell=clampf(*cell+delta,-420,420);
 #endif
 }
+#ifdef PLASMAPONG_FORCE_FIXED
+#include "fluid_force_fixed.h"
+#endif
 void fluid_splat(Fluid *f,float x,float y,float radius,float u,float v,float dye,int player) {
     FluidFlow *velocity=fluid_velocity(f);
     FluidInk *ink_grid=fluid_dye(f);
     PROFILE_BEGIN();
+#ifdef PLASMAPONG_FORCE_FIXED
+    fluid_force_splat(f,x,y,radius,u,v,dye,player);
+    PROFILE_END(PROFILE_SPLAT);
+    return;
+#endif
 #if defined(PLASMAPONG_SPLAT_PLAN) && defined(PLASMAPONG_DYE_FIXED)
     SplatInk ink=splat_ink_plan(ink_grid,player);
 #endif
@@ -316,6 +339,11 @@ void fluid_pump(Fluid *f,float x,float y,float radius,float strength,float dt,in
     FluidFlow *velocity=fluid_velocity(f);
     FluidInk *ink_grid=fluid_dye(f);
     PROFILE_BEGIN();
+#ifdef PLASMAPONG_FORCE_FIXED
+    fluid_force_pump(f,x,y,radius,strength,dt,player);
+    PROFILE_END(PROFILE_PUMP);
+    return;
+#endif
 #if defined(PLASMAPONG_SPLAT_PLAN) && defined(PLASMAPONG_DYE_FIXED)
     SplatInk ink=splat_ink_plan(ink_grid,player);
 #endif
@@ -360,6 +388,12 @@ static inline void add_confinement(FluidFlowValue *v,float amount) {
 #endif
 }
 void fluid_velocity_step(Fluid *f,float dt) {
+#ifdef PLASMAPONG_VELOCITY_CHAIN
+    PROFILE_BEGIN();
+    fluid_velocity_chain_rsp(f,dt);
+    PROFILE_END(PROFILE_VELOCITY_ADVECTION);
+    return;
+#else
     FluidFlow *velocity=fluid_velocity(f);
     PROFILE_BEGIN();
 #ifdef PLASMAPONG_QUEUE_PROFILE
@@ -378,7 +412,13 @@ void fluid_velocity_step(Fluid *f,float dt) {
     FluidFlow *next=&f->velocity[f->velocity_bank^1];
     const float grid_dt=dt/CELL,decay=1-FLUID_DAMPING*dt;
     /* Semi-Lagrangian advection: bounded even during a strong jet. */
-#ifdef PLASMAPONG_VELOCITY_FIXED
+#ifdef PLASMAPONG_UPWIND
+#ifdef PLASMAPONG_UPWIND_RSP
+    fluid_upwind_velocity_rsp(next,velocity,grid_dt,decay,(f->velocity_phase+=40503u)&65535u);
+#else
+    fluid_upwind_velocity_cpu(next,velocity,grid_dt,decay,(f->velocity_phase+=40503u)&65535u);
+#endif
+#elif defined(PLASMAPONG_VELOCITY_FIXED)
     fluid_advect_velocity_fixed(next,velocity,grid_dt,decay,(f->velocity_phase+=40503u)&65535u);
 #else
     fluid_advect_velocity(next,velocity,grid_dt,decay);
@@ -386,6 +426,9 @@ void fluid_velocity_step(Fluid *f,float dt) {
     PROFILE_END(PROFILE_VELOCITY_ADVECTION);
     f->velocity_bank^=1; velocity=next;
     PROFILE_END(PROFILE_VELOCITY_SWAP);
+    /* Zero confinement is a cheaper fluid model: no swirl-restoration force,
+       and its private curl scratch need not be generated. */
+    if(FLUID_CONFINEMENT>0) {
 #ifdef PLASMAPONG_CONFINEMENT_FIXED
 #ifdef PLASMAPONG_CONFINEMENT_CHAIN
     fluid_curl_confinement_rsp(velocity,f->curl_fixed,fluid_confinement_strength(dt));
@@ -433,7 +476,9 @@ void fluid_velocity_step(Fluid *f,float dt) {
     }
     PROFILE_END(PROFILE_CONFINEMENT);
 #endif
+    }
     fluid_project(f);
+#endif
 }
 void fluid_dye_step(Fluid *f,float dt) {
     FluidFlow *velocity=fluid_velocity(f);
@@ -445,7 +490,13 @@ void fluid_dye_step(Fluid *f,float dt) {
     /* Deterministic temporal rounding; state remains safe to copy by value. */
     unsigned rounding=(f->dye_phase+=40503u)&65535u;
 #endif
-#ifdef PLASMAPONG_DYE_RSP
+#ifdef PLASMAPONG_UPWIND
+#ifdef PLASMAPONG_UPWIND_RSP
+    fluid_upwind_ink_rsp(next,ink_grid,velocity,grid_dt,decay,gold_decay,rounding);
+#else
+    fluid_upwind_ink_cpu(next,ink_grid,velocity,grid_dt,decay,gold_decay,rounding);
+#endif
+#elif defined(PLASMAPONG_DYE_RSP)
     fluid_advect_ink_rsp(next,ink_grid,velocity,grid_dt,decay,gold_decay,rounding);
 #elif defined(PLASMAPONG_DYE_FIXED)
     fluid_advect_ink_reference(next,ink_grid,velocity,grid_dt,decay,gold_decay,rounding);
@@ -474,10 +525,12 @@ static void ball_dye(Fluid *f,float x,float y,float amount,int hot) {
 void fluid_ball_dye(Fluid *f,float x,float y,float amount) { ball_dye(f,x,y,amount,0); }
 void fluid_hot_ball_dye(Fluid *f,float x,float y,float amount) { ball_dye(f,x,y,amount,1); }
 #ifdef PLASMAPONG_MENU_STAMPS
+enum { MENU_FOOTPRINT_SIDE=(24*16+PLASMAPONG_CELL_Q4-1)/PLASMAPONG_CELL_Q4+1,
+    MENU_FOOTPRINT_CAPACITY=MENU_FOOTPRINT_SIDE*MENU_FOOTPRINT_SIDE };
 typedef struct {
     unsigned count;
-    uint16_t index[25];
-    float weight[25];
+    uint16_t index[MENU_FOOTPRINT_CAPACITY];
+    float weight[MENU_FOOTPRINT_CAPACITY];
 } MenuFootprint;
 static struct {
     bool valid;
@@ -494,7 +547,7 @@ static void menu_footprint(MenuFootprint *p,float x,float y,float radius,bool sq
         /* Radius 8 division is an exact power-of-two scaling. Preserve
            radius 12's original multiply by its precomputed reciprocal. */
         float w=maxf(0,1-(squared?(dx*dx+dy*dy)*inv_radius2:(dx*dx+dy*dy)/(radius*radius)));
-        assert(p->count<25);
+        assert(p->count<MENU_FOOTPRINT_CAPACITY);
         p->index[p->count]=iy*FW+ix;
         p->weight[p->count++]=squared?w*w:w;
     }

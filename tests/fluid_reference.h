@@ -2,10 +2,17 @@
 #ifndef REFERENCE_FLUID_H
 #define REFERENCE_FLUID_H
 #include <stdint.h>
-#define FW 48
-#define FH 33
+#include "../src/fluid_config.h"
+#ifndef FW
+#define FW PLASMAPONG_GRID_W
+#endif
+#ifndef FH
+#define FH PLASMAPONG_GRID_H
+#endif
 #define FN (FW * FH)
-#define CELL 6.0f
+#ifndef CELL
+#define CELL (PLASMAPONG_CELL_Q4*(1.0f/16))
+#endif
 #define ARENA_W (FW * CELL)
 #define ARENA_H (FH * CELL)
 typedef struct {

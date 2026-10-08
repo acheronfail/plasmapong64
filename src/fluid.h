@@ -1,13 +1,22 @@
 #ifndef FLUID_H
 #define FLUID_H
 #include <stdint.h>
-#define FW 48
-#define FH 33
+#include "fluid_config.h"
+#define FW PLASMAPONG_GRID_W
+#define FH PLASMAPONG_GRID_H
 #define FN (FW * FH)
-#define CELL 6.0f
+#define CELL (PLASMAPONG_CELL_Q4*(1.0f/16))
 /* Momentum loss per second and swirl restoration, shared by CPU/RSP paths. */
+#ifdef PLASMAPONG_FLOW_DAMPING
+#define FLUID_DAMPING ((float)(PLASMAPONG_FLOW_DAMPING))
+#else
 #define FLUID_DAMPING .08f
+#endif
+#ifdef PLASMAPONG_FLOW_CONFINEMENT
+#define FLUID_CONFINEMENT ((float)(PLASMAPONG_FLOW_CONFINEMENT))
+#else
 #define FLUID_CONFINEMENT 1.25f
+#endif
 #define ARENA_W (FW * CELL)
 #define ARENA_H (FH * CELL)
 /* Whole grids and rows start on 16-byte cache-line boundaries. Index-based
@@ -52,6 +61,9 @@ typedef struct {
     FluidFlow velocity[2];
     FluidInk dye[2];
     _Alignas(16) int32_t pressure[FN];
+#if PLASMAPONG_PRESSURE_FAST_GRADIENT
+    _Alignas(16) int16_t pressure_short[FN];
+#endif
     _Alignas(16) union { float curl[FN]; int16_t curl_fixed[FN]; int32_t divergence[FN]; };
     unsigned velocity_bank,dye_bank;
 #ifdef PLASMAPONG_VELOCITY_FIXED

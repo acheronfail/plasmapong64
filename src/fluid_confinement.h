@@ -9,6 +9,8 @@ void fluid_confinement_fixed(FluidVelocityFixed *velocity,const int16_t *curl,un
 #ifdef PLASMAPONG_CONFINEMENT_RSP
 void fluid_curl_rsp(int16_t *curl,const FluidVelocityFixed *velocity);
 void fluid_confinement_rsp(FluidVelocityFixed *velocity,const int16_t *curl,unsigned strength);
+/* Consume RSP-owned velocity; caller owns the final synchronization. */
+void fluid_curl_confinement_rsp_begin(FluidVelocityFixed *velocity,int16_t *curl,unsigned strength);
 /* Curl -> confinement without an intermediate CPU synchronization. */
 void fluid_curl_confinement_rsp(FluidVelocityFixed *velocity,int16_t *curl,unsigned strength);
 #endif

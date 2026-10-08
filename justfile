@@ -2,6 +2,11 @@
 build:
     ./tools/build-rom.sh -j4
 
+# Validated 64x44 fluid candidate, with ordinary player input and no profiling.
+# Separate outputs preserve the original default build as a comparison control.
+build-fluid64:
+    ./tools/build-rom.sh -j4 GRID_W=64 GRID_H=44 FORCE_FIXED=1 PRESSURE_Q3=1 PRESSURE_FAST_GRADIENT=1 UPWIND=1 UPWIND_GPU_LIMIT=1 UPWIND_PREFETCH=1 UPWIND_INLINE_LIMIT=1 PRESSURE_WARM_START=1 PRESSURE_PASSES=1 FLOW_DAMPING=.16f VELOCITY_CHAIN=1 FLOW_CONFINEMENT=0.0f ROM=plasmapong-fluid64 BUILD_DIR=build/fluid64
+
 # Power off the N64 to release its SD-card lock.
 deploy: build
     sc64deployer sd upload plasmapong.z64 /CUSTOM/plasmapong.z64

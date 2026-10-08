@@ -5,8 +5,12 @@
  * Only divergence input and final pressure output cross RDRAM.
  */
 #include <rsp_queue.inc>
+#include "fluid_config.h"
     .set noreorder
     .set at
+#if PLASMAPONG_PRESSURE_Q3
+#include "rsp_pressure_q3.inc"
+#else
 #define ROW_BYTES 192
     .data
 RSPQ_BeginOverlayHeader
@@ -16,9 +20,9 @@ RSPQ_EmptySavedState
     .quad 0
     .bss
     .align 4
-rows: .ds.b ROW_BYTES*9
+rows: .ds.b ROW_BYTES*(PLASMAPONG_PRESSURE_PASSES+1)
 rows_end:
-divrows: .ds.b ROW_BYTES*8
+divrows: .ds.b ROW_BYTES*PLASMAPONG_PRESSURE_PASSES
 divrows_end:
 #ifdef PLASMAPONG_PRESSURE_VECTOR_SUM
 sum_words: .ds.b 16
@@ -241,7 +245,7 @@ row_done:
     lw t5,4(s6)
     sw t4,ROW_BYTES-4(s6)
     sw t5,0(s6)
-    li t3,7
+    li t3,PLASMAPONG_PRESSURE_PASSES-1
     bne s5,t3,wave_next_pass
     nop
     move s0,s1
@@ -267,7 +271,7 @@ store_done:
     addiu s1,s1,ROW_BYTES
 wave_next_pass:
     addiu s5,s5,1
-    li t3,8
+    li t3,PLASMAPONG_PRESSURE_PASSES
     beq s5,t3,wave_next_tick
     nop
     addiu s6,s6,-ROW_BYTES
@@ -286,7 +290,7 @@ current_ready:
     li s7,%lo(divrows_end)-ROW_BYTES
 wave_next_tick:
     addiu s3,s3,1
-    li t3,39
+    li t3,31+PLASMAPONG_PRESSURE_PASSES
     beq s3,t3,done
     nop
     addiu fp,fp,ROW_BYTES
@@ -304,3 +308,5 @@ pressure_cursor_ready:
 done:
     j RSPQ_Loop
     nop
+
+#endif

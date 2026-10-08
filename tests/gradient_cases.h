@@ -4,7 +4,8 @@
 #include "../src/fluid_pressure.h"
 static int16_t gradient_expected(int16_t velocity,int32_t a,int32_t b) {
     int64_t d=(int64_t)a-b;
-    int64_t change=d>=0?(d+1536)/3072:-((-d+1536)/3072);
+    const int divisor=PLASMAPONG_CELL_Q4*32,half=divisor/2;
+    int64_t change=d>=0?(d+half)/divisor:-((-d+half)/divisor);
     int64_t value=velocity-change;
     return value>16383?16383:value<-16383?-16383:(int16_t)value;
 }
@@ -85,15 +86,19 @@ static void gradient_cases(void) {
         expected=output.value;
         for(int y=1;y<FH-1;y++) for(int x=0;x<FW;x++) {
             int k=y*FW+x;
-            expected_div[k]=x==0 || x==FW-1?0:-768*(expected.u[k+1]-expected.u[k-1]+expected.v[k+FW]-expected.v[k-FW]);
+            expected_div[k]=x==0 || x==FW-1?0:-(PLASMAPONG_CELL_Q4*8)*(expected.u[k+1]-expected.u[k-1]+expected.v[k+FW]-expected.v[k-FW]);
         }
+#if PLASMAPONG_PRESSURE_WARM_START
+        memcpy(expected_pressure,pressure.value,sizeof(expected_pressure));
+#endif
         fluid_pressure_cpu(expected_pressure,expected_div);
         for(int y=0;y<FH;y++) for(int x=0;x<FW;x++) {
             int k=y*FW+x;
             expected.u[k]=x==0 || x==FW-1?0:gradient_expected(expected.u[k],expected_pressure[k+1],expected_pressure[k-1]);
             expected.v[k]=y==0 || y==FH-1?0:gradient_expected(expected.v[k],expected_pressure[k+FW],expected_pressure[k-FW]);
         }
-        /* Dirty intermediate arrays must be discarded before producer DMA. */
+        /* Discard dirty divergence before producer DMA; a warm pressure guess
+           is input/output and must instead reach RDRAM before its producer. */
         rdpq_set_fill_color(RGBA32(trial,trial,0,255));
         fluid_projection_rsp(&output.value,div.value,pressure.value);
         assert(!memcmp(&expected,&output.value,sizeof(expected)));
