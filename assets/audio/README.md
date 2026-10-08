@@ -21,6 +21,37 @@ from the beginning with a short fade-in. Music plays at one-quarter PCM gain
 under the existing sound effects, with saturation on the combined stereo output.
 Playback follows the actual audio hardware sample rate using a fractional cursor.
 
+In single player, each level advance restarts battle music from the beginning
+with the same short fade. Playback speed (tempo and pitch together) increases
+by 3 percentage points per level: level 1 is 100%, level 2 is 103%, and level 11
+and beyond are capped at 130%. Later levels still restart the song at the cap.
+Pauses and repeated updates during level cards preserve playback. Starting a
+new run resets the speed; menu music and sound effects retain their original rate.
+
+In 3/4-player multiplayer, each elimination while at least two players remain
+restarts battle music and adds 15 percentage points of tempo/pitch: a four-player
+match goes from 100% to 115% to the 130% cap, and a three-player match goes from
+100% to 115%. Losing a life or disconnecting does not count as elimination.
+The final elimination ends the match and retains the current music through the
+results screen. A rematch resets speed to 100%; two-player matches stay at 100%.
+
+Elimination checks (2026-10-08): portable playback tests cover 3/4-player
+progression, life-loss/disconnect exclusion, pauses, results and rematch resets.
+The four-player stress replay passes Ares 4/8 MiB validation with zero audio
+underruns (1/2 presentation misses respectively). The ordinary capture measures
+8.954 ms per simulation update with zero presentation misses and audio underruns
+across two windows. That stress replay keeps players alive; elimination transitions
+are covered by the portable tests. Evidence is retained under
+`build/dev-loop/music-eliminations-01/`; console checks remain unavailable.
+
+Level-speed checks (2026-10-08): portable tests cover advancement, restarts at
+the cap, extreme level values, pause/level-card continuity and rate resets.
+Ares 4/8 MiB validation at level 11 passes with zero audio underruns (three
+presentation misses in the slower validation capture). The ordinary single-player
+capture measures 7.067 ms per simulation update, zero presentation misses and
+zero audio underruns across two windows. Evidence is retained under
+`build/dev-loop/music-level-speed-01/`; console timing remains unverified.
+
 Integration checks (2026-10-08): portable tests and Ares RDP validation pass with
 4/8 MiB RDRAM. Ordinary Ares menu/game captures measured 11.241/7.413 ms per
 simulation update, with 1/0 presentation misses and zero audio underrun

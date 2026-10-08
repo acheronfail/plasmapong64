@@ -759,7 +759,7 @@ int main(void) {
         music_lengths[i]=(unsigned)bytes/4;
     }
     music_init(&music,audio_get_frequency(),music_lengths,music_read,music_rom);
-    music_update(&music,game.phase);
+    music_update(&music,&game);
 #ifdef PLASMAPONG_AUDIO_STREAM
     audio_write_silence(); audio_write_silence();
     audio_clock=get_ticks();
@@ -896,7 +896,7 @@ int main(void) {
 #endif
             accumulator-=frame_step;
             frame_steps++;
-            disable_interrupts(); sound_update(&sound,&game); music_update(&music,game.phase); enable_interrupts();
+            disable_interrupts(); sound_update(&sound,&game); music_update(&music,&game); enable_interrupts();
             if(game.scores_dirty) {
                 scores_store(&game);
                 previous=get_ticks(); accumulator=0;
