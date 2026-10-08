@@ -55,7 +55,7 @@ N64_CFLAGS += -flto
 # n64.mk links through g++; keep these as driver flags, not -Wl options.
 N64_CXXFLAGS += -flto
 endif
-src := src/main.c src/game.c src/arcade.c src/fluid.c src/ui.c src/sound.c src/save.c src/save_n64.c \
+src := src/main.c src/game.c src/arcade.c src/fluid.c src/ui.c src/sound.c src/music.c src/save.c src/save_n64.c \
        src/fluid_dye_fixed.c src/fluid_upwind.c src/fluid_upwind_rsp.c src/fluid_rsp.c \
        src/fluid_prepare_rsp.c src/fluid_gradient_short_rsp.c
 rsp_obj := $(addprefix $(BUILD_DIR)/src/,rsp_fluid.o rsp_upwind.o rsp_prepare.o rsp_gradient_short.o)
@@ -235,7 +235,10 @@ all: $(ROM).z64
 $(BUILD_DIR)/filesystem/at01-2x.font64: assets/fonts/at01-2x.fnt assets/fonts/at01-2x.png
 	mkdir -p $(BUILD_DIR)/filesystem
 	$(N64_MKFONT) --format $(HIRES_FONT_FORMAT) -o $(BUILD_DIR)/filesystem $<
-$(BUILD_DIR)/$(ROM).dfs: $(BUILD_DIR)/filesystem/at01-2x.font64
+$(BUILD_DIR)/filesystem/%.pcm: assets/audio/music/%.pcm
+	mkdir -p $(BUILD_DIR)/filesystem
+	cp $< $@
+$(BUILD_DIR)/$(ROM).dfs: $(BUILD_DIR)/filesystem/at01-2x.font64 $(BUILD_DIR)/filesystem/intro_loop.pcm $(BUILD_DIR)/filesystem/battle_loop.pcm
 	$(N64_MKDFS) $@ $(BUILD_DIR)/filesystem
 # Rebuild cached objects when default compiler/ucode switches change.
 $(src:%.c=$(BUILD_DIR)/%.o) $(rsp_obj): Makefile

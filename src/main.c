@@ -5,6 +5,7 @@
 #include <assert.h>
 #include "draw.h"
 #include "sound.h"
+#include "music.h"
 #include "save.h"
 #include "fluid_profile.h"
 #ifdef PLASMAPONG_FLUID_HIGHPRI
@@ -46,6 +47,13 @@ bool fluid_highpri_open;
 #endif
 static Game game;
 static Sound sound;
+static Music music;
+static uint32_t music_rom[MUSIC_TRACKS];
+static void music_read(void *context,unsigned track,uint32_t frame,int16_t *out,unsigned frames) {
+    const uint32_t *rom=context;
+    data_cache_hit_invalidate(out,MUSIC_BUFFER_FRAMES*4);
+    dma_read(out,rom[track]+frame*4,frames*4);
+}
 static unsigned draw_scale=1;
 static uint8_t draw_font=1;
 static FrameRate video_rate;
@@ -105,6 +113,7 @@ static void fill_audio(short *buffer,size_t frames) {
     uint64_t begin=get_ticks();
 #endif
     sound_render(&sound,buffer,frames);
+    music_mix(&music,buffer,frames);
 #ifdef PLASMAPONG_FLUID_PROFILE
     audio_ticks+=get_ticks()-begin; audio_frames+=frames;
 #endif
@@ -741,6 +750,16 @@ int main(void) {
     /* Start playback after loading and the first render, so they cannot
        consume the producer's initial buffer reserve or create sample debt. */
     audio_init(SOUND_RATE,4); sound_init(&sound,audio_get_frequency());
+    const char *music_paths[MUSIC_TRACKS]={"/intro_loop.pcm","/battle_loop.pcm"};
+    uint32_t music_lengths[MUSIC_TRACKS];
+    for(unsigned i=0;i<MUSIC_TRACKS;i++) {
+        music_rom[i]=dfs_rom_addr(music_paths[i]);
+        int bytes=dfs_rom_size(music_paths[i]);
+        assert(music_rom[i] && bytes>0 && bytes%4==0);
+        music_lengths[i]=(unsigned)bytes/4;
+    }
+    music_init(&music,audio_get_frequency(),music_lengths,music_read,music_rom);
+    music_update(&music,game.phase);
 #ifdef PLASMAPONG_AUDIO_STREAM
     audio_write_silence(); audio_write_silence();
     audio_clock=get_ticks();
@@ -811,7 +830,11 @@ int main(void) {
         audio_debt+=(audio_now-audio_clock)*(unsigned)audio_get_frequency();
         audio_clock=audio_now;
         uint64_t owed=audio_debt/TICKS_FROM_US(1000000);
-        audio_quota=owed>384?384:(unsigned)owed;
+        /* Music must keep playing even when rendering falls below 42 FPS.
+           The old 384-sample cap could never repay debt at slower frame rates.
+           Bound catch-up by the four-buffer ring rather than a frame rate. */
+        unsigned audio_capacity=4*(unsigned)audio_get_buffer_length();
+        audio_quota=owed>audio_capacity?audio_capacity:(unsigned)owed;
         if(!(*(volatile uint32_t *)0xa450000c & (1u<<30))) audio_underruns++;
 #endif
 #ifdef PLASMAPONG_PIXELS_CHAIN
@@ -873,7 +896,7 @@ int main(void) {
 #endif
             accumulator-=frame_step;
             frame_steps++;
-            disable_interrupts(); sound_update(&sound,&game); enable_interrupts();
+            disable_interrupts(); sound_update(&sound,&game); music_update(&music,game.phase); enable_interrupts();
             if(game.scores_dirty) {
                 scores_store(&game);
                 previous=get_ticks(); accumulator=0;

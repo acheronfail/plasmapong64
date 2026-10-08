@@ -23,6 +23,8 @@ cc $flags src/save.c tests/save_test.c -o build/save-test
 ./build/save-test
 cc $flags -DPLASMAPONG_SOUND_STEADY src/sound.c tests/sound_test.c -o build/sound-test
 ./build/sound-test
+cc $flags src/music.c tests/music_test.c -o build/music-test
+./build/music-test
 cc $flags -DPLASMAPONG_MENU_STAMPS $fluid_sources tests/menu_stamp_test.c -lm -o build/menu-stamp-test
 ./build/menu-stamp-test
 cc $flags src/game.c src/arcade.c $fluid_sources src/ui.c tools/preview.c -lm -o build/preview
