@@ -160,7 +160,6 @@ static void menu_title(void) {
 static void court(void) {
     rect(OX,OY-2,ARENA_W,1,0x304c65); rect(OX,OY+ARENA_H,ARENA_W,1,0x304c65);
     for(int y=OY+5;y<OY+ARENA_H-3;y+=12) rect(OX+ARENA_W*.5f-1,y,1,4,0x23374e);
-    rect(OX-3,OY,2,ARENA_H,0x24566c); rect(OX+ARENA_W+1,OY,2,ARENA_H,0x71334c);
 }
 static void square_mask(void) {
     const float left=OX+(ARENA_W-ARENA_H)*.5f,right=left+ARENA_H;
@@ -392,7 +391,15 @@ void ui_draw(const Game *g) {
         label(145,20,0,s); label(233,20,1,"FIRST TO 9");
     }
     flow_background(g,OX,OY,ARENA_W,ARENA_H);
-    if(game_square(g)) square_court(g); else draw_static(DRAW_COURT,court);
+    if(game_square(g)) square_court(g);
+    else {
+        draw_static(DRAW_COURT,court);
+        /* Goal colours follow the players and cannot live in the cached court. */
+        for(unsigned p=0;p<game_players(g);p++) if(game_alive(g,p)) {
+            float x=game_side(g,p)==1?OX+ARENA_W+1:OX-3;
+            rect(x,OY,2,ARENA_H,player_colors[game_player_palette(g,p)]);
+        }
+    }
     float suction_radius=0;
     bool radius_ready=false;
     for(unsigned p=0;p<game_players(g);p++) {

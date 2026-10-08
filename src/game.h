@@ -90,7 +90,7 @@ typedef struct {
     unsigned options_selection;
     bool fps_meter; /* Saved permission for the overlay and port-1 L/R controls. */
 } Game;
-/* Share the level palette between paddles, labels and new fluid emissions. */
+/* Share the level palette between paddles, goals, labels and new fluid emissions. */
 static inline unsigned game_player_palette(const Game *g,unsigned p) {
     static const unsigned pairs[4][2]={{0,1},{2,3},{1,0},{3,2}};
     if(g->mode!=ARCADE || p>=2) return p;
