@@ -5,6 +5,9 @@ PARTICLE TAILS and SPEED. The animated menu/Options background previews the
 selection, and the existing EEPROM setting retains it across matches and restarts.
 Existing effect IDs remain unchanged; the four new IDs are appended.
 
+Screenshots refreshed in Ares on 2026-10-08 with the current solver and FPS
+meter OFF. The experiment results below retain their original measurements.
+
 ![Actual Ares captures of VORTEX, RELIEF, BANDS and PRESSURE](flow-views/comparison.png)
 
 The contact sheet removes only the Ares menu/status bars and resizes the game
