@@ -21,7 +21,7 @@
 /* About 67ms to release at full charge before breaking. */
 #define SUCTION_BREAK_TICKS (SUCTION_CHARGE_TICKS+GAME_HZ/15u)
 #define SUCTION_COOLDOWN_TICKS (5u*GAME_HZ)
-typedef struct { bool connected,a,z,start,b; float x,y; } Input;
+typedef struct { bool connected,a,z,start,b; float x,y; uint16_t other_buttons; } Input;
 typedef struct {
     float x,y,vx,vy,charge,burst;
     unsigned suction_ticks,cooldown_ticks;
@@ -46,7 +46,7 @@ static inline FluidView flow_view(FlowEffect effect) {
     return effect>=FLOW_VORTEX?(FluidView)(effect-FLOW_VORTEX+FLUID_VIEW_VORTEX):
         effect==FLOW_SPEED?FLUID_VIEW_SPEED:FLUID_VIEW_DYE;
 }
-typedef enum { OPTION_FLOW, OPTION_RESOLUTION, OPTION_FPS_METER, OPTION_COUNT } GameOption;
+typedef enum { OPTION_FLOW, OPTION_RESOLUTION, OPTION_FPS_METER, OPTION_CLEAR_SAVE, OPTION_COUNT } GameOption;
 #define FLOW_TRACERS 96
 #define FLOW_SAMPLE_TICKS (GAME_HZ/15)
 #define FLOW_HISTORY (4*FLOW_SAMPLE_TICKS+1)
@@ -88,6 +88,7 @@ typedef struct {
        values for compatibility with existing EEPROMs; these select resolution. */
     FrameRate frame_rate;
     unsigned options_selection;
+    bool clear_save_dialog;
     bool fps_meter; /* Saved permission for the overlay and port-1 L/R controls. */
 } Game;
 /* Share the level palette between paddles, goals, labels and new fluid emissions. */

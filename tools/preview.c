@@ -81,6 +81,7 @@ int main(int argc,char **argv) {
         if(!strcmp(argv[1],"scores")) g.phase=SCORES;
         if(!strcmp(argv[1],"level")) g.arcade.transition=1;
     }
+    if(argc>1 && !strcmp(argv[1],"clear-save")) { g.phase=OPTIONS; g.save_available=true; g.options_selection=OPTION_CLEAR_SAVE; g.clear_save_dialog=true; }
     if(argc>1 && !strcmp(argv[1],"options")) { g.phase=OPTIONS; g.save_available=true; }
     puts("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 320 240' width='960' height='720'>");
     ui_draw(&g); puts("</svg>");

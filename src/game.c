@@ -30,9 +30,15 @@ static void serve(Game *g) {
     g->bvx=0; g->bvy=0;
     g->serve=1.2f; g->held=-1;
 }
+static void reset_saved_state(Game *g) {
+    memset(g->highs,0,sizeof(g->highs));
+    g->flow_effect=FLOW_NONE; g->frame_rate=FPS_60; g->fps_meter=false;
+    g->score_entry=-1; g->initial_cursor=0;
+    memset(g->tracers,0,sizeof(g->tracers));
+}
 void game_init(Game *g) {
     memset(g,0,sizeof(*g));
-    g->players=2; g->frame_rate=FPS_60;
+    g->players=2; reset_saved_state(g);
     const float menu_widths[]={134,99,89,59};
     memcpy(g->menu_label_widths,menu_widths,sizeof(menu_widths));
     for(unsigned p=0;p<MAX_PLAYERS;p++) { g->player_port[p]=p; g->player_side[p]=p; g->lives[p]=MULTIPLAYER_LIVES; }
@@ -363,6 +369,25 @@ void game_step(Game *g,const Input physical[MAX_PLAYERS]) {
     }
     if(g->phase==OPTIONS) {
         menu_step(g);
+        if(g->clear_save_dialog) {
+            bool cancel=back || start;
+            for(int p=0;p<MAX_PLAYERS;p++) if(in[p].connected) {
+                cancel|=(in[p].z && !g->previous[p].z) ||
+                    (in[p].other_buttons & ~g->previous[p].other_buttons)!=0;
+                cancel|=(direction(in[p].x) && direction(in[p].x)!=direction(g->previous[p].x)) ||
+                    (direction(in[p].y) && direction(in[p].y)!=direction(g->previous[p].y));
+            }
+            if(cancel || confirm) {
+                g->clear_save_dialog=false;
+                if(cancel) g->sound_events|=SOUND_BACK;
+                else { reset_saved_state(g); g->scores_dirty=true; g->sound_events|=SOUND_SELECT; }
+            }
+            memcpy(g->previous,in,sizeof(g->previous)); return;
+        }
+        if(confirm && !back && !start && g->options_selection==OPTION_CLEAR_SAVE) {
+            g->clear_save_dialog=true; g->sound_events|=SOUND_SELECT;
+            memcpy(g->previous,in,sizeof(g->previous)); return;
+        }
         if(back || start) { g->phase=MENU; g->sound_events|=SOUND_BACK; }
         else for(int p=0;p<MAX_PLAYERS;p++) if(in[p].connected) {
             int vertical=direction(in[p].y);
@@ -370,7 +395,7 @@ void game_step(Game *g,const Input physical[MAX_PLAYERS]) {
                 g->options_selection=(g->options_selection+(vertical>0?OPTION_COUNT-1:1))%OPTION_COUNT; g->sound_events|=SOUND_SELECT; break;
             }
             int nav=direction(in[p].x);
-            if(nav && nav!=direction(g->previous[p].x)) {
+            if(nav && nav!=direction(g->previous[p].x) && g->options_selection!=OPTION_CLEAR_SAVE) {
                 if(g->options_selection==OPTION_FLOW)
                     g->flow_effect=(g->flow_effect+(nav>0?1:FLOW_COUNT-1))%FLOW_COUNT;
                 else if(g->options_selection==OPTION_RESOLUTION) g->frame_rate=g->frame_rate==FPS_60?FPS_30:FPS_60;

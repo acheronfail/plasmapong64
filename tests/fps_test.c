@@ -59,9 +59,11 @@ int main(void) {
     in[0].x=0; game_step(&g,in); in[0].x=1; game_step(&g,in);
     assert(g.fps_meter);
     in[0].x=0; in[0].y=-1; game_step(&g,in);
+    assert(g.options_selection==OPTION_CLEAR_SAVE);
+    in[0].y=0; game_step(&g,in); in[0].y=-1; game_step(&g,in);
     assert(g.options_selection==OPTION_FLOW);
     in[0].y=0; game_step(&g,in); in[0].y=1; game_step(&g,in);
-    assert(g.options_selection==OPTION_FPS_METER);
+    assert(g.options_selection==OPTION_CLEAR_SAVE);
     in[0].y=0;
     in[0].x=0; in[0].b=true; game_step(&g,in);
     assert(g.phase==MENU && g.frame_rate==FPS_30);

@@ -324,7 +324,7 @@ void ui_menu_particles(const Game *g) {
 void ui_draw(const Game *g) {
     if(g->phase==OPTIONS) {
         flow_background(g,0,0,320,240);
-        rect(12,64,296,155,0x09111f);
+        rect(12,54,296,182,0x09111f);
         menu_label(87,4,"OPTIONS");
         rect(20,98+26*g->options_selection,280,20,0x142c3b);
         rect(20,98+26*g->options_selection,2,20,CYAN);
@@ -335,9 +335,18 @@ void ui_draw(const Game *g) {
         menu_label(139,g->options_selection==OPTION_RESOLUTION?2:1,setting);
         snprintf(setting,sizeof(setting),"< FPS METER: %s >",g->fps_meter?"ON":"OFF");
         menu_label(165,g->options_selection==OPTION_FPS_METER?2:1,setting);
-        if(g->fps_meter) menu_label(187,1,"L: SHOW/HIDE   R: RESET");
+        menu_label(191,g->options_selection==OPTION_CLEAR_SAVE?2:1,"CLEAR SAVE");
+        if(g->fps_meter) menu_label(210,1,"L: SHOW/HIDE   R: RESET");
         if(!g->save_available || g->save_failed)
-            menu_label(207,1,!g->save_available?"NO SAVE STORAGE - SESSION ONLY":"SAVE FAILED - SESSION ONLY");
+            menu_label(229,1,!g->save_available?"NO SAVE STORAGE - SESSION ONLY":"SAVE FAILED - SESSION ONLY");
+        if(g->clear_save_dialog) {
+            rect(20,78,280,122,CYAN);
+            rect(22,80,276,118,0x09111f);
+            menu_label(105,4,"CLEAR SAVE?");
+            menu_label(129,1,"RESET ALL HIGH SCORES");
+            menu_label(147,1,"AND SETTINGS?");
+            menu_label(180,2,"A: CONFIRM   B: CANCEL");
+        }
         return;
     }
     if(g->phase==MENU) {

@@ -939,7 +939,10 @@ int main(void) {
             }
             input[p]=(Input){.connected=joypad_get_style((joypad_port_t)p)==JOYPAD_STYLE_N64,
                 .a=in.btn.a,.z=in.btn.z,.start=in.btn.start,.b=in.btn.b,
-                .x=in.stick_x/80.0f,.y=in.stick_y/80.0f};
+                .x=in.stick_x/80.0f,.y=in.stick_y/80.0f,
+                .other_buttons=in.btn.l | (in.btn.r<<1) | (in.btn.c_up<<2) |
+                    (in.btn.c_down<<3) | (in.btn.c_left<<4) | (in.btn.c_right<<5) |
+                    (in.btn.d_up<<6) | (in.btn.d_down<<7) | (in.btn.d_left<<8) | (in.btn.d_right<<9)};
             if(in.btn.d_up) input[p].y=1;
             if(in.btn.d_down) input[p].y=-1;
             if(in.btn.d_left) input[p].x=-1;
