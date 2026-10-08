@@ -60,6 +60,28 @@ static void fluid_force_pump(Fluid *f,float x,float y,float radius,float strengt
     SplatInk ink=splat_ink_plan(fluid_dye(f),player);
     ForceFootprint p=force_footprint(x,y,radius);
     int amplitude=force_quantize(strength*dt,16);
+    /* The common gameplay suction has no pigment and a fixed 35-pixel
+       radius. Fold falloff into the softened radial direction lookup. Keep
+       Q4 velocity and subpixel positions; other pump shapes use the general
+       path below. Reordered rounding changes small increments by ~1 Q4 unit. */
+    if(radius==35 && strength<0) {
+        for(int iy=p.y0;iy<=p.y1;iy++) for(int ix=p.x0;ix<=p.x1;ix++) {
+            int dx=ix*PLASMAPONG_CELL_Q4+PLASMAPONG_CELL_Q4/2-p.x;
+            int dy=iy*PLASMAPONG_CELL_Q4+PLASMAPONG_CELL_Q4/2-p.y;
+            int d2=dx*dx+dy*dy;
+            if(d2>=p.r2) continue;
+            int index,fraction,bits;
+            if(d2<64*256) { index=d2>>8; fraction=d2&255; bits=8; }
+            else { index=64+((d2-64*256)>>10); fraction=d2&1023; bits=10; }
+            int gain=force_suction35_inverse[index];
+            gain+=((force_suction35_inverse[index+1]-gain)*fraction+(1<<(bits-1)))>>bits;
+            int nx=force_round_shift(dx*gain,6),ny=force_round_shift(dy*gain,6);
+            int k=iy*FW+ix;
+            force_integer_add(&velocity->u[k],force_round_shift(nx*amplitude,14));
+            force_integer_add(&velocity->v[k],force_round_shift(ny*amplitude,14));
+        }
+        return;
+    }
     int a=force_quantize(strength>0?strength*dt*.0015f*ink.wa:0,DYE_SCALE);
     int b=force_quantize(strength>0?strength*dt*.0015f*ink.wb:0,DYE_SCALE);
     for(int iy=p.y0;iy<=p.y1;iy++) for(int ix=p.x0;ix<=p.x1;ix++) {

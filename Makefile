@@ -121,6 +121,13 @@ $(error RDP_WAIT_TRACE=1 requires QUEUE_PC_PROFILE=1)
 endif
 N64_CFLAGS += -DPLASMAPONG_RDP_WAIT_TRACE
 endif
+ifeq ($(SC64_RELOAD),1)
+src += src/sc64_reload.c
+N64_CFLAGS += -DPLASMAPONG_SC64_RELOAD
+ifneq ($(USB_LOG),1)
+$(error SC64_RELOAD=1 requires USB_LOG=1 for cartridge detection)
+endif
+endif
 ifeq ($(USB_LOG),1)
 N64_CFLAGS += -DPLASMAPONG_USB_LOG
 endif

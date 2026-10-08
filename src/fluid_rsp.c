@@ -21,7 +21,7 @@ static void pressure_begin(int32_t *pressure,const int32_t *divergence,int16_t *
     data_cache_hit_writeback_invalidate(pressure,FN*sizeof(*pressure));
     if(short_pressure) {
         assert(!((uintptr_t)short_pressure&15));
-        data_cache_hit_invalidate(short_pressure,FN*sizeof(*short_pressure));
+        data_cache_hit_writeback_invalidate(short_pressure,FN*sizeof(*short_pressure));
     }
     /* The configured warm pressure sweeps stay inside one DMEM wavefront. */
     fluid_queue_begin();

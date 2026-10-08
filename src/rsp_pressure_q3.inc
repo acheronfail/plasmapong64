@@ -20,10 +20,20 @@ word_output: .ds.b WORD_ROW
 base_buffer: .ds.b 32
 short_cursor: .ds.b 4
 warm_cursor: .ds.b 4
+warm_stride: .ds.b 4
     .text
 PressureSolve:
+    /* The chained path already retains exact Q3 pressure. Read that field
+       directly; the standalone Q12 interface still accepts arbitrary words. */
     addiu t3,a0,WORD_ROW
+    li t4,WORD_ROW
+    beqz a2,q3_warm_cursor_ready
+    nop
+    addiu t3,a2,SHORT_ROW
+    li t4,SHORT_ROW
+q3_warm_cursor_ready:
     sw t3,%lo(warm_cursor)(zero)
+    sw t4,%lo(warm_stride)(zero)
     li t3,128
     mtc2 t3,$v22.e0
     vxor $v22,vzero,$v22.e0
@@ -99,7 +109,8 @@ q3_tick:
     nop
 q3_warm_below:
     lw t8,%lo(warm_cursor)(zero)
-    addiu t8,t8,WORD_ROW
+    lw t3,%lo(warm_stride)(zero)
+    addu t8,t8,t3
     addiu t9,fp,SHORT_ROW
     li t3,%lo(rows_end)
     bne t9,t3,q3_warm_target
@@ -109,7 +120,8 @@ q3_warm_target:
     jal q3_load_warm
     nop
     lw t8,%lo(warm_cursor)(zero)
-    addiu t8,t8,WORD_ROW
+    lw t3,%lo(warm_stride)(zero)
+    addu t8,t8,t3
     sw t8,%lo(warm_cursor)(zero)
 q3_loaded:
     move s5,zero
@@ -225,12 +237,21 @@ q3_stored:
     bne s5,t3,q3_next_pass
     nop
     li t4,%lo(word_output)
-    .set cell,0
-    .rept WIDTH
-    lh t5,cell*2(s6)
-    sll t5,t5,9
-    sw t5,cell*4(t4)
-    .set cell,cell+1
+    /* Expand eight signed Q3 values at a time. VMUDM yields the signed
+       high half and ACC_LO the low half of the exact Q12 word. */
+    .set part,0
+    .rept WIDTH/8
+    lqv $v09,part,s6
+    vmudm $v10,$v09,$v21.e2
+    vsar $v11,COP2_ACC_LO
+    .set lane,0
+    .rept 8
+    ssv $v10,lane*2,lane*4,t4
+    ssv $v11,lane*2,lane*4+2,t4
+    .set lane,lane+1
+    .endr
+    addiu t4,t4,32
+    .set part,part+16
     .endr
     move s0,s1
     li s4,%lo(word_output)
@@ -331,6 +352,19 @@ q3_done:
 
 q3_load_warm:
     move v1,ra
+    lw t3,%lo(warm_stride)(zero)
+    li t4,SHORT_ROW
+    bne t3,t4,q3_load_words
+    nop
+    move s0,t8
+    move s4,t9
+    li t0,SHORT_ROW-1
+    li t1,SHORT_ROW
+    jal DMAExec
+    li t2,DMA_IN
+    b q3_warm_walls
+    nop
+q3_load_words:
     move s0,t8
     li s4,%lo(div_input)
     li t0,WORD_ROW-1
@@ -351,6 +385,7 @@ q3_load_warm:
     addiu t4,t4,8
     .set part,part+16
     .endr
+q3_warm_walls:
     /* Enforce the Neumann sides even for an arbitrary caller's warm guess. */
     lh t5,2(t9)
     sh t5,0(t9)

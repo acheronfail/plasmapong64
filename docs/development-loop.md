@@ -6,9 +6,117 @@ Its ESPHome outlet URL is configured by `N64_POWER_URL`, entity `switch/switch`.
 The user authorizes ROM uploads and explicit outlet on/off commands for development.
 Use this interface instead of desktop automation to power the console.
 
+## Current performance goal, 2026-10-08
+
+The user has requested a new optimisation pass after adding streamed music,
+fixing input bugs and adopting the larger grid. Target **<=7 ms per simulation
+update at the genuine 64x44 production grid**, keeping the current music/audio,
+bounded fractional currents, smooth dye transport and predictable ball coupling.
+Validate ordinary four-player stress captures across all eight effects at roughly
+59.94 FPS with no steady-state presentation misses or audio underruns. Use a fresh
+baseline from the current revision; earlier pre-music captures are historical
+comparisons. Separate profiling captures from acceptance timing.
+
+The previous <=6 ms goal below was paused before this new goal was requested.
+It is retained as historical context, not the current acceptance threshold.
+
+Fresh captures after USB reconnection: `music-baseline-7ms-01` measured
+**9.337 ms/update, 59.942 FPS**, with 1,490 frames over 1,490 VI, zero misses
+and zero audio underrun observations. Its portable checks and 4/8 MiB Ares
+kernel fixtures passed. Hardware profiling (`music-profile-7ms-01`) substantially
+perturbs scheduling: approximately 6.69 ms combined velocity/projection,
+2.24 ms dye, 2.30 ms splats/pumps, and 0.47 ms sampling in its final window.
+The profile's 12.19 ms total and 12 misses are diagnostic, not acceptance timing.
+
+`upwind-weight-7ms-01` pre-scales the advection timestep so the RSP accumulator
+produces rounded weights directly, removing three vector instructions per
+coefficient without changing the integer result. All 4/8 MiB Ares kernel
+fixtures passed. Ordinary hardware retry measured **9.127 ms/update, 59.943 FPS**,
+1,490 frames over 1,490 VI, zero misses and zero audio underrun observations.
+This is a 0.210 ms (2.2%) reduction in the matched tails workload, not attainment
+of the 7 ms target or an all-effects result. Both ordinary captures ended with
+verified power OFF; retained logs are `hardware-reconnected` and `hardware-retry`
+in their respective experiment directories.
+
+`upwind-unroll-7ms-01` expands the two velocity / three dye channel updates
+and preloads split decay constants. It removes repeated scalar channel setup
+and handles decay=1 exactly without a special inner-loop branch. The 4/8 MiB
+exact kernel fixtures passed. Its matched ordinary tails capture measured
+**8.879 ms/update, 59.943 FPS**, 1,490 frames over 1,490 VI, zero misses and
+zero audio underrun observations. This is another 0.248 ms improvement (4.9%
+total versus the fresh 9.337 ms baseline). Power OFF was verified. The current
+7 ms target and all-effects acceptance remain unfulfilled.
+
+The subsequent `upwind-unroll-effects-01` ordinary capture exercised all eight
+effects with streamed music: **8.622 ms/update mean** (8.180–9.149 ms across
+60 windows), **59.942 FPS**, 8,990 frames over 8,990 VI, zero misses and zero
+audio underrun observations. It ended with verified power OFF. This establishes
+current all-effects presentation stability; simulation cost still exceeds 7 ms.
+
+`suction-weight-7ms-01` folds
+radius-35 suction falloff into a 712-byte reciprocal-direction table. Other
+radii and outward pumps retain the general calculation. Positions remain Q4,
+velocity remains Q4, and dye/ball sampling is unchanged. The new portable test
+compares 128 subpixel/edge/timestep cases against the continuous softened radial
+field, with a maximum error of one Q4 velocity unit; sustained direction/bounds
+and full gameplay checks also pass. Ares 4/8 MiB and exact-ROM playback passed.
+The matched ordinary hardware capture measured **8.733 ms/update**, 1,490 frames
+over 1,490 VI, zero misses and zero audio underrun observations, then verified
+power OFF. This is another 0.146 ms saved, about 6.5% total versus the fresh
+baseline. The earlier all-effects result predates this suction change; repeat
+all-effects acceptance after further optimisation. The <=7 ms goal remains open.
+
+`pressure-compact-warm-01` reads the existing Q3 short-pressure field directly
+for the chained solve instead of reloading and repacking its Q12 mirror. The
+compact pressure API now treats the short field as the warm input/output; both
+fields must be initialized consistently. The standalone Q12 oracle interface
+still accepts arbitrary warm words. Its matched hardware capture measured
+**8.558 ms/update**, with 1,490 frames over 1,490 VI and zero audio underruns.
+
+`pressure-vector-pack-01` then replaces scalar Q3-to-Q12 expansion with vector
+multiply/high-low stores, preserving every output bit. Matched hardware measured
+**8.483 ms/update** (8.366–8.609 ms across ten windows), 1,490 frames over
+1,490 VI and zero audio underrun observations. Both runs passed the 4/8 MiB
+exact fixtures, including 148 standalone pressure fields, dual pressure-output
+comparisons and 32 full velocity-pipeline comparisons. Both ended with verified
+power OFF. These pressure changes save 0.251 ms combined, bringing the matched
+reduction versus 9.337 ms to approximately 9.2%; final all-effects acceptance
+and the <=7 ms target are still pending.
+
+Two subsequent experiments were rejected and their implementation removed:
+
+- `force-batch-02` queued the original exact CPU-prepared splat footprints,
+  transferred field ownership once per stage and applied all splats in order.
+  Thirty-two new exact batch fixtures passed in 4/8 MiB Ares, covering overlap,
+  both banks, capacity rollover, fallback and reads during a batch. Ordinary
+  hardware regressed to **9.835 ms/update**, so batching by itself does not pay
+  for the added RSP field transfers and work. Its source archive remains in the
+  ignored experiment directory; the production force path remains on the CPU.
+- `force-outline-01` prevented cloning/inlining of the two CPU force APIs.
+  It shrank `game_step` from 24,204 to 22,468 bytes but measured **8.520 ms**,
+  compared with the retained **8.483 ms**. Reduced code size did not yield a
+  measured improvement, so the compiler boundary change was removed.
+
+Both rejected captures presented 1,490 frames over 1,490 VI with zero audio
+underrun observations and ended with verified power OFF. Their negative results
+change the next approach: further offloading needs to reuse solver-resident
+fields or reduce the algorithm's work, rather than add separate field passes.
+
+Before committing this checkpoint, a local pressure-correction prototype was
+removed after portable gameplay checks rejected it. The stateless version
+reduced four-second residual jet speed to about 8.4 px/s; retaining pressure
+history raised it only to about 10.0–10.4 px/s, outside the existing 18–24 px/s
+expectation. The tests were not relaxed. No hardware acceptance result is claimed
+for that prototype; its source is archived in ignored build evidence.
+
+This committed checkpoint retains the measured **8.483 ms** warm-pressure solver,
+the suction lookup, transport-loop improvements and optional SummerCart reload
+support. The <=7 ms objective is still unmet; later all-effects acceptance must
+use the final retained source rather than the earlier unroll-only capture.
+
 ## Retained checkpoint, 2026-10-08
 
-Further optimisation is paused at the user's request. The official finer grid runs
+At this checkpoint, optimisation was paused at the user's request. The official finer grid runs
 near 60 FPS on the NTSC-J console; the original goals of 5 ms at 48x33 and
 6 ms at 64x44 remain unmet. Historical experiment notes below describe progress
 at the time of each capture, not additional work currently in progress.
@@ -74,6 +182,49 @@ This is a cleanup regression check, not evidence of a meaningful speedup over
 **L** shows/hides it and **R** resets its counters. The setting saves to EEPROM
 and defaults to OFF, including when loading older saves. With it OFF, L and R
 have no effect. Presentation sampling continues for benchmark logs.
+
+## SummerCart development reload
+
+`just build-reload` builds a human-controlled `plasmapong-reload.z64` with
+`USB_LOG=1 SC64_RELOAD=1`. Ordinary production and timing builds omit the handler.
+For a retained experiment use `--define SC64_RELOAD=1` with `just dev-loop`.
+The handler polls at frame boundaries, responds to Ping, drains RSP/RDP work
+and stops audio/DMA before acknowledging Halt, then waits in RAM. Reboot loads
+the newly uploaded ROM's IPL3 and enters the pinned libdragon warm-boot path.
+This implementation targets ROMs built with this project's pinned toolchain.
+
+First boot a reload-capable ROM with the normal power-off/upload/listen/power-on
+workflow. With that ROM running, stop the debugger (one USB client at a time),
+then use:
+
+```sh
+sc64deployer upload --direct --reboot plasmapong-reload.z64
+sc64deployer debug --no-writeback
+```
+
+The deployer selects the connected device automatically; `sc64deployer list`
+shows its endpoint. On this setup its libftdi backend can claim the device and
+remove `/dev/ttyUSB0`; use the reported `ftdi://...` endpoint with the development
+loop's `--port` option in that case. Firmware and outlet configuration stay unchanged.
+
+`--reboot` requires support in the **currently running** ROM. Deployer 2.20.2
+only warns on missing acknowledgements and continues uploading, so do not use
+it to replace an older running ROM without the handler. Recover from a failed
+reload with verified `just n64-power off` and the standard cold-upload workflow.
+`sc64deployer reset` alone resets cartridge state, not the N64 CPU.
+
+`sc64-reload-03` passed 4/8 MiB Ares gameplay validation and an actual cold boot →
+halt/upload/reboot → gameplay capture on the NTSC-J console. Both AUX messages
+were acknowledged. The first warm capture presented 290 frames over 290 VI with
+zero misses; audio recorded one startup underrun observation and zero in the
+following window. A second reload after eight seconds without a debugger also
+acknowledged both messages and completed ten gameplay windows: 1,490 frames
+over 1,490 VI, zero misses, and zero audio underrun observations in every window.
+Both tests ended with verified console power OFF. Reload captures are workflow
+validation, separate from ordinary
+performance acceptance measurements.
+
+Protocol reference: [SummerCart AUX registers and messages](https://github.com/Polprzewodnikowy/SummerCart64/blob/main/docs/01_memory_map.md).
 
 ## Run an experiment
 

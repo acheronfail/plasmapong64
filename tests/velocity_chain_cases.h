@@ -19,7 +19,8 @@ static void velocity_chain_cases(void) {
             fluid_velocity(&actual.f)->u[k]=(int)(seed%16383)-8191;
             seed=seed*1664525u+1013904223u;
             fluid_velocity(&actual.f)->v[k]=(int)(seed%16383)-8191;
-            actual.f.pressure[k]=((int)(seed%401)-200)*512;
+            actual.f.pressure_short[k]=(int)(seed%401)-200;
+            actual.f.pressure[k]=(int32_t)actual.f.pressure_short[k]*512;
         }
         expected=actual.f;
         float dt=trial%4==0?0:trial%4==1?1.0f/60:trial%4==2?1.0f/30:.2f;

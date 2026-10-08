@@ -39,12 +39,13 @@ Advect:
     li t2,DMA_IN
     li t3,%lo(params)
     lw t4,0(t3)
-    mtc2 t4,$v20.e0
-    srl t4,t4,16
+    /* Scale the Q20 step by 128 before splitting it. The accumulator's
+       middle lane then yields (abs(velocity)*step+256)>>9 directly. */
+    sll t5,t4,7
+    mtc2 t5,$v20.e0
+    srl t4,t4,9
     mtc2 t4,$v20.e1
-    li t4,128
-    mtc2 t4,$v20.e2
-    li t4,256
+    li t4,32768
     mtc2 t4,$v22.e0
     vxor $v22,vzero,$v22.e0
     lw t4,12(t3)
@@ -57,6 +58,23 @@ Advect:
     mtc2 t5,$v21.e1
     addiu t4,t4,1
     mtc2 t4,$v21.e2
+    /* Decay is Q15. Split its doubled value into unsigned low and high
+       halves, including exactly 1.0, to avoid per-channel scalar branches. */
+    lw t4,16(t3)
+    sll t5,t4,1
+    mtc2 t5,$v24.e0
+    srl t4,t4,15
+    mtc2 t4,$v23.e0
+    lw t4,20(t3)
+    sll t5,t4,1
+    mtc2 t5,$v24.e1
+    srl t4,t4,15
+    mtc2 t4,$v23.e1
+    lw t4,24(t3)
+    sll t5,t4,1
+    mtc2 t5,$v24.e2
+    srl t4,t4,15
+    mtc2 t4,$v23.e2
     lw k0,8(t3)
     ctc2 zero,COP2_CTRL_VCO
     move t8,s1
@@ -202,23 +220,9 @@ prefetch_done:
     vmudm $v04,$v03,$v20.e0
     vmadh $v04,$v03,$v20.e1
     vmadn $v05,$v22,K1
-    vsar $v04,COP2_ACC_MD
-    vmudn $v04,$v04,$v20.e2
-    vmudl $v05,$v05,$v20.e2
-    vor \dest,$v04,$v05
+    vsar \dest,COP2_ACC_MD
 .endm
-batch:
-    addu t3,s7,a1
-    lqv $v01,0,t3
-    addu t3,s7,fp
-    lqv $v02,0,t3
-    coefficient $v01,$v08
-    coefficient $v02,$v09
-    addiu t5,s7,%lo(rows)
-    addiu t6,s7,%lo(output)
-    li t7,%lo(params)+16
-    move k1,zero
-channel:
+.macro transport lane
     addu t4,t5,s6
     lqv $v10,0,t4
     addiu t3,t4,-2
@@ -227,17 +231,17 @@ channel:
     addiu t3,t4,2
     lqv $v12,0,t3
     lrv $v12,16,t3
-    bnez s7,left_ready
+    bnez s7,left_ready\@
     nop
     mfc2 t3,$v10.e0
     mtc2 t3,$v11.e0
-left_ready:
+left_ready\@:
     li t3,ROW_BYTES-16
-    bne s7,t3,right_ready
+    bne s7,t3,right_ready\@
     nop
     mfc2 t3,$v10.e7
     mtc2 t3,$v12.e7
-right_ready:
+right_ready\@:
     addu t4,t5,a0
     lqv $v14,0,t4
     addu t4,t5,a2
@@ -251,22 +255,30 @@ right_ready:
     vmulf $v13,$v11,$v08
     vmacf $v13,$v12,$v09
     vadd $v13,$v13,$v10
-    lw t8,0(t7)
-    li t9,32768
-    beq t8,t9,no_decay
-    sll t8,t8,1
-    mtc2 t8,$v24.e0
-    vmudm $v13,$v13,$v24.e0
+    vmudm $v26,$v13,$v24.\lane
+    vmadh $v13,$v13,$v23.\lane
     vmadn $v26,$v25,K1
     vsar $v13,COP2_ACC_MD
-no_decay:
     sqv $v13,0,t6
     addiu t5,t5,SOURCE_BYTES
     addiu t6,t6,ROW_BYTES
-    addiu t7,t7,4
-    addiu k1,k1,1
-    bne k1,k0,channel
+.endm
+batch:
+    addu t3,s7,a1
+    lqv $v01,0,t3
+    addu t3,s7,fp
+    lqv $v02,0,t3
+    coefficient $v01,$v08
+    coefficient $v02,$v09
+    addiu t5,s7,%lo(rows)
+    addiu t6,s7,%lo(output)
+    transport e0
+    transport e1
+    li t3,2
+    beq k0,t3,channels_done
     nop
+    transport e2
+channels_done:
     addiu s7,s7,16
     li t3,ROW_BYTES
     bne s7,t3,batch

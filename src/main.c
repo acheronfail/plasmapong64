@@ -1,4 +1,5 @@
 #include "mathutil.h"
+#include "sc64_reload.h"
 #include <libdragon.h>
 #include <math.h>
 #include <string.h>
@@ -798,6 +799,7 @@ int main(void) {
 #endif
 #endif
     while(1) {
+        sc64_reload_poll();
         /* Start NTSC/MPAL work after each real VI field. An estimated clock
            period can drift across a display deadline even when work fits.
            Physics retains its nominal 1/60 step; PAL uses clock catch-up. */

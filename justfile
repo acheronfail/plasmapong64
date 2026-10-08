@@ -2,6 +2,10 @@
 build:
     ./tools/build-rom.sh -j4
 
+# Human-controlled development ROM with SummerCart AUX halt/reboot support.
+build-reload:
+    ./tools/build-rom.sh -j4 USB_LOG=1 SC64_RELOAD=1 ROM=plasmapong-reload BUILD_DIR=build/reload
+
 # Power off the N64 to release its SD-card lock.
 deploy: build
     sc64deployer sd upload plasmapong.z64 /CUSTOM/plasmapong.z64

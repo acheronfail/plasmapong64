@@ -12,6 +12,8 @@ void fluid_pressure_rsp(int32_t *pressure,const int32_t *divergence);
 /* Queue-only producer/consumer variant. Caller must finish the shared queue
    and invalidate pressure before reading it on CPU. */
 void fluid_pressure_rsp_begin(int32_t *pressure,const int32_t *divergence);
+/* Compact path: short_pressure supplies the warm Q3 state and is updated.
+   pressure is its Q12 output mirror; initialize both consistently. */
 void fluid_pressure_short_rsp_begin(int32_t *pressure,const int32_t *divergence,int16_t *short_pressure);
 #endif
 #endif
