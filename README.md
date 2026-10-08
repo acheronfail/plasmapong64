@@ -5,15 +5,14 @@ Inspired by [Plasma Pong](https://en.wikipedia.org/wiki/Plasma_Pong) by Steve Ta
 
 - **Fluid physics:** stir colourful currents that carry dye and push the ball.
 - **Paddle powers:** fire jets, suck in the ball, and charge a powerful release.
-- **Multiplayer:** two- to four-player local matches.
+- **Multiplayer:** 2-4 player local matches.
 - **Endless arcade:** face an increasingly challenging AI and save your high scores.
-- **Visuals:** seven flow effects (with finer contour rendering for Bands), with low- and high-resolution modes.
+- **Visuals:** seven flow effects, with low & high-resolution modes.
+- **Rumble Pak:** support for the N64's rumble pak!
 
 Download **plasmapong.z64** from the [latest release](https://github.com/acheronfail/plasmapong64/releases/latest).
 
 ## Screenshots
-
-Captured in [Ares](https://ares-emu.net/).
 
 ![Main menu](docs/screenshots/main-menu.png)
 ![Two-player match](docs/screenshots/two-player.png)
