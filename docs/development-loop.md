@@ -16,6 +16,32 @@ alone is not the frame budget: rendering, RDP completion and streamed audio must
 also fit. Continue using ordinary matched hardware captures and an all-eight-
 effects stress run for acceptance; Ares supplies correctness and native images.
 
+## Dye visibility comparison, 2026-10-08
+
+The accepted swirl implementation was committed as `fae1e83` before this trial.
+The accepted change doubles `JET_DYE` from 6.4 to 12.8 in both the ROM build
+and portable defaults. Jet radius, force, damping, confinement and dye decay are
+unchanged. It increases the pigment injected by all players' ordinary jets;
+ball trails, movement splats and release bursts retain their existing doses.
+
+`dye-double-01` passed portable gameplay checks and 4/8 MiB Ares validation, then
+captured the exact ordinary tails ROM at native video fields 900 and 1800. The
+committed comparison images use the same input replay and fields from
+`swirl-banded-03`. Brighter dye makes the transported curls easier to see, with
+some whitening near the strongest overlapping jets. Images are unedited native
+Ares output. The normal human-controlled ROM was rebuilt for this comparison.
+
+The `dye-double-effects-01` ordinary console run exercised all eight effects
+with music over 60 windows: **8.525 ms/update**, **59.943 FPS**,
+**8,990 frames / 8,990 VI**, zero presentation misses and zero audio
+underrun observations. It ended with verified power OFF. The user accepted the
+brighter dye as the new default after comparing it with `fae1e83`.
+
+| Ares video field | Committed dye (6.4) | Double dye (12.8) |
+| --- | --- | --- |
+| 900 | ![Committed dye, field 900](screenshots/swirl-after-900.png) | ![Double dye, field 900](screenshots/dye-double-900.png) |
+| 1800 | ![Committed dye, field 1800](screenshots/swirl-after-1800.png) | ![Double dye, field 1800](screenshots/dye-double-1800.png) |
+
 ## Swirl restoration experiments, 2026-10-08
 
 The first full-rate prototype retained 64x44 upwind transport, one warm pressure sweep,

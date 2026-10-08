@@ -24,9 +24,9 @@
 #ifndef PLASMAPONG_JET_FORCE
 #define PLASMAPONG_JET_FORCE 1800.0f
 #endif
-/* Preserve roughly the original pigment dose with the narrower footprint. */
+/* Double the compensated pigment dose to make transported dye more visible. */
 #ifndef PLASMAPONG_JET_DYE
-#define PLASMAPONG_JET_DYE 6.4f
+#define PLASMAPONG_JET_DYE 12.8f
 #endif
 #define ARENA_W (FW * CELL)
 #define ARENA_H (FH * CELL)
