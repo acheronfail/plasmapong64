@@ -22,7 +22,7 @@
 #define PLASMAPONG_JET_RADIUS 14
 #endif
 #ifndef PLASMAPONG_JET_FORCE
-#define PLASMAPONG_JET_FORCE 1800.0f
+#define PLASMAPONG_JET_FORCE 3600.0f
 #endif
 /* Double the compensated pigment dose to make transported dye more visible. */
 #ifndef PLASMAPONG_JET_DYE
